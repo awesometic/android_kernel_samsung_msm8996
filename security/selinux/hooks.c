@@ -5754,8 +5754,10 @@ static int selinux_nlmsg_perm(struct sock *sk, struct sk_buff *skb)
 		if (err == -EINVAL) {
 			printk(KERN_WARNING
 			       "SELinux: unrecognized netlink message:"
-			       " protocol=%hu nlmsg_type=%hu sclass=%hu\n",
-			       sk->sk_protocol, nlh->nlmsg_type, sksec->sclass);
+			       " protocol=%hu nlmsg_type=%hu sclass=%s\n",
+			       sk->sk_protocol, nlh->nlmsg_type,
+			       secclass_map[sksec->sclass - 1].name);
+
 // [ SEC_SELINUX_PORTING_COMMON
 #ifdef CONFIG_ALWAYS_ENFORCE
 			if (security_get_allow_unknown())
