@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -416,6 +416,9 @@ static ssize_t mdss_debug_base_offset_write(struct file *file,
 
 	buf[count] = 0;	/* end of string */
 
+	if (off % sizeof(u32))
+		return -EINVAL;
+
 	sscanf(buf, "%5x %x", &off, &cnt);
 
 	if (off > dbg->max_offset)
@@ -490,6 +493,9 @@ static ssize_t mdss_debug_base_reg_write(struct file *file,
 	if (cnt < 2)
 		return -EFAULT;
 
+	if (off % sizeof(u32))
+		return -EFAULT;
+
 	if (off >= dbg->max_offset)
 		return -EFAULT;
 
@@ -534,6 +540,9 @@ static ssize_t mdss_debug_base_reg_read(struct file *file,
 			mutex_unlock(&mdss_debug_lock);
 			return -ENOMEM;
 		}
+
+		if (dbg->off % sizeof(u32))
+			return -EFAULT;
 
 		ptr = dbg->base + dbg->off;
 		tot = 0;
@@ -1226,6 +1235,9 @@ int mdss_debugfs_init(struct mdss_data_type *mdata)
 	mdss_debugfs_perf_init(mdd, mdata);
 
 	if (mdss_create_xlog_debug(mdd))
+		goto err;
+
+	if (mdss_create_frc_debug(mdd))
 		goto err;
 
 	mdata->debug_inf.debug_data = mdd;

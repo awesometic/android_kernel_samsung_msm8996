@@ -860,7 +860,7 @@ static int32_t msm_ois_fw_update(struct msm_ois_ctrl_t *a_ctrl)
         ret = msm_ois_check_extclk(a_ctrl);
         if (ret < 0) {
             pr_err("%s : check extclk is failed %d\n", __func__, __LINE__);
-            return ret;
+            goto ERROR;
         }
     }
 

@@ -110,17 +110,33 @@ void set_switch_mode(muic_data_t *pmuic, int mode)
 void muic_switch_enable(muic_data_t *pmuic, int enable)
 {
 	int val = 0;
-	if(gpio_is_valid(pmuic->switch_gpio)){
-		val = gpio_get_value(pmuic->switch_gpio);
-		if(val != enable)
-			gpio_set_value(pmuic->switch_gpio, enable);
-	}
+
+	if(enable) {
+#if defined(CONFIG_SEC_FACTORY)
+		if(!pmuic->is_keyboard_test) {
+#endif
+			if(gpio_is_valid(pmuic->switch_gpio)){
+				val = gpio_get_value(pmuic->switch_gpio);
+				if(val != enable)
+					gpio_set_value(pmuic->switch_gpio, enable);
+			}
 #if defined(CONFIG_MUIC_SUPPORT_KEYBOARDDOCK)
-	if(enable)
-		pmuic->switch_gpio_en = true;
-	else
+			pmuic->switch_gpio_en = true;
+#endif
+#if defined(CONFIG_SEC_FACTORY)
+		}
+#endif
+	}
+	else {
+		if(gpio_is_valid(pmuic->switch_gpio)){
+			val = gpio_get_value(pmuic->switch_gpio);
+			if(val != enable)
+				gpio_set_value(pmuic->switch_gpio, enable);
+		}
+#if defined(CONFIG_MUIC_SUPPORT_KEYBOARDDOCK)
 		pmuic->switch_gpio_en = false;
 #endif
+	}
 }
 #endif
 

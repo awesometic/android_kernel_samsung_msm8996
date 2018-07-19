@@ -29,6 +29,9 @@ extern struct class *sec_class;
 #define STMPE1801_DRV_DESC			"stmpe1801 i2c I/O expander"
 #define STMPE1801_DRV_NAME			"stmpe1801_pogo"
 
+#define INPUT_VENDOR_ID_SAMSUNG			0x04E8
+#define INPUT_PRODUCT_ID_POGO_KEYBOARD		0xA035
+
 #define STMPE1801_BLOCK_GPIO			0x01
 #define STMPE1801_BLOCK_KEY			0x02
 
@@ -1089,6 +1092,8 @@ static int stmpe1801_set_input_dev(struct stmpe1801_dev *device_data)
 	device_data->input_dev->dev.parent = &client->dev;
 	device_data->input_dev->name = "Tab S3 Book Cover Keyboard";
 	device_data->input_dev->id.bustype = BUS_I2C;
+	device_data->input_dev->id.vendor = INPUT_VENDOR_ID_SAMSUNG;
+	device_data->input_dev->id.product = INPUT_PRODUCT_ID_POGO_KEYBOARD;
 	device_data->input_dev->flush = NULL;
 	device_data->input_dev->event = NULL;
 	//device_data->input_dev->open = stmpe1801_dev_kpc_input_open;

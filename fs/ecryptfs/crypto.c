@@ -1518,15 +1518,7 @@ static int ecryptfs_write_headers_virt(char *page_virt, size_t max,
 	size_t written;
 	size_t offset;
 #ifdef CONFIG_ECRYPTFS_FEK_INTEGRITY
-	bool is_SDP = false;
-#ifdef CONFIG_SDP
-	if(crypt_stat->flags & ECRYPTFS_DEK_SDP_ENABLED) {
-		is_SDP = true;
-	}
-#endif
-	if(!is_SDP) {
-		crypt_stat->flags |= ECRYPTFS_ENABLE_HMAC;
-	}
+	crypt_stat->flags |= ECRYPTFS_ENABLE_HMAC;
 #endif
 	offset = ECRYPTFS_FILE_SIZE_BYTES;
 	write_ecryptfs_marker((page_virt + offset), &written);
@@ -1544,9 +1536,7 @@ static int ecryptfs_write_headers_virt(char *page_virt, size_t max,
 		ecryptfs_printk(KERN_WARNING, "Error generating key packet "
 				"set; rc = [%d]\n", rc);
 #ifdef CONFIG_ECRYPTFS_FEK_INTEGRITY
-	if(crypt_stat->flags & ECRYPTFS_ENABLE_HMAC) {
-		memcpy((page_virt + HASH_OFFSET), crypt_stat->hash, FEK_HASH_SIZE);
-	}
+	memcpy((page_virt + HASH_OFFSET), crypt_stat->hash, FEK_HASH_SIZE);
 #endif
 	if (size) {
 		offset += written;

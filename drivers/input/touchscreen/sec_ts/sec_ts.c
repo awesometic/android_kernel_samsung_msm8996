@@ -1581,6 +1581,13 @@ static ssize_t sec_ts_regread_show(struct device *dev, struct device_attribute *
 
 	mutex_lock(&ts->device_mutex);
 
+	if ((lv1_readsize <= 0) || (lv1_readsize > PAGE_SIZE)) {
+		input_err(true, &ts->client->dev, "%s: invalid lv1_readsize = %d\n",
+				__func__, lv1_readsize);
+		lv1_readsize = 0;
+		goto malloc_err;
+	}
+
 	read_lv1_buff = kzalloc(lv1_readsize, GFP_KERNEL);
 	if (!read_lv1_buff) {
 		input_err(true, &ts->client->dev, "%s kzalloc failed\n", __func__);
@@ -2031,6 +2038,9 @@ static int sec_ts_parse_dt(struct i2c_client *client)
 
 	if (of_property_read_u32(np, "sec,grip_concept", &pdata->grip_concept) < 0)
 		pdata->grip_concept = 1;	// default 1(set_tunning_data) for Hero.
+
+	if (of_property_read_u32(np, "sec,poweroff-pinctrl", &pdata->poweroff_pinctrl) < 0)
+		pdata->poweroff_pinctrl = 0;
 
 	input_err(true, &client->dev, "%s: i2c buffer limit: %d, lcd_id:%06X, bringup:%d, FW:%s(%d), id:%d,%d, grip:%d clear_calnv:%d mis_cal:%d grip_cc:%d\n",
 			__func__, pdata->i2c_burstmax, temp, pdata->bringup, pdata->firmware_name, \
@@ -2769,6 +2779,9 @@ static void sec_ts_input_close(struct input_dev *dev)
 		ts->power_status = SEC_TS_STATE_LPM_RESUME;
 	} else {
 		sec_ts_stop_device(ts);
+
+		if (ts->plat_data->poweroff_pinctrl)
+			i2c_msm_pinctrl_set_slave_power_off(ts->client->adapter);
 	}
 
 }

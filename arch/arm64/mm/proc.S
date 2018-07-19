@@ -23,14 +23,11 @@
 #include <asm/assembler.h>
 #include <asm/asm-offsets.h>
 #include <asm/hwcap.h>
-#include <asm/pgtable-hwdef.h>
 #include <asm/pgtable.h>
 
 #ifdef CONFIG_RKP_CFP_FIX_SMC_BUG
 #include <asm/rkp_cfp.h>
 #endif
-
-#include "proc-macros.S"
 
 #ifndef CONFIG_TIMA_RKP
 #ifdef CONFIG_ARM64_64K_PAGES
@@ -39,11 +36,7 @@
 #define TCR_TG_FLAGS	TCR_TG0_4K | TCR_TG1_4K
 #endif
 
-#ifdef CONFIG_SMP
 #define TCR_SMP_FLAGS	TCR_SHARED
-#else
-#define TCR_SMP_FLAGS	0
-#endif
 
 /* PTWs cacheable, inner/outer WBWA */
 #define TCR_CACHE_FLAGS	TCR_IRGN_WBWA | TCR_ORGN_WBWA
@@ -57,71 +50,6 @@
 #endif
 #endif
 #define MAIR(attr, mt)	((attr) << ((mt) * 8))
-
-/*
- *	cpu_cache_off()
- *
- *	Turn the CPU D-cache off.
- */
-ENTRY(cpu_cache_off)
-	mrs	x0, sctlr_el1
-	bic	x0, x0, #1 << 2			// clear SCTLR.C
-#ifndef CONFIG_TIMA_RKP
-	msr	sctlr_el1, x0
-#else
-	mov	x1, x0
-	mov     x0, #0xc015
-	movk    x0, #0xc300, lsl #16
-back4:
-	smc	#0x0
-	cmp	x0, #0x1
-	b.eq	back4
-#endif
-	isb
-	ret
-ENDPROC(cpu_cache_off)
-
-/*
- *	cpu_reset(loc)
- *
- *	Perform a soft reset of the system.  Put the CPU into the same state
- *	as it would be if it had been reset, and branch to what would be the
- *	reset vector. It must be executed with the flat identity mapping.
- *
- *	- loc   - location to jump to for soft reset
- */
-	.align	5
-ENTRY(cpu_reset)
-	mrs	x1, sctlr_el1
-	bic	x1, x1, #1
-#ifndef CONFIG_TIMA_RKP
-	msr	sctlr_el1, x1			// disable the MMU
-#else
-	mov     x0, #0xc015
-	movk    x0, #0xc300, lsl #16
-back5:
-	smc	#0x0
-	cmp	x0, #0x1
-	b.eq	back5
-#endif
-	isb
-	ret	x0
-ENDPROC(cpu_reset)
-
-ENTRY(cpu_soft_restart)
-	/* Save address of cpu_reset() and reset address */
-	mov	x19, x0
-	mov	x20, x1
-
-	/* Turn D-cache off */
-	bl	cpu_cache_off
-
-	/* Push out all dirty data, and ensure cache is empty */
-	bl	flush_cache_all
-
-	mov	x0, x20
-	ret	x19
-ENDPROC(cpu_soft_restart)
 
 /*
  *	cpu_do_idle()
@@ -199,6 +127,7 @@ back2:
 	cmp	x0, #0x1
 	b.eq	back2
 #endif
+	tcr_set_idmap_t0sz x8, x7
 	msr	tcr_el1, x8
 	msr	vbar_el1, x9
 	msr	mdscr_el1, x10
@@ -222,7 +151,7 @@ ENDPROC(cpu_do_resume)
  *	- pgd_phys - physical address of new TTB
  */
 ENTRY(cpu_do_switch_mm)
-	mmid	w1, x1				// get mm->context.id
+	mmid	x1, x1				// get mm->context.id
 	bfi	x0, x1, #48, #16		// set the ASID
 #ifndef CONFIG_TIMA_RKP
 	msr	ttbr0_el1, x0			// set TTBR0
@@ -252,13 +181,15 @@ ENDPROC(cpu_do_switch_mm)
  *	value of the SCTLR_EL1 register.
  */
 ENTRY(__cpu_setup)
-	ic	iallu				// I+BTB cache invalidate
-	tlbi	vmalle1is			// invalidate I + D TLBs
-	dsb	ish
+	tlbi	vmalle1				// Invalidate local TLB
+	dsb	nsh
 
 	mov	x0, #3 << 20
 	msr	cpacr_el1, x0			// Enable FP/ASIMD
-	msr	mdscr_el1, xzr			// Reset mdscr_el1
+	mov	x0, #1 << 12			// Reset mdscr_el1 and disable
+	msr	mdscr_el1, x0			// access to the DCC from EL0
+	isb					// Unmask debug exceptions now,
+	enable_dbg				// since this is per-cpu
 	/*
 	 * Memory region attributes for LPAE:
 	 *
@@ -295,6 +226,8 @@ ENTRY(__cpu_setup)
 	ldr	x10, =TCR_TxSZ(VA_BITS) | TCR_FLAGS | \
 		      TCR_ASID16 | TCR_TBI0 | (1 << 31)
 #endif
+	tcr_set_idmap_t0sz	x10, x9
+
 	/*
 	 * Read the PARange bits from ID_AA64MMFR0_EL1 and set the IPS bits in
 	 * TCR_EL1.

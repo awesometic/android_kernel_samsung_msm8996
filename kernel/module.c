@@ -2735,13 +2735,18 @@ static inline void kmemleak_load_module(const struct module *mod,
 #endif
 
 #ifdef CONFIG_MODULE_SIG
-static int module_sig_check(struct load_info *info)
+static int module_sig_check(struct load_info *info, int flags)
 {
 	int err = -ENOKEY;
 	const unsigned long markerlen = sizeof(MODULE_SIG_STRING) - 1;
 	const void *mod = info->hdr;
 
-	if (info->len > markerlen &&
+	/*
+	 * Require flags == 0, as a module with version information
+	 * removed is no longer the module that was signed
+	 */
+	if (flags == 0 &&
+	    info->len > markerlen &&
 	    memcmp(mod + info->len - markerlen, MODULE_SIG_STRING, markerlen) == 0) {
 		/* We truncate the module to discard the signature */
 		info->len -= markerlen;
@@ -2760,7 +2765,7 @@ static int module_sig_check(struct load_info *info)
 	return err;
 }
 #else /* !CONFIG_MODULE_SIG */
-static int module_sig_check(struct load_info *info)
+static int module_sig_check(struct load_info *info, int flags)
 {
 	return 0;
 }
@@ -3533,7 +3538,7 @@ static int do_init_module(struct module *mod)
 	 *
 	 * http://thread.gmane.org/gmane.linux.kernel/1420814
 	 */
-	if (current->flags & PF_USED_ASYNC)
+	if (!mod->async_probe_requested && (current->flags & PF_USED_ASYNC))
 		async_synchronize_full();
 
 	mutex_lock(&module_mutex);
@@ -3660,10 +3665,18 @@ out:
 	return err;
 }
 
-static int unknown_module_param_cb(char *param, char *val, const char *modname)
+static int unknown_module_param_cb(char *param, char *val, const char *modname,
+				   void *arg)
 {
-	/* Check for magic 'dyndbg' arg */ 
-	int ret = ddebug_dyndbg_module_param_cb(param, val, modname);
+	struct module *mod = arg;
+	int ret;
+
+	if (strcmp(param, "async_probe") == 0) {
+		mod->async_probe_requested = true;
+		return 0;
+	}
+	/* Check for magic 'dyndbg' arg */
+	ret = ddebug_dyndbg_module_param_cb(param, val, modname);
 	if (ret != 0)
 		pr_warn("%s: unknown parameter '%s' ignored\n", modname, param);
 	return 0;
@@ -3681,7 +3694,7 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	unsigned long module_len = info->len;
 #endif
 
-	err = module_sig_check(info);
+	err = module_sig_check(info, flags);
 	if (err)
 		goto free_copy;
 
@@ -3772,7 +3785,8 @@ static int load_module(struct load_info *info, const char __user *uargs,
 
 	/* Module is ready to execute: parsing args may do that. */
 	after_dashes = parse_args(mod->name, mod->args, mod->kp, mod->num_kp,
-				  -32768, 32767, unknown_module_param_cb);
+				  -32768, 32767, NULL,
+				  unknown_module_param_cb);
 	if (IS_ERR(after_dashes)) {
 		err = PTR_ERR(after_dashes);
 		goto bug_cleanup;

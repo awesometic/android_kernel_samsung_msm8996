@@ -389,7 +389,7 @@ static void dbmdx_pcm_stop_capture_work(struct work_struct *work)
 
 	if (!(prtd->capture_in_progress)) {
 		pr_debug("%s:Capture is not in progress\n", __func__);
-		return;
+		goto out;
 	}
 
 	ret = dbmdx_stop_pcm_streaming();
@@ -404,7 +404,7 @@ static void dbmdx_pcm_stop_capture_work(struct work_struct *work)
 	}
 
 	prtd->capture_in_progress = 0;
-
+out:
 	pcm_command_in_progress(prtd, 0);
 
 	return;
@@ -546,11 +546,13 @@ static int dbmdx_pcm_close(struct snd_pcm_substream *substream)
 	pr_debug("%s\n", __func__);
 
 	flush_delayed_work(&prtd->pcm_start_capture_work);
+	flush_delayed_work(&prtd->pcm_stop_capture_work);
 	queue_delayed_work(prtd->dbmdx_pcm_workq,
 		&prtd->pcm_stop_capture_work,
 		msecs_to_jiffies(0));
 	flush_delayed_work(&prtd->pcm_stop_capture_work);
 	flush_workqueue(prtd->dbmdx_pcm_workq);
+	usleep_range(10000, 11000);
 	destroy_workqueue(prtd->dbmdx_pcm_workq);
 	kfree(timer);
 	kfree(prtd);

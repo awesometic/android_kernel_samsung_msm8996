@@ -649,6 +649,7 @@ struct sec_ts_plat_data {
 	int mis_cal_check;
 	int grip_area;
 	int clear_calnv;
+	int poweroff_pinctrl;
 
 	const char *firmware_name;
 	const char *parameter_name;
@@ -721,5 +722,6 @@ extern int poweroff_charging;
 extern void set_grip_data_to_ic(struct sec_ts_data *ts, u8 flag);
 extern void sec_ts_set_grip_type(struct sec_ts_data *ts, u8 set_type);
 #endif
+extern void i2c_msm_pinctrl_set_slave_power_off(struct i2c_adapter *adap);
 
 #endif

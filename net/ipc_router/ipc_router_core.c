@@ -31,6 +31,9 @@
 #include <linux/ipc_router.h>
 #include <linux/ipc_router_xprt.h>
 #include <linux/kref.h>
+#ifdef IPC_ROUTER_WS_DEBUG
+#include <linux/suspend.h>
+#endif
 #include <soc/qcom/subsystem_notif.h>
 #include <soc/qcom/subsystem_restart.h>
 
@@ -1334,6 +1337,11 @@ struct msm_ipc_port *msm_ipc_router_create_raw_port(void *endpoint,
 	port_ptr->notify = notify;
 	port_ptr->priv = priv;
 
+#ifdef IPC_ROUTER_WS_DEBUG
+	port_ptr->rport_addr.node_id = 0;
+	port_ptr->rport_addr.port_id = 0;
+#endif
+
 	msm_ipc_router_add_local_port(port_ptr);
 	if (endpoint)
 		sock_hold(ipc_port_sk(endpoint));
@@ -2176,7 +2184,6 @@ static void cleanup_rmt_server(struct msm_ipc_router_xprt_info *xprt_info,
 {
 	union rr_control_msg ctl;
 
-	ipc_router_reset_conn(rport_ptr);
 	memset(&ctl, 0, sizeof(ctl));
 	ctl.cmd = IPC_ROUTER_CTRL_CMD_REMOVE_SERVER;
 	ctl.srv.service = server->name.service;
@@ -2207,6 +2214,7 @@ static void cleanup_rmt_ports(struct msm_ipc_router_xprt_info *xprt_info,
 			server = rport_ptr->server;
 			rport_ptr->server = NULL;
 			mutex_unlock(&rport_ptr->rport_lock_lhb2);
+			ipc_router_reset_conn(rport_ptr);
 			if (server) {
 				cleanup_rmt_server(xprt_info, rport_ptr,
 						   server);
@@ -2361,13 +2369,13 @@ static void ipc_router_reset_conn(struct msm_ipc_router_remote_port *rport_ptr)
 	list_for_each_entry_safe(conn_info, tmp_conn_info,
 				&rport_ptr->conn_info_list, list) {
 		port_ptr = ipc_router_get_port_ref(conn_info->port_id);
-		if (!port_ptr)
-			continue;
-		mutex_lock(&port_ptr->port_lock_lhc3);
-		port_ptr->conn_status = CONNECTION_RESET;
-		mutex_unlock(&port_ptr->port_lock_lhc3);
-		wake_up(&port_ptr->port_rx_wait_q);
-		kref_put(&port_ptr->ref, ipc_router_release_port);
+		if (port_ptr) {
+			mutex_lock(&port_ptr->port_lock_lhc3);
+			port_ptr->conn_status = CONNECTION_RESET;
+			mutex_unlock(&port_ptr->port_lock_lhc3);
+			wake_up(&port_ptr->port_rx_wait_q);
+			kref_put(&port_ptr->ref, ipc_router_release_port);
+		}
 
 		list_del(&conn_info->list);
 		kfree(conn_info);
@@ -2651,6 +2659,7 @@ static int process_rmv_client_msg(struct msm_ipc_router_xprt_info *xprt_info,
 		server = rport_ptr->server;
 		rport_ptr->server = NULL;
 		mutex_unlock(&rport_ptr->rport_lock_lhb2);
+		ipc_router_reset_conn(rport_ptr);
 		down_write(&server_list_lock_lha2);
 		if (server)
 			cleanup_rmt_server(NULL, rport_ptr, server);
@@ -2785,6 +2794,11 @@ static void do_read_data(struct work_struct *work)
 			}
 		}
 
+#ifdef IPC_ROUTER_WS_DEBUG
+		port_ptr->rport_addr.node_id = hdr->src_node_id;
+		port_ptr->rport_addr.port_id = hdr->src_port_id;
+#endif
+
 		ipc_router_log_msg(xprt_info->log_ctx, IPC_ROUTER_LOG_EVENT_RX,
 				pkt, hdr, port_ptr, rport_ptr);
 		kref_put(&rport_ptr->ref, ipc_router_release_rport);
@@ -2808,6 +2822,9 @@ int msm_ipc_router_register_server(struct msm_ipc_port *port_ptr,
 	if (!port_ptr || !name)
 		return -EINVAL;
 	
+	if (port_ptr->type != CLIENT_PORT)
+		return -EINVAL;
+
 	if (port_ptr->type != CLIENT_PORT)
 		return -EINVAL;
 
@@ -4335,6 +4352,94 @@ static int ipc_router_core_init(void)
 	return ret;
 }
 
+#ifdef IPC_ROUTER_WS_DEBUG
+static inline void msm_ipc_router_port_pkt_debug(struct msm_ipc_port *port_ptr)
+{
+	struct rr_packet *pkt;
+	struct sk_buff_head *skb_head;
+	struct sk_buff *skb;
+
+	pkt = list_first_entry_or_null(&port_ptr->port_rx_q,
+					struct rr_packet, list);
+	if (pkt) {
+		skb_head = pkt->pkt_fragment_q;
+		skb = skb_peek(skb_head);
+		if (skb && skb->data) {
+			print_hex_dump(KERN_WARNING, "ipc_rtr: ",
+				       DUMP_PREFIX_NONE, 16, 1, skb->data,
+				       skb->len > 16 ? 16 : skb->len, true);
+		}
+	}
+}
+
+static inline void msm_ipc_router_port_info(struct msm_ipc_port *port_ptr)
+{
+	uint32_t svcId = 0;
+	uint32_t svcIns = 0;
+	uint32_t port_type = 0;
+	struct msm_ipc_server *server;
+	struct msm_ipc_router_remote_port *rport_ptr;
+
+	port_type = port_ptr->type;
+	svcId = port_ptr->port_name.service;
+	svcIns = port_ptr->port_name.instance;
+
+	if (port_type == CLIENT_PORT) {
+		rport_ptr = ipc_router_get_rport_ref(
+						port_ptr->rport_addr.node_id,
+						port_ptr->rport_addr.port_id);
+
+		if (rport_ptr && rport_ptr->server) {
+			server = rport_ptr->server;
+			svcId = server->name.service;
+			svcIns = server->name.instance;
+		}
+	}
+
+	pr_warn("ipc_rtr: %s, type: %d, "
+		"svc <0x%x:0x%x>, local <0x%x:0x%x>, remote <0x%x:0x%x>\n",
+		port_ptr->rx_ws_name, port_type, svcId, svcIns,
+		port_ptr->this_port.node_id, port_ptr->this_port.port_id,
+		port_ptr->rport_addr.node_id, port_ptr->rport_addr.port_id);
+}
+
+static int msm_ipc_router_pm_notifier(struct notifier_block *nb,
+				      unsigned long mode, void *p)
+{
+	int j;
+	struct msm_ipc_port *port_ptr;
+
+	switch (mode) {
+	case PM_SUSPEND_PREPARE:
+		down_read(&local_ports_lock_lhc2);
+		for (j = 0; j < LP_HASH_SIZE; j++) {
+			list_for_each_entry(port_ptr, &local_ports[j], list) {
+				if (!port_ptr->port_rx_ws->active)
+					continue;
+
+				msm_ipc_router_port_info(port_ptr);
+#if 0
+				mutex_lock(&port_ptr->port_lock_lhc3);
+				msm_ipc_router_port_pkt_debug(port_ptr);
+				// TODO: do something
+				wake_up(&port_ptr->port_rx_wait_q);
+				mutex_unlock(&port_ptr->port_lock_lhc3);
+#endif
+			}
+		}
+		up_read(&local_ports_lock_lhc2);
+	default:
+		break;
+	}
+
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block msm_ipc_router_pm_nb = {
+	.notifier_call = msm_ipc_router_pm_notifier,
+};
+#endif
+
 static int msm_ipc_router_init(void)
 {
 	int ret;
@@ -4353,6 +4458,14 @@ static int msm_ipc_router_init(void)
 		IPC_RTR_ERR("%s: Init sockets failed\n", __func__);
 
 	ipc_router_log_ctx_init();
+
+#ifdef IPC_ROUTER_WS_DEBUG
+	ret = register_pm_notifier(&msm_ipc_router_pm_nb);
+	if (ret)
+		IPC_RTR_ERR(
+		"%s: ipc_router pm notifier register fail %d\n", __func__, ret);
+#endif
+
 	return ret;
 }
 

@@ -3097,8 +3097,6 @@ static int __max86902_hrm_read_data(struct max869_device_data *device, int *data
 			data[i] = 0;
 	}
 
-	data[4] = device->led;
-
 	if ((device->sample_cnt % 1000) == 1)
 		HRM_info("%s - %u, %u, %u, %u\n", __func__,
 			data[0], data[1], data[2], data[3]);

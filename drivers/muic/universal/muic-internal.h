@@ -265,6 +265,10 @@ typedef struct _muic_data_t {
 #endif
 #if defined(CONFIG_MUIC_SUPPORT_KEYBOARDDOCK)
 	int keyboard_state;
+#if defined(CONFIG_SEC_FACTORY)
+	bool is_keyboard_test;
+	bool is_pba_array;
+#endif
 #endif
 #if defined(CONFIG_MUIC_SM5705_SWITCH_CONTROL) && defined(CONFIG_MUIC_SUPPORT_KEYBOARDDOCK)
 	bool switch_gpio_en;

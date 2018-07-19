@@ -1072,6 +1072,9 @@ static const struct file_operations pn547_dev_fops = {
 	.write = pn547_dev_write,
 	.open = pn547_dev_open,
 	.unlocked_ioctl = pn547_dev_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = pn547_dev_ioctl,
+#endif
 };
 
 #ifdef CONFIG_OF
@@ -1370,6 +1373,12 @@ static int pn547_probe(struct i2c_client *client,
 		    pr_err("NFC: failed to create attr_test\n");
 	}
 #endif //FEATURE_SEC_NFC_TEST
+
+#if !defined(CONFIG_SEC_FACTORY) && defined(CONFIG_ESE_SECURE) && !defined(ENABLE_ESE_SPI_SECURED)
+	/* should not be here! */
+	pr_err("%s: [error] ese support but not secured? check!!\n", __func__);
+	return -ENODEV;
+#endif
 
 	pr_info("%s entered\n", __func__);
 

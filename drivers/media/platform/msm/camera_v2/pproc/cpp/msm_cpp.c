@@ -874,7 +874,7 @@ static int cpp_init_hardware(struct cpp_device *cpp_dev)
 				msm_camera_enable_irq(cpp_dev->irq, true);
 				goto pwr_collapse_reset;
 			}
- 		}
+		}
 		msm_camera_enable_irq(cpp_dev->irq, true);
 		msm_camera_io_w_mb(0x7C8, cpp_dev->base +
 			MSM_CPP_MICRO_IRQGEN_MASK);

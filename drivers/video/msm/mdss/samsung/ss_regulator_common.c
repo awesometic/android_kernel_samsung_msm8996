@@ -303,10 +303,16 @@ static int tconrdy_disable(struct regulator_dev *rdev)
 
 static int tconrdy_is_enabled(struct regulator_dev *rdev)
 {
-	/* Regulator core always recognize that it is disabled,
-	 * so it always skip to disable and not to skip to enable.
-	 */
-	return 0;
+	struct ssreg_pmic *pmic = rdev_get_drvdata(rdev);
+	struct ssreg_pdata *pdata = pmic->pdata;
+	int id = rdev_get_id(rdev);
+	struct ssreg_regulator_data *rdata = &pdata->regulators[id];
+	struct ssreg_rdata_tconrdy *r_tconrdy = rdata->r_tconrdy;
+
+	if (gpio_get_value(r_tconrdy->tconrdy_gpio))
+		return 1;
+	else
+		return 0;
 }
 
 static struct regulator_ops tconrdy_ops = {

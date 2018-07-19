@@ -39,7 +39,7 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
 #define NAME_STRING_MAX 30
 #define MDNIE_COLOR_BLINDE_CMD_SIZE 18
 #define COORDINATE_DATA_SIZE 6
-#define MDNIE_NIGHT_MODE_CMD_SIZE 24
+#define MDNIE_SCR_CMD_SIZE 24
 
 extern char mdnie_app_name[][NAME_STRING_MAX];
 extern char mdnie_mode_name[][NAME_STRING_MAX];
@@ -130,6 +130,47 @@ enum HDR {
 	HDR_MAX
 };
 
+enum LIGHT_NOTIFICATION {
+	LIGHT_NOTIFICATION_OFF = 0,
+	LIGHT_NOTIFICATION_ON,
+	LIGHT_NOTIFICATION_MAX,
+};
+
+enum COLOR_LENS {
+	COLOR_LENS_OFF = 0,
+	COLOR_LENS_ON,
+	COLOR_LENS_MAX
+};
+
+enum COLOR_LENS_COLOR {
+	COLOR_LENS_COLOR_BLUE = 0,
+	COLOR_LENS_COLOR_AZURE,
+	COLOR_LENS_COLOR_CYAN,
+	COLOR_LENS_COLOR_SPRING_GREEN,
+	COLOR_LENS_COLOR_GREEN,
+	COLOR_LENS_COLOR_CHARTREUSE_GREEN,
+	COLOR_LENS_COLOR_YELLOW,
+	COLOR_LENS_COLOR_ORANGE,
+	COLOR_LENS_COLOR_RED,
+	COLOR_LENS_COLOR_ROSE,
+	COLOR_LENS_COLOR_MAGENTA,
+	COLOR_LENS_COLOR_VIOLET,
+	COLOR_LENS_COLOR_MAX
+};
+
+enum COLOR_LENS_LEVEL {
+	COLOR_LENS_LEVEL_20P = 0,
+	COLOR_LENS_LEVEL_25P,
+	COLOR_LENS_LEVEL_30P,
+	COLOR_LENS_LEVEL_35P,
+	COLOR_LENS_LEVEL_40P,
+	COLOR_LENS_LEVEL_45P,
+	COLOR_LENS_LEVEL_50P,
+	COLOR_LENS_LEVEL_55P,
+	COLOR_LENS_LEVEL_60P,
+	COLOR_LENS_LEVEL_MAX,
+};
+
 struct mdnie_lite_tun_type {
 	enum BYPASS mdnie_bypass;
 	enum BYPASS cabc_bypass;
@@ -141,6 +182,7 @@ struct mdnie_lite_tun_type {
 	enum ACCESSIBILITY mdnie_accessibility;
 	enum HMT_COLOR_TEMPERATURE hmt_color_temperature;
 	enum HDR hdr;
+	enum LIGHT_NOTIFICATION light_notification;
 
 	char scr_white_red;
 	char scr_white_green;
@@ -152,6 +194,10 @@ struct mdnie_lite_tun_type {
 
 	int night_mode_enable;
 	int night_mode_index;
+
+	int color_lens_enable;
+	int color_lens_color;
+	int color_lens_level;
 
 	int index;
 	struct list_head used_list;
@@ -218,6 +264,9 @@ struct mdnie_lite_tune_data {
 	char *DSI0_NIGHT_MODE_MDNIE_1;
 	char *DSI0_NIGHT_MODE_MDNIE_2;
 	char *DSI0_NIGHT_MODE_MDNIE_SCR;
+	char *DSI0_COLOR_LENS_MDNIE_1;
+	char *DSI0_COLOR_LENS_MDNIE_2;
+	char *DSI0_COLOR_LENS_MDNIE_SCR;
 
 	struct dsi_cmd_desc *DSI0_BYPASS_MDNIE;
 	struct dsi_cmd_desc *DSI0_NEGATIVE_MDNIE;
@@ -276,10 +325,12 @@ struct mdnie_lite_tune_data {
 	struct dsi_cmd_desc *DSI0_TDMB_MOVIE_MDNIE;
 	struct dsi_cmd_desc *DSI0_TDMB_AUTO_MDNIE;
 	struct dsi_cmd_desc *DSI0_NIGHT_MODE_MDNIE;
+	struct dsi_cmd_desc *DSI0_COLOR_LENS_MDNIE;
 
 	struct dsi_cmd_desc *(*mdnie_tune_value_dsi0)[MAX_MODE][MAX_OUTDOOR_MODE];
 	struct dsi_cmd_desc **hmt_color_temperature_tune_value_dsi0;
 	struct dsi_cmd_desc **hdr_tune_value_dsi0;
+	struct dsi_cmd_desc **light_notification_tune_value_dsi0;
 
 	int dsi0_bypass_mdnie_size;
 	int mdnie_color_blinde_cmd_offset;
@@ -293,6 +344,7 @@ struct mdnie_lite_tune_data {
 	int dsi0_max_adjust_ldu;
 	char *dsi0_night_mode_table;
 	int dsi0_max_night_mode_index;
+	char *dsi0_color_lens_table;
 	int dsi0_scr_step_index;
 	char dsi0_white_default_r;
 	char dsi0_white_default_g;
@@ -336,6 +388,9 @@ struct mdnie_lite_tune_data {
 	char *DSI1_NIGHT_MODE_MDNIE_1;
 	char *DSI1_NIGHT_MODE_MDNIE_2;
 	char *DSI1_NIGHT_MODE_MDNIE_SCR;
+	char *DSI1_COLOR_LENS_MDNIE_1;
+	char *DSI1_COLOR_LENS_MDNIE_2;
+	char *DSI1_COLOR_LENS_MDNIE_SCR;
 
 	struct dsi_cmd_desc *DSI1_BYPASS_MDNIE;
 	struct dsi_cmd_desc *DSI1_NEGATIVE_MDNIE;
@@ -394,10 +449,12 @@ struct mdnie_lite_tune_data {
 	struct dsi_cmd_desc *DSI1_TDMB_MOVIE_MDNIE;
 	struct dsi_cmd_desc *DSI1_TDMB_AUTO_MDNIE;
 	struct dsi_cmd_desc *DSI1_NIGHT_MODE_MDNIE;
+	struct dsi_cmd_desc *DSI1_COLOR_LENS_MDNIE;
 
 	struct dsi_cmd_desc *(*mdnie_tune_value_dsi1)[MAX_MODE][MAX_OUTDOOR_MODE];
 	struct dsi_cmd_desc **hmt_color_temperature_tune_value_dsi1;
 	struct dsi_cmd_desc **hdr_tune_value_dsi1;
+	struct dsi_cmd_desc **light_notification_tune_value_dsi1;
 
 	int dsi1_bypass_mdnie_size;
 	/* int mdnie_color_blinde_cmd_offset; */
@@ -411,6 +468,7 @@ struct mdnie_lite_tune_data {
 	int dsi1_max_adjust_ldu;
 	char *dsi1_night_mode_table;
 	int dsi1_max_night_mode_index;
+	char *dsi1_color_lens_table;
 	int dsi1_scr_step_index;
 	char dsi1_white_default_r;
 	char dsi1_white_default_g;

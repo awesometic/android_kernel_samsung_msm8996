@@ -34,6 +34,7 @@
 #include <linux/of_gpio.h>
 #endif
 
+#include <linux/ccic/s2mm005.h>
 #include <linux/muic/muic.h>
 #if defined(CONFIG_MUIC_NOTIFIER)
 #include <linux/muic/muic_notifier.h>
@@ -312,6 +313,7 @@ static void mdev_handle_ccic_detach(muic_data_t *pmuic)
 	pdesc->ccic_evt_dcdcnt = 0;
 	pdesc->ccic_evt_attached = MUIC_CCIC_NOTI_UNDEFINED;
 
+	pmuic->ccic_rp = 0;
 	pmuic->legacy_dev = 0;
 	pmuic->attached_dev = 0;
 	pmuic->is_ccic_attach = false;
@@ -532,8 +534,8 @@ static int muic_handle_ccic_ATTACH(muic_data_t *pmuic, CC_NOTI_ATTACH_TYPEDEF *p
 	struct vendor_ops *pvendor = pmuic->regmapdesc->vendorops;
 	int prev_status = pdesc->ccic_evt_attached;
 
-	pr_info("%s: src:%d dest:%d id:%d attach:%d cable_type:%d rprd:%d\n", __func__,
-		pnoti->src, pnoti->dest, pnoti->id, pnoti->attach, pnoti->cable_type, pnoti->rprd);
+	pr_info("%s: src:%d dest:%d id:%d attach:%d cable_type:%d rprd:%d retry_afc:%d\n", __func__,
+		pnoti->src, pnoti->dest, pnoti->id, pnoti->attach, pnoti->cable_type, pnoti->rprd, pmuic->retry_afc);
 
 	pdesc->ccic_evt_attached = pnoti->attach ? 
 		MUIC_CCIC_NOTI_ATTACH : MUIC_CCIC_NOTI_DETACH;
@@ -579,12 +581,30 @@ static int muic_handle_ccic_ATTACH(muic_data_t *pmuic, CC_NOTI_ATTACH_TYPEDEF *p
 		/* W/A for late ccic attach */
 		if (pmuic->retry_afc) {
 			pmuic->retry_afc = false;
-			pr_info("%s: Do AFC restart because of late ccic_attach.\n", __func__);
+			pr_info("%s: Retry to AFC because of ccic_attach, RP Info = %d\n", __func__, pmuic->ccic_rp);
+
+			switch(pmuic->ccic_rp) {
+			case Rp_56K:
 #if defined(CONFIG_MUIC_UNIVERSAL_SM5705_AFC)
-			muic_restart_afc();
+				muic_restart_afc();
 #elif defined(CONFIG_MUIC_HV)
-			muic_afc_set_voltage(9);
+				muic_afc_set_voltage(9);
 #endif
+				break;
+			case Rp_Abnormal:
+				pr_info("%s:%s Working SBU-Vbus Short W/A\n", MUIC_DEV_NAME, __func__);
+				pmuic->legacy_dev = pmuic->attached_dev = ATTACHED_DEV_NONE_MUIC;
+				muic_notifier_detach_attached_dev(pmuic->attached_dev);
+				muic_check_afc_state(1);
+				msleep(500);
+				pmuic->legacy_dev = pmuic->attached_dev = ATTACHED_DEV_TA_MUIC;
+				muic_notifier_attach_attached_dev(pmuic->attached_dev);
+				break;
+			default:
+				break;
+			}
+			
+			return 0;
 		}
 
 		/* W/A for Incomplete insertion case */

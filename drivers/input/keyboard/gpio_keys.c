@@ -633,13 +633,13 @@ static void flip_cover_work(struct work_struct *work)
 	comp_val[1] = gpio_get_value(ddata->gpio_flip_cover);
 
 	if (comp_val[0] == comp_val[1]) {
-		ddata->flip_cover = !gpio_get_value(ddata->gpio_flip_cover);
-
+		ddata->flip_cover = gpio_get_value(ddata->gpio_flip_cover);
+		flip_cover=ddata->flip_cover;
 		printk(KERN_DEBUG "[keys] %s : %d\n",
 			__func__, ddata->flip_cover);
 
 		input_report_switch(ddata->input,
-			SW_LID, ddata->flip_cover);
+			SW_FLIP, ddata->flip_cover);
 		input_sync(ddata->input);
 	} else {
 		printk(KERN_DEBUG "%s : Value is not same!\n", __func__);
@@ -652,12 +652,13 @@ static void flip_cover_work(struct work_struct *work)
 		container_of(work, struct gpio_keys_drvdata,
 				flip_cover_dwork.work);
 
-	ddata->flip_cover = !gpio_get_value(ddata->gpio_flip_cover);
+	ddata->flip_cover = gpio_get_value(ddata->gpio_flip_cover);
+	flip_cover=ddata->flip_cover;
 	printk(KERN_DEBUG "[keys] %s : %d\n",
 		__func__, ddata->flip_cover);
 
 	input_report_switch(ddata->input,
-		SW_LID, ddata->flip_cover);
+		SW_FLIP, ddata->flip_cover);
 	input_sync(ddata->input);
 }
 #endif // CONFIG_SEC_FACTORY
@@ -1070,7 +1071,7 @@ static int gpio_keys_probe(struct platform_device *pdev)
 	wake_lock_init(&ddata->flip_wake_lock, WAKE_LOCK_SUSPEND, "flip_wake_lock");
 	if(ddata->gpio_flip_cover != 0) {
 		input->evbit[0] |= BIT_MASK(EV_SW);
-		input_set_capability(input, EV_SW, SW_LID);
+		input_set_capability(input, EV_SW, SW_FLIP);
 	}
 #endif
 	global_dev = dev;

@@ -66,8 +66,7 @@
 #include <scsi/scsi_dbg.h>
 #include <scsi/scsi_eh.h>
 
-#define COMMAND_PRIORITY
-#define HEAD_OF_Q_FEATURE
+#define CUSTOMIZE_UPIU_FLAGS
 
 #include <linux/fault-inject.h>
 #include "ufs.h"
@@ -435,6 +434,7 @@ struct ufs_clk_gating {
 	struct device_attribute enable_attr;
 	bool is_enabled;
 	int active_reqs;
+	struct workqueue_struct *ungating_workq;
 };
 
 /* Hibern8 state  */
@@ -899,6 +899,9 @@ struct ufs_hba {
 	bool no_ref_clk_gating;
 
 	int scsi_block_reqs_cnt;
+
+	int			latency_hist_enabled;
+	struct io_latency_state io_lat_s;
 #define UFS_PW_ON	0
 #define UFS_PW_OFF	1
 	int hw_reset_gpio;

@@ -370,7 +370,7 @@ static ssize_t voice_svc_write(struct file *file, const char __user *buf,
 	uint32_t cmd;
 	struct voice_svc_register *register_data = NULL;
 	struct voice_svc_cmd_request *request_data = NULL;
-	uint32_t request_payload_size;	
+	uint32_t request_payload_size;
 
 	pr_debug("%s\n", __func__);
 

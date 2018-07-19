@@ -582,8 +582,10 @@ struct sec_battery_platform_data {
 	/* battery swelling */
 	int swelling_high_temp_block;
 	int swelling_high_temp_recov;
-	int swelling_low_temp_block;
-	int swelling_low_temp_recov;
+	int swelling_low_temp_block_1st;
+	int swelling_low_temp_recov_1st;
+	int swelling_low_temp_block_2nd;
+	int swelling_low_temp_recov_2nd;
 	unsigned int swelling_low_temp_current;
 	unsigned int swelling_low_temp_topoff;
 	unsigned int swelling_high_temp_current;
@@ -747,9 +749,9 @@ struct sec_battery_platform_data {
 	unsigned long recharging_total_time;
 	/* reset charging for abnormal malfunction (0: not use) */
 	unsigned long charging_reset_time;
-	unsigned int hv_charging_total_time;
-	unsigned int normal_charging_total_time;
-	unsigned int usb_charging_total_time;
+	unsigned int expired_time;
+	unsigned int recharging_expired_time;
+	int standard_curr;
 
 	/* fuel gauge */
 	char *fuelgauge_name;
@@ -789,6 +791,8 @@ struct sec_battery_platform_data {
 #else
 	int chg_float_voltage;
 #endif
+	unsigned int chg_float_voltage_conv;
+
 #if defined(CONFIG_BATTERY_AGE_FORECAST)
 	int num_age_step;
 	int age_step;

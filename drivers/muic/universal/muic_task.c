@@ -127,7 +127,7 @@ static int sm5705_muic_irq_handler(muic_data_t *pmuic, int irq)
 	struct i2c_client *i2c = pmuic->i2c;
 	struct afc_ops *afcops = pmuic->regmapdesc->afcops;
 	struct muic_platform_data *pdata = pmuic->pdata;
-	int local_irq, ret;
+	int local_irq = 0, ret = 0;
 
 	pr_info("%s:%s irq(%d)\n", pmuic->chip_name, __func__, irq);
 
@@ -200,11 +200,18 @@ static int sm5705_muic_irq_handler(muic_data_t *pmuic, int irq)
 		if ( local_irq == SM5705_MUIC_IRQ_INT3_AFC_TA_ATTACHED ) {  /*AFC_TA_ATTACHED*/
 #if !defined(CONFIG_SEC_FACTORY) && defined(CONFIG_MUIC_SUPPORT_CCIC)
 			/* To prevent damage by RP0 Cable, AFC should be progress after ccic_attach */
-			if (pmuic->is_ccic_attach && pmuic->ccic_rp == Rp_56K)
-				afcops->afc_ta_attach(pmuic->regmapdesc);
-			else {
+			if (pmuic->is_ccic_attach) {
+				if (pmuic->ccic_rp == Rp_56K)
+					afcops->afc_ta_attach(pmuic->regmapdesc);
+				else {
+					pmuic->retry_afc = true;
+					pr_info("%s: Rp isn't 56K, but is (%d)K\n", __func__, pmuic->ccic_rp);
+					pmuic->attached_dev = ATTACHED_DEV_AFC_CHARGER_5V_MUIC;
+					muic_notifier_attach_attached_dev(pmuic->attached_dev);
+				}
+			} else {
 				pmuic->retry_afc = true;
-				pr_info("%s: Need AFC restart for late ccic_attach\n", __func__);
+				pr_info("%s: Need to restart AFC for late ccic_attach\n", __func__);
 			}
 #else
 			afcops->afc_ta_attach(pmuic->regmapdesc);
@@ -213,7 +220,7 @@ static int sm5705_muic_irq_handler(muic_data_t *pmuic, int irq)
 		}
 	}
 	else
-		pr_err("%s: Ignore AFC_INTS, AFC is disabled \n", __func__);
+		pr_err("%s: Ignore AFC_INTS, AFC is disabled by setting\n", __func__);
 
 	if ( local_irq == SM5705_MUIC_IRQ_RESET ) {  /*RESET*/
 		MUIC_INFO_K("%s: SM5705_MUIC_IRQ_RESET\n", __func__);

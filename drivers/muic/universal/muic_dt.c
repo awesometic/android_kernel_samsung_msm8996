@@ -196,6 +196,9 @@ int of_muic_dt(struct i2c_client *i2c, struct muic_platform_data *pdata, muic_da
 {
 	struct device_node *np_muic = i2c->dev.of_node;
 	int ret=0;
+#if defined(CONFIG_MUIC_SUPPORT_KEYBOARDDOCK) && defined(CONFIG_SEC_FACTORY)
+	int array_gpio;
+#endif
 
 	if(!np_muic)
 		return -EINVAL;
@@ -215,6 +218,15 @@ int of_muic_dt(struct i2c_client *i2c, struct muic_platform_data *pdata, muic_da
 #if defined(CONFIG_MUIC_SM5705_SWITCH_CONTROL)
 	pmuic->switch_gpio = of_get_named_gpio(np_muic, "muic,switch_gpio", 0);
 
+#endif
+#if defined(CONFIG_MUIC_SUPPORT_KEYBOARDDOCK) && defined(CONFIG_SEC_FACTORY)
+	array_gpio = of_get_named_gpio(np_muic, "muic,array_gpio", 0);
+	pr_info("%s: array-gpio: %u )\n", __func__, array_gpio);
+	if (gpio_is_valid(array_gpio))
+		pmuic->is_pba_array = gpio_get_value(array_gpio);
+	else
+		pmuic->is_pba_array = false;
+	pr_info("%s: PBA array is : %s )\n", __func__, pmuic->is_pba_array ? "True" : "false");
 #endif
 	if (of_find_property(np_muic, "muic-universal,uart-gpio", NULL)) {
 		muic_gpio_uart_sel = of_get_named_gpio(np_muic, "muic-universal,uart-gpio", 0);

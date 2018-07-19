@@ -9,7 +9,7 @@
 #endif
 #include <linux/clk.h>
 #include <linux/pinctrl/consumer.h>
-
+#include <linux/i2c.h>
 #ifdef CONFIG_SEC_DEBUG_TSP_LOG
 #define tsp_debug_dbg(mode, dev, fmt, ...)	\
 ({								\
@@ -436,6 +436,7 @@ struct fts_device_tree_data {
 	int bringup;
 	int tsp_id;
 	int tsp_id2;
+	int poweroff_pinctrl;
 };
 
 #define RAW_MAX	3750
@@ -672,6 +673,7 @@ extern bool tsp_init_done;
 extern int poweroff_charging;
 #endif
 
+extern void i2c_msm_pinctrl_set_slave_power_off(struct i2c_adapter *adap);
 /*
  * If in DeviceTree structure, using below tree.
  * below tree is connected fts_parse_dt() in fts_ts.c file.

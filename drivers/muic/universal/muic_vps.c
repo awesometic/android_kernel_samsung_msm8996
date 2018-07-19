@@ -727,11 +727,14 @@ static int resolve_dedicated_dev(muic_data_t *pmuic, muic_attached_dev_t *pdev, 
 		pmuic->keyboard_state = 1;
 	else
 		pmuic->keyboard_state = 0;
+
 #if defined(CONFIG_MUIC_SM5705_SWITCH_CONTROL) && defined(CONFIG_MUIC_SUPPORT_KEYBOARDDOCK)
 	if (pmuic->switch_gpio_en && adc != ADC_UART_CABLE && adc != ADC_OPEN)
 		muic_otg_switch_control(pmuic, 0);
 #endif
-#if !defined(CONFIG_SEC_FACTORY)
+#if defined(CONFIG_SEC_FACTORY)
+	if (!pmuic->is_pba_array) {
+#endif
 	new_dev = keyboard_chgtyp_to_dev(chgtyp, pmuic->attached_dev, vbvolt);
 
 	/* POGO ID + VBUS case, device type doesn't appear so check charger type */
@@ -747,6 +750,8 @@ static int resolve_dedicated_dev(muic_data_t *pmuic, muic_attached_dev_t *pdev, 
 		*pintr = intr;
 		*pdev = new_dev;
 		return 0;
+	}
+#if defined(CONFIG_SEC_FACTORY)
 	}
 #endif
 #endif

@@ -82,6 +82,8 @@ int pressure_open_calibration(struct adsp_data *data)
 	if (error < 0) {
 		pr_err("[FACTORY] %s : Can't read the cal data from file(%d)\n",
 			__func__, error);
+		filp_close(cal_filp, current->files);
+		set_fs(old_fs);
 		return error;
 	}
 	filp_close(cal_filp, current->files);

@@ -80,8 +80,13 @@
 
 		/* Reserved Mem for Camera */
 		camera_mem: camera_mem_region@0xC0000000 {
-			compatible = "removed-dma-pool";
 			reg = <0x0 0xC0000000 0x0 0x14800000>;
+		};
+
+		/delete-node/ qseecom_region;
+		qseecom_mem: qseecom_region {
+			reg = <0 0xFEC00000 0 0x1400000>;
+			label = "qseecom_mem";
 		};
 	};
 };
@@ -130,6 +135,15 @@
 };
 
 &soc {
+	qcom,ion {
+		/delete-node/ qcom,ion-heap@27;
+		qcom,ion-heap@27 { /* QSEECOM HEAP */
+			reg = <27>;
+			memory-region = <&qseecom_mem>;
+			qcom,ion-heap-type = "CARVEOUT";
+		};
+	};
+
 	/delete-node/ i2c@757a000;
 	input_booster {
 		status = "okay";

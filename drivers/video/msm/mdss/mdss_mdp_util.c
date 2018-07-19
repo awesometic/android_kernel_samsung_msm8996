@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -933,6 +933,7 @@ static int mdss_mdp_put_img(struct mdss_mdp_img_data *data, bool rotator,
 	} else if (!IS_ERR_OR_NULL(data->srcp_dma_buf)) {
 		pr_debug("ion hdl=%pK buf=0x%pa\n", data->srcp_dma_buf,
 							&data->addr);
+		MDSS_XLOG(data->srcp_dma_buf, &data->addr, data->mapped);
 		if (!iclient) {
 			pr_err("invalid ion client\n");
 			return -ENOMEM;
@@ -1086,7 +1087,7 @@ static int mdss_mdp_get_img(struct msmfb_data *img,
 			return ret;
 		}
 	}
-	if (!*start) {
+	if (start && !*start) {
 		pr_err("start address is zero!\n");
 		mdss_mdp_put_img(data, rotator, dir);
 		return -ENOMEM;
@@ -1099,6 +1100,7 @@ static int mdss_mdp_get_img(struct msmfb_data *img,
 		pr_debug("mem=%d ihdl=%pK buf=0x%pa len=0x%lx\n",
 			 img->memory_id, data->srcp_dma_buf, &data->addr,
 			 data->len);
+		MDSS_XLOG(img->memory_id, data->srcp_dma_buf, &data->addr, data->len);
 	} else {
 		mdss_mdp_put_img(data, rotator, dir);
 		return ret ? : -EOVERFLOW;

@@ -671,7 +671,7 @@ static void msm_vfe32_axi_reload_wm(
 		msm_camera_io_w(0x0, vfe_base + 0x28);
 		msm_camera_io_w(0x0, vfe_base + 0x20);
 		msm_camera_io_w_mb(0x1, vfe_base + 0x18);
-		msm_camera_io_w(0x9AAAAAAA , vfe_base + 0x600);
+		msm_camera_io_w(0x9AAAAAAA, vfe_base + 0x600);
 		msm_camera_io_w(reload_mask, vfe_base + 0x38);
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -743,8 +743,10 @@ eHalStatus tdlsMsgProcessor(tpAniSirGlobal pMac,  v_U16_t msgType,
             csrRoamCallCallback(pMac, delStaRsp->sessionId, &roamInfo, 0,
                          eCSR_ROAM_TDLS_STATUS_UPDATE,
                                eCSR_ROAM_RESULT_DELETE_TDLS_PEER);
-
-            csrTdlsRemoveSmeCmd(pMac, eSmeCommandTdlsDelPeer) ;
+            csrTdlsRemoveSmeCmd(pMac, eSmeCommandTdlsDelPeer);
+            csrRoamCallCallback(pMac, delStaRsp->sessionId, &roamInfo, 0,
+                            eCSR_ROAM_TDLS_STATUS_UPDATE,
+                            eCSR_ROAM_TDLS_CHECK_BMPS);
         }
         break;
         case eWNI_SME_TDLS_DEL_STA_IND:
@@ -783,6 +785,10 @@ eHalStatus tdlsMsgProcessor(tpAniSirGlobal pMac,  v_U16_t msgType,
         case eWNI_SME_TDLS_LINK_ESTABLISH_RSP:
         {
             tSirTdlsLinkEstablishReqRsp *linkEstablishReqRsp = (tSirTdlsLinkEstablishReqRsp *) pMsgBuf ;
+            vos_mem_copy(&roamInfo.peerMac, linkEstablishReqRsp->peerMac,
+                                            sizeof(tSirMacAddr));
+            roamInfo.staId = (uint8_t)linkEstablishReqRsp->sta_idx;
+            roamInfo.statusCode = linkEstablishReqRsp->statusCode;
             csrRoamCallCallback(pMac, linkEstablishReqRsp->sessionId, &roamInfo, 0,
                          eCSR_ROAM_TDLS_STATUS_UPDATE,
                                eCSR_ROAM_RESULT_LINK_ESTABLISH_REQ_RSP);

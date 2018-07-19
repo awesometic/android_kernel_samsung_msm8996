@@ -288,8 +288,11 @@ static void bluesleep_tx_data_wakeup(void)
  */
 static void bluesleep_sleep_work(struct work_struct *work)
 {
-	if (mutex_is_locked(&bluesleep_mutex))
+	if (mutex_is_locked(&bluesleep_mutex)) {
 		BT_DBG("Wait for mutex unlock in bluesleep_sleep_work");
+		mod_timer(&tx_timer, jiffies + TX_TIMER_INTERVAL * HZ);
+		return;
+	}
 
 	if (bsi->uport == NULL) {
 		BT_DBG("bluesleep_sleep_work - uport is null");
@@ -1014,7 +1017,7 @@ static int bluesleep_resume(struct platform_device *pdev)
 			(bsi->uport->state->port.tty != NULL) &&
 			(gpio_get_value(bsi->host_wake) == bsi->irq_polarity)) {
 				BT_DBG("bluesleep resume form BT event...");
-				hsuart_power(1);
+				//hsuart_power(1);
 		}
 		clear_bit(BT_SUSPEND, &flags);
 	}

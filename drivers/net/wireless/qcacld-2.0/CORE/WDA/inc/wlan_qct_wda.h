@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -92,12 +92,6 @@ typedef enum
    WDA_PROCESS_SET_LINK_STATE,
    WDA_IGNORE_SET_LINK_STATE
 }WDA_processSetLinkStateStatus;
-
-typedef enum
-{
-   WDA_DISABLE_BA,
-   WDA_ENABLE_BA
-}WDA_BaEnableFlags;
 
 typedef enum
 {
@@ -318,6 +312,8 @@ typedef void (*wda_tgt_cfg_cb) (void *context, void *param);
  */
 typedef bool (*wda_dfs_radar_indication_cb) (void *context, void *param);
 
+typedef void (*wda_dfs_block_tx_cb) (void *context, bool cac_block_tx);
+
 typedef struct
 {
    tANI_U16 ucValidStaIndex ;
@@ -449,6 +445,7 @@ VOS_STATUS WDA_TxPacket(void *pWDA,
 VOS_STATUS WDA_open(v_PVOID_t pVosContext, v_PVOID_t pOSContext,
                           wda_tgt_cfg_cb pTgtUpdCB,
                           wda_dfs_radar_indication_cb radar_ind_cb,
+                          wda_dfs_block_tx_cb dfs_block_tx_cb,
                           tMacOpenParameters *pMacParams ) ;
 
 #define WDA_start wma_start
@@ -580,7 +577,6 @@ tSirRetStatus uMacPostCtrlMsg(void* pSirGlobal, tSirMbMsg* pMb);
 #define WDA_HDD_ADDBA_REQ  SIR_HAL_HDD_ADDBA_REQ
 #define WDA_HDD_ADDBA_RSP  SIR_HAL_HDD_ADDBA_RSP
 #define WDA_DELETEBA_IND   SIR_HAL_DELETEBA_IND
-#define WDA_BA_FAIL_IND    SIR_HAL_BA_FAIL_IND
 #define WDA_TL_FLUSH_AC_REQ SIR_TL_HAL_FLUSH_AC_REQ
 #define WDA_TL_FLUSH_AC_RSP SIR_HAL_TL_FLUSH_AC_RSP
 
@@ -677,10 +673,6 @@ tSirRetStatus uMacPostCtrlMsg(void* pSirGlobal, tSirMbMsg* pMb);
 #define WDA_SOFTMAC_BULKREGREAD_RESPONSE      SIR_HAL_SOFTMAC_BULKREGREAD_RESPONSE
 #define WDA_SOFTMAC_HOSTMESG_MSGPROCESSRESULT SIR_HAL_SOFTMAC_HOSTMESG_MSGPROCESSRESULT
 
-#define WDA_ADDBA_REQ                  SIR_HAL_ADDBA_REQ
-#define WDA_ADDBA_RSP                  SIR_HAL_ADDBA_RSP
-#define WDA_DELBA_IND                  SIR_HAL_DELBA_IND
-#define WDA_DEL_BA_IND                 SIR_HAL_DEL_BA_IND
 #define WDA_MIC_FAILURE_IND            SIR_HAL_MIC_FAILURE_IND
 
 //message from sme to initiate delete block ack session.
@@ -896,6 +888,8 @@ tSirRetStatus uMacPostCtrlMsg(void* pSirGlobal, tSirMbMsg* pMb);
 #define WDA_UPDATE_CHAN_LIST_REQ    SIR_HAL_UPDATE_CHAN_LIST_REQ
 #define WDA_UPDATE_CHAN_LIST_RSP    SIR_HAL_UPDATE_CHAN_LIST_RSP
 #define WDA_RX_SCAN_EVENT           SIR_HAL_RX_SCAN_EVENT
+#define WDA_RX_CHN_STATUS_EVENT     SIR_HAL_RX_CHN_STATUS_EVENT
+
 #define WDA_IBSS_PEER_INACTIVITY_IND SIR_HAL_IBSS_PEER_INACTIVITY_IND
 
 #define WDA_CLI_SET_CMD             SIR_HAL_CLI_SET_CMD
@@ -966,7 +960,11 @@ tSirRetStatus uMacPostCtrlMsg(void* pSirGlobal, tSirMbMsg* pMb);
 #define WDA_DEAUTH_TX_COMP         SIR_HAL_DEAUTH_TX_COMP
 #define WDA_GET_LINK_SPEED         SIR_HAL_GET_LINK_SPEED
 
-#define WDA_GET_RSSI               SIR_HAL_GET_RSSI
+#define WDA_GET_PEER_INFO               SIR_HAL_GET_PEER_INFO
+#define WDA_GET_PEER_INFO_EXT      SIR_HAL_GET_PEER_INFO_EXT
+#define WDA_GET_PEER_INFO_EXT_IND  SIR_HAL_GET_PEER_INFO_EXT_IND
+
+#define WDA_GET_ISOLATION          SIR_HAL_GET_ISOLATION
 
 #define WDA_MODEM_POWER_STATE_IND SIR_HAL_MODEM_POWER_STATE_IND
 
@@ -1008,6 +1006,7 @@ tSirRetStatus uMacPostCtrlMsg(void* pSirGlobal, tSirMbMsg* pMb);
 #define WDA_LINK_LAYER_STATS_SET_REQ          SIR_HAL_LL_STATS_SET_REQ
 #define WDA_LINK_LAYER_STATS_GET_REQ          SIR_HAL_LL_STATS_GET_REQ
 #define WDA_LINK_LAYER_STATS_RESULTS_RSP      SIR_HAL_LL_STATS_RESULTS_RSP
+#define WDA_LINK_LAYER_STATS_SET_THRESHOLD    SIR_HAL_LL_STATS_EXT_SET_THRESHOLD
 #endif /* WLAN_FEATURE_LINK_LAYER_STATS */
 
 #define WDA_LINK_STATUS_GET_REQ SIR_HAL_LINK_STATUS_GET_REQ
@@ -1048,6 +1047,7 @@ tSirRetStatus uMacPostCtrlMsg(void* pSirGlobal, tSirMbMsg* pMb);
 #define WDA_APFIND_SET_CMD                    SIR_HAL_APFIND_SET_CMD
 #endif /* WLAN_FEATURE_APFIND */
 
+#define WDA_DSRC_RADIO_CHAN_STATS_REQ         SIR_HAL_DSRC_RADIO_CHAN_STATS_REQ
 #define WDA_OCB_SET_CONFIG_CMD                SIR_HAL_OCB_SET_CONFIG_CMD
 #define WDA_OCB_SET_UTC_TIME_CMD              SIR_HAL_OCB_SET_UTC_TIME_CMD
 #define WDA_OCB_START_TIMING_ADVERT_CMD       SIR_HAL_OCB_START_TIMING_ADVERT_CMD
@@ -1068,7 +1068,6 @@ tSirRetStatus uMacPostCtrlMsg(void* pSirGlobal, tSirMbMsg* pMb);
 #define WDA_UPDATE_Q2Q_IE_IND                 SIR_HAL_UPDATE_Q2Q_IE_IND
 #endif /* FEATURE_AP_MCC_CH_AVOIDANCE */
 
-#define WDA_FW_MEM_DUMP_REQ                   SIR_HAL_FW_MEM_DUMP_REQ
 #define WDA_TSF_GPIO_PIN                      SIR_HAL_TSF_GPIO_PIN_REQ
 #define WDA_SET_RSSI_MONITOR_REQ              SIR_HAL_SET_RSSI_MONITOR_REQ
 
@@ -1077,6 +1076,8 @@ tSirRetStatus uMacPostCtrlMsg(void* pSirGlobal, tSirMbMsg* pMb);
 #define WDA_SET_UDP_RESP_OFFLOAD              SIR_HAL_SET_UDP_RESP_OFFLOAD
 
 #define WDA_SET_WOW_PULSE_CMD                 SIR_HAL_SET_WOW_PULSE_CMD
+
+#define WDA_SET_WAKEUP_GPIO_CMD               SIR_HAL_SET_WAKEUP_GPIO_CMD
 
 #define WDA_UPDATE_WEP_DEFAULT_KEY            SIR_HAL_UPDATE_WEP_DEFAULT_KEY
 
@@ -1100,6 +1101,7 @@ tSirRetStatus uMacPostCtrlMsg(void* pSirGlobal, tSirMbMsg* pMb);
 
 
 #define WDA_UPDATE_STA_INACTIVITY_TIMEOUT     SIR_HAL_STA_INACTIVITY_TIMEOUT
+#define WDA_ACTION_FRAME_RANDOM_MAC           SIR_HAL_ACTION_FRAME_RANDOM_MAC
 
 tSirRetStatus wdaPostCtrlMsg(tpAniSirGlobal pMac, tSirMsgQ *pMsg);
 

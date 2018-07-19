@@ -1,7 +1,7 @@
 /*
  * Platform Dependent file for Samsung Exynos
  *
- * Copyright (C) 1999-2016, Broadcom Corporation
+ * Copyright (C) 1999-2017, Broadcom Corporation
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_custom_exynos.c 573593 2015-07-23 06:17:53Z $
+ * $Id: dhd_custom_exynos.c 676020 2016-12-20 04:35:47Z $
  */
 #include <linux/device.h>
 #include <linux/gpio.h>
@@ -67,15 +67,32 @@ static int wlan_pwr_on = -1;
 int wlan_host_wake_irq = 0;
 EXPORT_SYMBOL(wlan_host_wake_irq);
 
+#ifdef CONFIG_BCMDHD_PCIE
+#define EXYNOS_PCIE_RC_ONOFF
+#endif /* CONFIG_BCMDHD_PCIE */
+
+#ifdef EXYNOS_PCIE_RC_ONOFF
+#ifdef CONFIG_MACH_UNIVERSAL5433
+#define SAMSUNG_PCIE_CH_NUM
+#elif defined(CONFIG_MACH_UNIVERSAL7420)
+#define SAMSUNG_PCIE_CH_NUM 1
+#elif defined(CONFIG_MACH_EXSOM7420)
+#define SAMSUNG_PCIE_CH_NUM 1
+#elif defined(CONFIG_SOC_EXYNOS8890)
+#define SAMSUNG_PCIE_CH_NUM 0
+#elif defined(CONFIG_SOC_EXYNOS8895)
+#define SAMSUNG_PCIE_CH_NUM 0
+#endif /* CONFIG_MACH_UNIVERSAL5433 */
+
 #if defined(CONFIG_MACH_UNIVERSAL5433)
 extern void exynos_pcie_poweron(void);
 extern void exynos_pcie_poweroff(void);
 extern int check_rev(void);
-#endif /* CONFIG_MACH_UINVERSAL5433 */
-#if defined(CONFIG_MACH_UNIVERSAL7420)
+#else
 extern void exynos_pcie_poweron(int);
 extern void exynos_pcie_poweroff(int);
-#endif /* CONFIG_MACH_UNIVERSAL7420 */
+#endif /* CONFIG_MACH_UNIVERSAL5433 */
+#endif /* EXYNOS_PCIE_RC_ONOFF */
 
 #if defined(CONFIG_ARGOS)
 extern int argos_irq_affinity_setup_label(unsigned int irq, const char *label,
@@ -94,13 +111,10 @@ dhd_wlan_power(int onoff)
 	printk(KERN_INFO"------------------------------------------------\n");
 	printk(KERN_INFO"%s Enter: power %s\n", __FUNCTION__, onoff ? "on" : "off");
 
-#if defined(CONFIG_MACH_UNIVERSAL5433) || defined(CONFIG_MACH_UNIVERSAL7420)
+#ifdef EXYNOS_PCIE_RC_ONOFF
+
 	if (!onoff) {
-#if defined(CONFIG_MACH_UNIVERSAL7420)
-		exynos_pcie_poweroff(1);
-#else
-		exynos_pcie_poweroff();
-#endif /* CONFIG_MACH_UNIVERSAL7420 */
+		exynos_pcie_poweroff(SAMSUNG_PCIE_CH_NUM);
 	}
 
 #if defined(CONFIG_MACH_UNIVERSAL5433)
@@ -117,19 +131,17 @@ dhd_wlan_power(int onoff)
 #endif /* CONFIG_MACH_UINVERSAL5433 */
 
 	if (onoff) {
-#if defined(CONFIG_MACH_UNIVERSAL7420)
-		exynos_pcie_poweron(1);
-#else
-		exynos_pcie_poweron();
-#endif /* CONFIG_MACH_UNIVERSAL7420 */
+		exynos_pcie_poweron(SAMSUNG_PCIE_CH_NUM);
 	}
 #else
+	/* In no pcie case */
 	if (gpio_direction_output(wlan_pwr_on, onoff)) {
 		printk(KERN_ERR "%s failed to control WLAN_REG_ON to %s\n",
 			__FUNCTION__, onoff ? "HIGH" : "LOW");
 		return -EIO;
 	}
-#endif /* CONFIG_MACH_UNIVERSAL5433 || CONFIG_MACH_UNIVERSAL7420 */
+#endif /* EXYNOS_PCIE_RC_ONOFF */
+
 #ifdef CONFIG_MACH_UNIVERSAL3475
 	if (wlan_mmc)
 		mmc_ctrl_power(wlan_mmc, onoff);
@@ -223,6 +235,11 @@ dhd_wlan_init_gpio(void)
 }
 
 #if defined(CONFIG_ARGOS)
+#if defined(CONFIG_SPLIT_ARGOS_SET)
+#define ARGOS_WIFI_TABLE_LABEL "WIFI TX"
+#else /* CONFIG_SPLIT_ARGOS_SET */
+#define ARGOS_WIFI_TABLE_LABEL "WIFI"
+#endif /* CONFIG_SPLIT_ARGOS_SET  */
 #if defined(CONFIG_BCMDHD_PCIE)
 #if defined(CONFIG_MACH_UNIVERSAL7420)
 #define ARGOS_IRQ_NUMBER 237
@@ -235,7 +252,7 @@ void
 set_cpucore_for_interrupt(cpumask_var_t default_cpu_mask,
 	cpumask_var_t affinity_cpu_mask) {
 	argos_irq_affinity_setup_label(ARGOS_IRQ_NUMBER,
-		"WIFI", affinity_cpu_mask, default_cpu_mask);
+		ARGOS_WIFI_TABLE_LABEL, affinity_cpu_mask, default_cpu_mask);
 }
 EXPORT_SYMBOL(set_cpucore_for_interrupt);
 #endif /* CONFIG_ARGOS */

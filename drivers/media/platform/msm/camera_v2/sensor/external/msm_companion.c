@@ -706,6 +706,8 @@ static int msm_companion_fw_write(struct companion_device *companion_dev)
 		fw_name[FW_PATH_CC][FW_NAME_MASTER][REV_OFFSET_MASTER_CC] = '1';
 	} else {
 		pr_err("[syscamera][%s::%d][Invalid Companion Version : %d]\n", __FUNCTION__, __LINE__, companion_version_info);
+		/* restore kernel memory setting */
+		set_fs(old_fs);
 		return -EIO;
 	}
 	sd_fw_isp_path = fw_name[FW_PATH_SD][FW_NAME_ISP]; // SD_FW_EVT0_ISP_PATH;

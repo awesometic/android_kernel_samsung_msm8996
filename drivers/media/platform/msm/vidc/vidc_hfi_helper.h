@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -296,6 +296,7 @@ struct hfi_buffer_info {
 #define  HFI_PROPERTY_PARAM_VDEC_COLOUR_SPACE				\
 	(HFI_PROPERTY_PARAM_VDEC_COMMON_START + 0x00A)
 
+
 #define HFI_PROPERTY_CONFIG_VDEC_COMMON_START				\
 	(HFI_DOMAIN_BASE_VDEC + HFI_ARCH_COMMON_OFFSET + 0x4000)
 
@@ -339,7 +340,7 @@ struct hfi_buffer_info {
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x014)
 #define  HFI_PROPERTY_PARAM_VENC_H264_PPS_ID               \
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x015)
-#define HFI_PROPERTY_PARAM_VENC_H264_GENERATE_AUDNAL	\
+#define HFI_PROPERTY_PARAM_VENC_GENERATE_AUDNAL	\
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x016)
 #define HFI_PROPERTY_PARAM_VENC_ASPECT_RATIO			\
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x017)
@@ -385,7 +386,7 @@ struct hfi_buffer_info {
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x031)
 #define  HFI_PROPERTY_PARAM_VENC_VQZIP_SEI_TYPE		\
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x033)
-#define  HFI_PROPERTY_PARAM_VENC_IFRAME_SIZE		\
+#define  HFI_PROPERTY_PARAM_VENC_IFRAMESIZE			\
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x034)
 
 #define HFI_PROPERTY_CONFIG_VENC_COMMON_START				\
@@ -889,10 +890,10 @@ struct hfi_aspect_ratio {
 	u32 aspect_height;
 };
 
-#define HFI_IFRAME_SIZE_DEFAULT				(HFI_COMMON_BASE + 0x1)
-#define HFI_IFRAME_SIZE_MEDIUM				(HFI_COMMON_BASE + 0x2)
-#define HFI_IFRAME_SIZE_HIGH				(HFI_COMMON_BASE + 0x3)
-#define HFI_IFRAME_SIZE_UNLIMITED			(HFI_COMMON_BASE + 0x4)
+#define HFI_IFRAME_SIZE_DEFAULT			(HFI_COMMON_BASE + 0x1)
+#define HFI_IFRAME_SIZE_MEDIUM			(HFI_COMMON_BASE + 0x2)
+#define HFI_IFRAME_SIZE_HIGH			(HFI_COMMON_BASE + 0x3)
+#define HFI_IFRAME_SIZE_UNLIMITED		(HFI_COMMON_BASE + 0x4)
 struct hfi_iframe_size {
 	u32 type;
 };

@@ -32,6 +32,7 @@
 			sm5720,irq-gpio = <&pm8994_gpios 4 0x01>;
 			muic-universal,irq-gpio = <&pm8994_gpios 4 0x01>;
 			muic,switch_gpio = <&tlmm 1 0x00>;
+			muic,array_gpio = <&tlmm 106 0x00>;
 			sm5705,wakeup;
 
 			muic-universal,chip_name = "sm,sm5705";

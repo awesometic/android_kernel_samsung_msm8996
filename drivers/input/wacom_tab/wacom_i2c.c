@@ -1397,6 +1397,8 @@ static DEVICE_ATTR(epen_saving_mode,
 #ifdef WACOM_USE_SURVEY_MODE
 static DEVICE_ATTR(epen_aop_mode,
 			S_IWUSR | S_IWGRP, NULL, epen_aop_mode_store);
+static DEVICE_ATTR(screen_off_memo_enable,
+			S_IWUSR | S_IWGRP, NULL, epen_aop_mode_store);
 
 static DEVICE_ATTR(get_epen_pos,
 			S_IRUGO, get_epen_pos_show, NULL);
@@ -1417,6 +1419,7 @@ static struct attribute *epen_attributes[] = {
 	&dev_attr_epen_saving_mode.attr,
 #ifdef WACOM_USE_SURVEY_MODE
 	&dev_attr_epen_aop_mode.attr,
+	&dev_attr_screen_off_memo_enable.attr,
 	&dev_attr_get_epen_pos.attr,
 #endif
 	&dev_attr_epen_wcharging_mode.attr,

@@ -785,8 +785,9 @@ static struct kobject *get_device_parent(struct device *dev,
 		return &parent->kobj;
 	return NULL;
 }
+
 static inline bool live_in_glue_dir(struct kobject *kobj,
-					struct device *dev)
+				    struct device *dev)
 {
 	if (!kobj || !dev->class ||
 	    kobj->kset != &dev->class->p->glue_dirs)
@@ -796,15 +797,14 @@ static inline bool live_in_glue_dir(struct kobject *kobj,
 
 static inline struct kobject *get_glue_dir(struct device *dev)
 {
-	if (live_in_glue_dir(&dev->kobj, dev))
-		return dev->kobj.parent;
-	return NULL;
+	return dev->kobj.parent;
 }
+
 /*
-* make sure cleaning up dir as the last step, we need to make
-* sure .release handler of kobject is run with holding the
-* global lock
-*/
+ * make sure cleaning up dir as the last step, we need to make
+ * sure .release handler of kobject is run with holding the
+ * global lock
+ */
 static void cleanup_glue_dir(struct device *dev, struct kobject *glue_dir)
 {
 	/* see if we live in a "glue" directory */
@@ -818,7 +818,15 @@ static void cleanup_glue_dir(struct device *dev, struct kobject *glue_dir)
 
 static int device_add_class_symlinks(struct device *dev)
 {
+	struct device_node *of_node = dev_of_node(dev);
 	int error;
+
+	if (of_node) {
+		error = sysfs_create_link(&dev->kobj, &of_node->kobj,"of_node");
+		if (error)
+			dev_warn(dev, "Error %d creating of_node link\n",error);
+		/* An error here doesn't warrant bringing down the device */
+	}
 
 	if (!dev->class)
 		return 0;
@@ -827,7 +835,7 @@ static int device_add_class_symlinks(struct device *dev)
 				  &dev->class->p->subsys.kobj,
 				  "subsystem");
 	if (error)
-		goto out;
+		goto out_devnode;
 
 	if (dev->parent && device_is_not_partition(dev)) {
 		error = sysfs_create_link(&dev->kobj, &dev->parent->kobj,
@@ -855,12 +863,16 @@ out_device:
 
 out_subsys:
 	sysfs_remove_link(&dev->kobj, "subsystem");
-out:
+out_devnode:
+	sysfs_remove_link(&dev->kobj, "of_node");
 	return error;
 }
 
 static void device_remove_class_symlinks(struct device *dev)
 {
+	if (dev_of_node(dev))
+		sysfs_remove_link(&dev->kobj, "of_node");
+
 	if (!dev->class)
 		return;
 
@@ -978,8 +990,8 @@ int device_add(struct device *dev)
 	struct device *parent = NULL;
 	struct kobject *kobj;
 	struct class_interface *class_intf;
-	struct kobject *glue_dir = NULL;
 	int error = -EINVAL;
+	struct kobject *glue_dir = NULL;
 
 	dev = get_device(dev);
 	if (!dev)

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -883,6 +883,14 @@ int send_adm_apr(void *buf, u32 opcode)
 		bytes_returned = ((u32 *)rtac_cal[ADM_RTAC_CAL].cal_data.
 			kvaddr)[2] + 3 * sizeof(u32);
 
+		if (bytes_returned > rtac_cal[ADM_RTAC_CAL].
+			map_data.map_size) {
+			pr_err("%s: Invalid data size = %d\n",
+				__func__, bytes_returned);
+			result = -EINVAL;
+			goto err;
+		}
+				
 		if (bytes_returned > user_buf_size) {
 			pr_err("%s: User buf not big enough, size = 0x%x, returned size = 0x%x\n",
 				__func__, user_buf_size, bytes_returned);
@@ -1105,6 +1113,14 @@ int send_rtac_asm_apr(void *buf, u32 opcode)
 		bytes_returned = ((u32 *)rtac_cal[ASM_RTAC_CAL].cal_data.
 			kvaddr)[2] + 3 * sizeof(u32);
 
+		if (bytes_returned > rtac_cal[ASM_RTAC_CAL].
+			map_data.map_size) {
+			pr_err("%s: Invalid data size = %d\n",
+				__func__, bytes_returned);
+			result = -EINVAL;
+			goto err;
+		}
+				
 		if (bytes_returned > user_buf_size) {
 			pr_err("%s: User buf not big enough, size = 0x%x, returned size = 0x%x\n",
 				__func__, user_buf_size, bytes_returned);
@@ -1364,6 +1380,14 @@ static int send_rtac_afe_apr(void *buf, uint32_t opcode)
 		bytes_returned = get_resp->param_size +
 				sizeof(struct afe_port_param_data_v2);
 
+		if (bytes_returned > rtac_cal[AFE_RTAC_CAL].
+			map_data.map_size) {
+			pr_err("%s: Invalid data size = %d\n",
+				__func__, bytes_returned);
+			result = -EINVAL;
+			goto err;
+		}
+					
 		if (bytes_returned > user_afe_buf.buf_size) {
 			pr_err("%s: user size = 0x%x, returned size = 0x%x\n",
 				__func__, user_afe_buf.buf_size,
@@ -1586,6 +1610,14 @@ int send_voice_apr(u32 mode, void *buf, u32 opcode)
 		bytes_returned = ((u32 *)rtac_cal[VOICE_RTAC_CAL].cal_data.
 			kvaddr)[2] + 3 * sizeof(u32);
 
+		if (bytes_returned > rtac_cal[VOICE_RTAC_CAL].
+			map_data.map_size) {
+			pr_err("%s: Invalid data size = %d\n",
+				__func__, bytes_returned);
+			result = -EINVAL;
+			goto err;
+		}
+				
 		if (bytes_returned > user_buf_size) {
 			pr_err("%s: User buf not big enough, size = 0x%x, returned size = 0x%x\n",
 				__func__, user_buf_size, bytes_returned);

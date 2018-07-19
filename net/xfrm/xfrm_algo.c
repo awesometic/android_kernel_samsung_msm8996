@@ -220,11 +220,7 @@ static struct xfrm_algo_desc aalg_list[] = {
 
 	.uinfo = {
 		.auth = {
-#if defined(CONFIG_MACH_HEROQLTE_DCM) || defined(CONFIG_MACH_HERO2QLTE_DCM) || defined(CONFIG_MACH_GRACEQLTE_DCM)
-            .icv_truncbits = 128,
-#else
-			.icv_truncbits = 96,
-#endif
+			.icv_truncbits = 128,
 			.icv_fullbits = 256,
 		}
 	},

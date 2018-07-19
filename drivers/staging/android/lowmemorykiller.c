@@ -78,6 +78,11 @@ static uint32_t oom_count = 0;
 #define OOM_DEPTH 7
 #endif
 
+/* to enable lowmemorykiller */
+static int enable_lmk = 1;
+module_param_named(enable_lmk, enable_lmk, int,
+	S_IRUGO | S_IWUSR);
+
 static uint32_t lowmem_debug_level = 1;
 static short lowmem_adj[6] = {
 	0,
@@ -170,6 +175,9 @@ static void dump_tasks_info(void)
 static unsigned long lowmem_count(struct shrinker *s,
 				  struct shrink_control *sc)
 {
+	if (!enable_lmk)
+		return 0;
+
 	return global_page_state(NR_ACTIVE_ANON) +
 		global_page_state(NR_ACTIVE_FILE) +
 		global_page_state(NR_INACTIVE_ANON) +
@@ -341,6 +349,21 @@ static void show_memory(void)
 #undef K
 }
 
+static int test_task_state(struct task_struct *p, int state)
+{
+	struct task_struct *t;
+
+	for_each_thread(p, t) {
+		task_lock(t);
+		if (t->state & state) {
+			task_unlock(t);
+			return 1;
+		}
+		task_unlock(t);
+	}
+
+	return 0;
+}
 
 static DEFINE_MUTEX(scan_mutex);
 
@@ -362,7 +385,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	static DEFINE_RATELIMIT_STATE(lmk_rs, DEFAULT_RATELIMIT_INTERVAL/5, 1);
 	unsigned long nr_cma_free;
 
-	if (mutex_lock_interruptible(&scan_mutex) < 0)
+	if (!mutex_trylock(&scan_mutex))
 		return 0;
 
 	other_free = global_page_state(NR_FREE_PAGES);
@@ -374,6 +397,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		global_page_state(NR_FILE_PAGES) + zcache_pages())
 		other_file = global_page_state(NR_FILE_PAGES) + zcache_pages() -
 						global_page_state(NR_SHMEM) -
+						global_page_state(NR_UNEVICTABLE) -
 						total_swapcache_pages();
 	else
 		other_file = 0;
@@ -422,8 +446,6 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		if (time_before_eq(jiffies, lowmem_deathpending_timeout)) {
 			if (test_task_flag(tsk, TIF_MEMDIE)) {
 				rcu_read_unlock();
-				/* give the system time to free up the memory */
-				msleep_interruptible(20);
 				mutex_unlock(&scan_mutex);
 				return 0;
 			}
@@ -433,6 +455,10 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		if (!p)
 			continue;
 
+		if (test_tsk_thread_flag(p, TIF_MEMDIE)) {
+			task_unlock(p);
+			continue;
+		}
 		oom_score_adj = p->signal->oom_score_adj;
 		if (oom_score_adj < min_score_adj) {
 			task_unlock(p);
@@ -468,6 +494,17 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		long cache_limit = minfree * (long)(PAGE_SIZE / 1024);
 		long free = other_free * (long)(PAGE_SIZE / 1024);
 		trace_lowmemory_kill(selected, cache_size, cache_limit, free);
+		
+		if (test_task_flag(selected, TIF_MEMDIE) &&
+		    (test_task_state(selected, TASK_UNINTERRUPTIBLE))) {
+			lowmem_print(2, "'%s' (%d) is already killed\n",
+				     selected->comm,
+				     selected->pid);
+			rcu_read_unlock();
+			mutex_unlock(&scan_mutex);
+			return 0;
+		}
+		
 		lowmem_print(1, "Killing '%s' (%d), adj %hd,\n" \
 				"   to free %ldkB on behalf of '%s' (%d) because\n" \
 				"   cache %ldkB is below limit %ldkB for oom_score_adj %hd\n" \
@@ -605,6 +642,10 @@ int timeout_lmk(void)
 		if (!p)
 			continue;
 
+		if (test_tsk_thread_flag(p, TIF_MEMDIE)) {
+			task_unlock(p);
+			continue;
+		}
 		oom_score_adj = p->signal->oom_score_adj;
 		if (oom_score_adj < min_score_adj) {
 			task_unlock(p);

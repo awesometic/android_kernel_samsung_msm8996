@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -499,6 +499,8 @@ typedef struct sSirMbMsgP2p
 
 #define SIR_HAL_SET_WOW_PULSE_CMD          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 193)
 
+#define SIR_HAL_SET_WAKEUP_GPIO_CMD        (SIR_HAL_ITC_MSG_TYPES_BEGIN + 194)
+
 #define SIR_HAL_TRAFFIC_STATS_IND          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 195)
 
 #ifdef WLAN_FEATURE_11W
@@ -533,11 +535,11 @@ typedef struct sSirMbMsgP2p
 
 #define SIR_HAL_FLUSH_LOG_TO_FW            (SIR_HAL_ITC_MSG_TYPES_BEGIN + 218)
 
-#define SIR_HAL_GET_RSSI                   (SIR_HAL_ITC_MSG_TYPES_BEGIN + 219)
+#define SIR_HAL_GET_PEER_INFO              (SIR_HAL_ITC_MSG_TYPES_BEGIN + 219)
 
 #define SIR_HAL_SMPS_FORCE_MODE_IND        (SIR_HAL_ITC_MSG_TYPES_BEGIN + 220)
 
-/* 221 unused */
+#define SIR_HAL_GET_ISOLATION              (SIR_HAL_ITC_MSG_TYPES_BEGIN + 221)
 
 #define SIR_HAL_START_ROAM_CANDIDATE_LOOKUP_REQ (SIR_HAL_ITC_MSG_TYPES_BEGIN + 222)
 
@@ -723,8 +725,7 @@ typedef struct sSirMbMsgP2p
 #define SIR_HAL_CONFIG_GUARD_TIME          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 315)
 #define SIR_HAL_SET_PASSPOINT_LIST_REQ     (SIR_HAL_ITC_MSG_TYPES_BEGIN + 316)
 #define SIR_HAL_RESET_PASSPOINT_LIST_REQ   (SIR_HAL_ITC_MSG_TYPES_BEGIN + 317)
-/* 318 unused */
-
+#define SIR_HAL_DSRC_RADIO_CHAN_STATS_REQ  (SIR_HAL_ITC_MSG_TYPES_BEGIN + 318)
 #define SIR_HAL_OCB_SET_CONFIG_CMD          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 319)
 #define SIR_HAL_OCB_SET_UTC_TIME_CMD        (SIR_HAL_ITC_MSG_TYPES_BEGIN + 320)
 #define SIR_HAL_OCB_START_TIMING_ADVERT_CMD (SIR_HAL_ITC_MSG_TYPES_BEGIN + 321)
@@ -733,7 +734,7 @@ typedef struct sSirMbMsgP2p
 #define SIR_HAL_DCC_GET_STATS_CMD           (SIR_HAL_ITC_MSG_TYPES_BEGIN + 324)
 #define SIR_HAL_DCC_CLEAR_STATS_CMD         (SIR_HAL_ITC_MSG_TYPES_BEGIN + 325)
 #define SIR_HAL_DCC_UPDATE_NDL_CMD          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 326)
-#define SIR_HAL_FW_MEM_DUMP_REQ            (SIR_HAL_ITC_MSG_TYPES_BEGIN + 327)
+/* FW Memory Dump feature is deprecated */
 #define SIR_HAL_START_STOP_LOGGING          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 328)
 #define SIR_HAL_EXTSCAN_STATUS_IND          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 329)
 
@@ -780,6 +781,19 @@ typedef struct sSirMbMsgP2p
 #define SIR_HAL_SHORT_RETRY_LIMIT_CNT       (SIR_HAL_ITC_MSG_TYPES_BEGIN + 363)
 #define SIR_HAL_LONG_RETRY_LIMIT_CNT        (SIR_HAL_ITC_MSG_TYPES_BEGIN + 364)
 #define SIR_HAL_STA_INACTIVITY_TIMEOUT      (SIR_HAL_ITC_MSG_TYPES_BEGIN + 365)
+#define SIR_HAL_RX_CHN_STATUS_EVENT         (SIR_HAL_ITC_MSG_TYPES_BEGIN + 366)
+
+#ifdef WLAN_FEATURE_LINK_LAYER_STATS
+#define SIR_HAL_LL_STATS_EXT_SET_THRESHOLD  (SIR_HAL_ITC_MSG_TYPES_BEGIN + 367)
+#endif
+
+#define SIR_HAL_SET_REORDER_TIMEOUT_CMDID   (SIR_HAL_ITC_MSG_TYPES_BEGIN + 368)
+#define SIR_HAL_SET_RX_BLOCKSIZE_CMDID      (SIR_HAL_ITC_MSG_TYPES_BEGIN + 369)
+#define SIR_HAL_GET_CHAIN_RSSI_REQ          (SIR_HAL_ITC_MSG_TYPES_BEGIN + 370)
+#define SIR_HAL_POWER_DEBUG_STATS_REQ       (SIR_HAL_ITC_MSG_TYPES_BEGIN + 371)
+#define SIR_HAL_GET_PEER_INFO_EXT           (SIR_HAL_ITC_MSG_TYPES_BEGIN + 372)
+#define SIR_HAL_GET_PEER_INFO_EXT_IND       (SIR_HAL_ITC_MSG_TYPES_BEGIN + 373)
+#define SIR_HAL_ACTION_FRAME_RANDOM_MAC     (SIR_HAL_ITC_MSG_TYPES_BEGIN + 374)
 
 #define SIR_HAL_MSG_TYPES_END              (SIR_HAL_MSG_TYPES_BEGIN + 0x1FF)
 
@@ -822,14 +836,8 @@ typedef struct sSirMbMsgP2p
 
 // Message from Hal to send out a DEL-TS indication
 #define SIR_LIM_DEL_TS_IND                  (SIR_LIM_ITC_MSG_TYPES_BEGIN + 0xE)
-//Message from HAL to send BA global timer timeout
-#define SIR_LIM_ADD_BA_IND                  (SIR_LIM_ITC_MSG_TYPES_BEGIN + 0xF)
-//Indication from HAL to delete all the BA sessions when the BA activity check timer is disabled
-#define SIR_LIM_DEL_BA_ALL_IND                  (SIR_LIM_ITC_MSG_TYPES_BEGIN + 0x10)
 //Indication from HAL to delete Station context
 #define SIR_LIM_DELETE_STA_CONTEXT_IND          (SIR_LIM_ITC_MSG_TYPES_BEGIN + 0x11)
-//Indication from HAL to delete BA
-#define SIR_LIM_DEL_BA_IND                      (SIR_LIM_ITC_MSG_TYPES_BEGIN + 0x12)
 #define SIR_LIM_UPDATE_BEACON                   (SIR_LIM_ITC_MSG_TYPES_BEGIN + 0x13)
 
 

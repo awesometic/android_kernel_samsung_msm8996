@@ -2092,7 +2092,8 @@ static ssize_t p9220_store_addr(struct device *dev,
 	struct p9220_charger_data *charger = container_of(psy, struct p9220_charger_data, psy_chg);
 	int x;
 	if (sscanf(buf, "0x%x\n", &x) == 1) {
-		charger->addr = x;
+		if (x >= 0 && x <= 0x8000)
+			charger->addr = x;
 	}
 	return count;
 }
@@ -2114,7 +2115,8 @@ static ssize_t p9220_store_size(struct device *dev,
 	struct p9220_charger_data *charger = container_of(psy, struct p9220_charger_data, psy_chg);
 	int x;
 	if (sscanf(buf, "%d\n", &x) == 1) {
-		charger->size = x;
+		if (x > 0  && x < (PAGE_SIZE/50))
+			charger->size = x;
 	}
 	return count;
 }

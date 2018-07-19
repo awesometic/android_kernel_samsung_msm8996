@@ -87,6 +87,9 @@ static const char* ISP_COMPANION_BINARY_PATH = "/data/log/CamFW_Companion.bin";
 static const char* ISP_COMPANION_BINARY_PATH = "/data/media/0/CamFW_Companion.bin";
 #endif
 
+//  Enable to use default FW and master set file at /sdcard folder for test purpose only.
+//#define USE_C3_FW_AT_SDCARD_FOLDER
+
 extern struct regulator *pwr_binning_reg;
 
 #if defined(CONFIG_EXTCON) && defined(CONFIG_BATTERY_SAMSUNG)
@@ -811,7 +814,7 @@ static int msm_companion_fw_write(struct companion_device *companion_dev)
 	struct spi_transfer tx;
 	char *sd_fw_isp_path = NULL;
 	char *cc_fw_isp_path = NULL;
-	uint8_t iter = 0, crc_pass = 0;
+	uint8_t iter = 0, crc_pass = 0, max_iter = 3;
 	uint32_t crc_cal = ~0;
 	uint16_t read_value = 0xFFFF;
 
@@ -842,6 +845,8 @@ static int msm_companion_fw_write(struct companion_device *companion_dev)
 		fw_name[FW_PATH_CC][FW_NAME_MASTER][REV_OFFSET_MASTER_CC] = '1';
 	} else {
 		pr_err("[syscamera][%s::%d][Invalid Companion Version : %d]\n", __FUNCTION__, __LINE__, companion_version_info);
+		/* restore kernel memory setting */
+		set_fs(old_fs);
 		return -EIO;
 	}
 
@@ -850,12 +855,13 @@ static int msm_companion_fw_write(struct companion_device *companion_dev)
 	pr_err("[syscamera][%s::%d] sd path = %s, cc path = %s\n", __FUNCTION__, __LINE__, sd_fw_isp_path, cc_fw_isp_path);
 	pr_err("[syscamera][%s::%d] cc_fw_isp_path = %s, cc_master_isp_path = %s\n", __FUNCTION__, __LINE__, fw_name[FW_PATH_CC][FW_NAME_ISP], fw_name[FW_PATH_CC][FW_NAME_MASTER]);
 
-	for(iter = 0; iter < 3; iter ++)
-	{
+	for (iter = 0; iter < max_iter; iter++) {
+#ifdef USE_C3_FW_AT_SDCARD_FOLDER
 		isp_filp = filp_open(sd_fw_isp_path, O_RDONLY, 0);
 		if (IS_ERR(isp_filp)) {
 			pr_err("[syscamera]%s does not exist, err %ld, search next path.\n",
 					sd_fw_isp_path, PTR_ERR(isp_filp));
+#endif
 			isp_filp = filp_open(cc_fw_isp_path, O_RDONLY, 0);
 			if (IS_ERR(isp_filp)) {
 				pr_err("[syscamera]failed to open %s, err %ld\n",
@@ -865,13 +871,25 @@ static int msm_companion_fw_write(struct companion_device *companion_dev)
 			} else {
 				CDBG("[syscamera]open success : %s\n", cc_fw_isp_path);
 			}
+#ifdef USE_C3_FW_AT_SDCARD_FOLDER
 		} else {
 			CDBG("[syscamera]open success : %s\n", sd_fw_isp_path);
 		}
+#endif
 
 		isp_size = isp_filp->f_path.dentry->d_inode->i_size;
 		isp_fsize = isp_size - isp_vsize;
 		CDBG_FW("[syscamera]ISP size %d, fsize %d Bytes\n", isp_size, isp_fsize);
+		if(isp_size < 16) {
+			pr_err("fatal : invalid file size, %d Bytes\n", isp_size);
+
+			if(iter == max_iter-1) {
+				ret = -EIO;
+				goto isp_filp_ferr;
+			} else {
+				continue;
+			}
+		}
 
 		/* version info is located at the end of 16byte of the buffer. */
 		isp_vbuf = vmalloc(isp_size);
@@ -1152,10 +1170,12 @@ static int msm_companion_master_write(struct companion_device *companion_dev)
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
+#ifdef USE_C3_FW_AT_SDCARD_FOLDER
 	cc_filp = filp_open(fw_name[FW_PATH_SD][FW_NAME_MASTER], O_RDONLY, 0);
 	if (IS_ERR(cc_filp)) {
 		pr_err("[syscamera]%s does not exist, err %ld, search next path.\n",
 				fw_name[FW_PATH_SD][FW_NAME_MASTER], PTR_ERR(cc_filp));
+#endif
 		cc_filp = filp_open(fw_name[FW_PATH_CC][FW_NAME_MASTER], O_RDONLY, 0);
 		if (IS_ERR(cc_filp)) {
 			pr_err("[syscamera]failed to open %s, err %ld\n",
@@ -1164,9 +1184,11 @@ static int msm_companion_master_write(struct companion_device *companion_dev)
 		} else {
 			pr_err("[syscamera]open success : %s\n", fw_name[FW_PATH_CC][FW_NAME_MASTER]);
 		}
+#ifdef USE_C3_FW_AT_SDCARD_FOLDER
 	} else {
 		pr_err("[syscamera]open success : %s\n", fw_name[FW_PATH_SD][FW_NAME_MASTER]);
 	}
+#endif
 
 	if (!cc_filp) {
 		pr_err("cc_flip is NULL\n");

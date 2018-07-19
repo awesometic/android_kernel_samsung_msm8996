@@ -21,8 +21,8 @@
 
 #include <linux/module.h>
 #include <linux/spi/spi.h>
-#ifdef ENABLE_SENSORS_FPRINT_SECURE
 #include <linux/wakelock.h>
+#ifdef ENABLE_SENSORS_FPRINT_SECURE
 #include <linux/clk.h>
 #include <linux/pm_runtime.h>
 #include <linux/spi/spidev.h>
@@ -188,6 +188,7 @@ struct etspi_data {
 	int user_pid;
 	int signal_id;
 #endif
+	struct wake_lock fp_signal_lock;
 	bool tz_mode;
 	int detect_period;
 	int detect_threshold;

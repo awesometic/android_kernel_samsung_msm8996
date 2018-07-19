@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -476,6 +476,7 @@ static int __configure_pipe_params(struct msm_fb_data_type *mfd,
 	int ret = 0;
 	u32 left_lm_w = left_lm_w_from_mfd(mfd);
 	u32 flags;
+	bool is_right_blend = false;
 
 	struct mdss_mdp_mixer *mixer = NULL;
 	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
@@ -583,6 +584,7 @@ static int __configure_pipe_params(struct msm_fb_data_type *mfd,
 	 * staging, same pipe will be stagged on both layer mixers.
 	 */
 	if (mdata->has_src_split) {
+		is_right_blend = pipe->is_right_blend;
 		if (left_blend_pipe) {
 			if (pipe->priority <= left_blend_pipe->priority) {
 				pr_err("priority limitation. left:%d right%d\n",
@@ -592,7 +594,7 @@ static int __configure_pipe_params(struct msm_fb_data_type *mfd,
 				goto end;
 			} else {
 				pr_debug("pipe%d is a right_pipe\n", pipe->num);
-				pipe->is_right_blend = true;
+				is_right_blend = true;
 			}
 		} else if (pipe->is_right_blend) {
 			/*
@@ -601,7 +603,7 @@ static int __configure_pipe_params(struct msm_fb_data_type *mfd,
 			 */
 			mdss_mdp_mixer_pipe_unstage(pipe, pipe->mixer_left);
 			mdss_mdp_mixer_pipe_unstage(pipe, pipe->mixer_right);
-			pipe->is_right_blend = false;
+			is_right_blend = false;
 		}
 
 		if (is_split_lm(mfd) && __layer_needs_src_split(layer)) {
@@ -627,6 +629,7 @@ static int __configure_pipe_params(struct msm_fb_data_type *mfd,
 			}
 			pipe->src_split_req = false;
 		}
+		pipe->is_right_blend = is_right_blend;
 	}
 
 	pipe->multirect.mode = vinfo->multirect.mode;
@@ -1937,7 +1940,7 @@ static int __validate_layers(struct msm_fb_data_type *mfd,
 
 validate_skip:
 	__handle_free_list(mdp5_data, validate_info_list, layer_count);
-
+	MDSS_XLOG(mfd->index, __LINE__);
 	ret = __validate_secure_display(mdp5_data);
 
 validate_exit:
@@ -1989,7 +1992,45 @@ end:
 
 	pr_debug("fb%d validated layers =%d\n", mfd->index, i);
 
+	MDSS_XLOG(mfd->index, i);
 	return ret;
+}
+
+/*
+ * __parse_frc_info() - parse frc info from userspace
+ * @mdp5_data: mdss data per FB device
+ * @input_frc: frc info from user space
+ *
+ * This function fills the FRC info of current device which will be used
+ * during following kickoff.
+ */
+static void __parse_frc_info(struct mdss_overlay_private *mdp5_data,
+	struct mdp_frc_info *input_frc)
+{
+	struct mdss_mdp_ctl *ctl = mdp5_data->ctl;
+	struct mdss_mdp_frc_fsm *frc_fsm = mdp5_data->frc_fsm;
+
+	if (input_frc->flags & MDP_VIDEO_FRC_ENABLE) {
+		struct mdss_mdp_frc_info *frc_info = &frc_fsm->frc_info;
+
+		if (!frc_fsm->enable) {
+			/* init frc_fsm when first entry */
+			mdss_mdp_frc_fsm_init_state(frc_fsm);
+			/* keep vsync on when FRC is enabled */
+			ctl->ops.add_vsync_handler(ctl,
+					&ctl->frc_vsync_handler);
+		}
+
+		frc_info->cur_frc.frame_cnt = input_frc->frame_cnt;
+		frc_info->cur_frc.timestamp = input_frc->timestamp;
+	} else if (frc_fsm->enable) {
+		/* remove vsync handler when FRC is disabled */
+		ctl->ops.remove_vsync_handler(ctl, &ctl->frc_vsync_handler);
+	}
+
+	frc_fsm->enable = input_frc->flags & MDP_VIDEO_FRC_ENABLE;
+
+	pr_debug("frc_enable=%d\n", frc_fsm->enable);
 }
 
 /*
@@ -2027,6 +2068,7 @@ int mdss_mdp_layer_pre_commit(struct msm_fb_data_type *mfd,
 	/* handle null commit */
 	if (!layer_count) {
 		__handle_free_list(mdp5_data, NULL, layer_count);
+		MDSS_XLOG(mfd->index, __LINE__);
 		/* Check for secure state transition. */
 		return __validate_secure_display(mdp5_data);
 	}
@@ -2074,6 +2116,7 @@ int mdss_mdp_layer_pre_commit(struct msm_fb_data_type *mfd,
 	i = 0;
 
 	mutex_lock(&mdp5_data->list_lock);
+	MDSS_XLOG(mfd->index, __LINE__);
 	list_for_each_entry_safe(pipe, tmp, &mdp5_data->pipes_used, list) {
 		if (pipe->flags & MDP_SOLID_FILL) {
 			src_data[i] = NULL;
@@ -2095,6 +2138,9 @@ int mdss_mdp_layer_pre_commit(struct msm_fb_data_type *mfd,
 		pr_err("unable to start overlay %d (%d)\n", mfd->index, ret);
 		goto map_err;
 	}
+
+	if (commit->frc_info)
+		__parse_frc_info(mdp5_data, commit->frc_info);
 
 	ret = __handle_buffer_fences(mfd, commit, layer_list);
 
@@ -2172,6 +2218,12 @@ int mdss_mdp_layer_pre_commit_wfd(struct msm_fb_data_type *mfd,
 		wfd = mdp5_data->wfd;
 		output_layer = commit->output_layer;
 
+		if (output_layer->buffer.plane_count > MAX_PLANES) {
+       		  pr_err("Output buffer plane_count exceeds MAX_PLANES limit:%d\n",
+              		 output_layer->buffer.plane_count);
+         	  return -EINVAL;
+      		}
+
 		data = mdss_mdp_wfd_add_data(wfd, output_layer);
 		if (IS_ERR_OR_NULL(data))
 			return PTR_ERR(data);
@@ -2202,6 +2254,14 @@ int mdss_mdp_layer_pre_commit_wfd(struct msm_fb_data_type *mfd,
 		sync_pt_data = &mfd->mdp_sync_pt_data;
 		mutex_lock(&sync_pt_data->sync_mutex);
 		count = sync_pt_data->acq_fen_cnt;
+
+		if (count >= MDP_MAX_FENCE_FD) {
+			pr_err("Reached maximum possible value for fence count\n");
+			mutex_unlock(&sync_pt_data->sync_mutex);
+			rc = -EINVAL;
+			goto input_layer_err;
+		}
+
 		sync_pt_data->acq_fen[count] = fence;
 		sync_pt_data->acq_fen_cnt++;
 		mutex_unlock(&sync_pt_data->sync_mutex);
@@ -2249,11 +2309,14 @@ int mdss_mdp_layer_atomic_validate_wfd(struct msm_fb_data_type *mfd,
 		goto validate_failed;
 	}
 
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
 	rc = mdss_mdp_wfd_setup(wfd, output_layer);
 	if (rc) {
 		pr_err("fail to prepare wfd = %d\n", rc);
+		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 		goto validate_failed;
 	}
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 
 	rc = mdss_mdp_layer_atomic_validate(mfd, file, commit);
 	if (rc) {

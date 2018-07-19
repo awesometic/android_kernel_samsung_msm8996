@@ -134,6 +134,7 @@ enum {
 	CCIC_DOCK_DETACHED	= 0,
 	CCIC_DOCK_HMT		= 105,
 	CCIC_DOCK_ABNORMAL	= 106,
+	CCIC_DOCK_NEW		= 200,  /* For New uevent */
 };
 
 enum VDM_MSG_IRQ_State {

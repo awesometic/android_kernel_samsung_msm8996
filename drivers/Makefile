@@ -178,8 +178,8 @@ else
 	obj-$(CONFIG_BATTERY_SAMSUNG)	+= battery/
 endif
 
+obj-$(CONFIG_SENSORS)		+= sensors/
 obj-$(CONFIG_SENSORS_SSC)	+= sensors/
-
 # DS5 streamline
 obj-$(CONFIG_GATOR)		+= gator/
 

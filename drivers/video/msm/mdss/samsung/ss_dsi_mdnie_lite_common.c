@@ -87,6 +87,11 @@ char mdnie_hdr_name[][NAME_STRING_MAX] = {
 	"HDR_3"
 };
 
+char mdnie_light_notification_name[][NAME_STRING_MAX] = {
+	"LIGHT_NOTIFICATION_OFF",
+	"LIGHT_NOTIFICATION_ON"
+};
+
 void send_dsi_tcon_mdnie_register(struct samsung_display_driver_data *vdd,
 	struct dsi_cmd_desc *tune_data_dsi0, struct dsi_cmd_desc *tune_data_dsi1, struct mdnie_lite_tun_type *mdnie_tune_state)
 {
@@ -189,6 +194,14 @@ int update_dsi_tcon_mdnie_register(struct samsung_display_driver_data *vdd)
 			mdnie_tune_state->hbm_enable = false;
 
 		/*
+	 	* Safe Code for When LCD ON is should be LIGHT_NOTIFICATION_OFF
+	 	*/
+		if(vdd->mdnie_lcd_on_notifiy) {
+			mdnie_tune_state->light_notification = LIGHT_NOTIFICATION_OFF;
+			vdd->mdnie_lcd_on_notifiy = false;
+		}
+
+		/*
 		* mDnie priority
 		* Accessibility > HBM > Screen Mode
 		*/
@@ -197,6 +210,14 @@ int update_dsi_tcon_mdnie_register(struct samsung_display_driver_data *vdd)
 				tune_data_dsi0 = mdnie_data.DSI0_BYPASS_MDNIE;
 			else
 				tune_data_dsi1 = mdnie_data.DSI1_BYPASS_MDNIE;
+		} else if (mdnie_tune_state->light_notification) {
+			if (mdnie_tune_state->index == DSI_CTRL_0) {
+				if(mdnie_data.light_notification_tune_value_dsi0)
+					tune_data_dsi0 = mdnie_data.light_notification_tune_value_dsi0[mdnie_tune_state->light_notification];
+			} else {
+				if(mdnie_data.light_notification_tune_value_dsi1)
+					tune_data_dsi1 = mdnie_data.light_notification_tune_value_dsi1[mdnie_tune_state->light_notification];
+			}
 		} else if (mdnie_tune_state->mdnie_accessibility == COLOR_BLIND) {
 			if (mdnie_tune_state->index == DSI_CTRL_0)
 				tune_data_dsi0  = mdnie_data.DSI0_COLOR_BLIND_MDNIE;
@@ -222,6 +243,11 @@ int update_dsi_tcon_mdnie_register(struct samsung_display_driver_data *vdd)
 				tune_data_dsi0  = mdnie_data.DSI0_GRAYSCALE_NEGATIVE_MDNIE;
 			else
 				tune_data_dsi1  = mdnie_data.DSI1_GRAYSCALE_NEGATIVE_MDNIE;
+		} else if (mdnie_tune_state->color_lens_enable == true) {
+			if (mdnie_tune_state->index == DSI_CTRL_0)
+				tune_data_dsi0  = mdnie_data.DSI0_COLOR_LENS_MDNIE;
+			else
+				tune_data_dsi1  = mdnie_data.DSI1_COLOR_LENS_MDNIE;
 		} else if (mdnie_tune_state->hdr) {
 			if (mdnie_tune_state->index == DSI_CTRL_0)
 				tune_data_dsi0 = mdnie_data.hdr_tune_value_dsi0[mdnie_tune_state->hdr];
@@ -887,10 +913,10 @@ static ssize_t night_mode_store(struct device *dev,
 		if (mdnie_tune_state->index == DSI_CTRL_0) {
 			if(((idx >=0) && (idx < mdnie_data.dsi0_max_night_mode_index)) && (enable == true)) {
 				if (!IS_ERR_OR_NULL(mdnie_data.dsi0_night_mode_table)) {
-					buffer = &mdnie_data.dsi0_night_mode_table[(MDNIE_NIGHT_MODE_CMD_SIZE * idx)];
+					buffer = &mdnie_data.dsi0_night_mode_table[(MDNIE_SCR_CMD_SIZE * idx)];
 					if (!IS_ERR_OR_NULL(mdnie_data.DSI0_NIGHT_MODE_MDNIE_SCR)) {
 						memcpy(&mdnie_data.DSI0_NIGHT_MODE_MDNIE_SCR[mdnie_data.mdnie_color_blinde_cmd_offset],
-							buffer, MDNIE_NIGHT_MODE_CMD_SIZE);
+							buffer, MDNIE_SCR_CMD_SIZE);
 						mdnie_tune_state->night_mode_index = idx;
 					}
 				}
@@ -898,11 +924,75 @@ static ssize_t night_mode_store(struct device *dev,
 		} else {
 			if(((idx >=0) && (idx < mdnie_data.dsi1_max_night_mode_index)) && (enable == true)) {
 				if (!IS_ERR_OR_NULL(mdnie_data.dsi1_night_mode_table)) {
-					buffer = &mdnie_data.dsi1_night_mode_table[(MDNIE_NIGHT_MODE_CMD_SIZE * idx)];
+					buffer = &mdnie_data.dsi1_night_mode_table[(MDNIE_SCR_CMD_SIZE * idx)];
 					if (!IS_ERR_OR_NULL(mdnie_data.DSI1_NIGHT_MODE_MDNIE_SCR)) {
 						memcpy(&mdnie_data.DSI1_NIGHT_MODE_MDNIE_SCR[mdnie_data.mdnie_color_blinde_cmd_offset],
-							buffer, MDNIE_NIGHT_MODE_CMD_SIZE);
+							buffer, MDNIE_SCR_CMD_SIZE);
 						mdnie_tune_state->night_mode_index = idx;
+					}
+				}
+			}
+		}
+	}
+
+	update_dsi_tcon_mdnie_register(vdd);
+	return size;
+}
+
+static ssize_t color_lens_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int buffer_pos = 0;
+	struct mdnie_lite_tun_type *mdnie_tune_state = NULL;
+
+	list_for_each_entry_reverse(mdnie_tune_state, &mdnie_list, used_list) {
+		buffer_pos += snprintf(buf, 256, "%d %d %d", mdnie_tune_state->color_lens_enable, mdnie_tune_state->color_lens_color, mdnie_tune_state->color_lens_level);
+	}
+	return buffer_pos;
+}
+
+static ssize_t color_lens_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
+{
+	int enable, color, level;
+	char *buffer;
+	struct mdnie_lite_tun_type *mdnie_tune_state = NULL;
+	struct mdnie_lite_tun_type *real_mdnie_tune_state = NULL;
+	struct samsung_display_driver_data *vdd = NULL;
+
+	sscanf(buf, "%d %d %d", &enable, &color, &level);
+
+	list_for_each_entry_reverse(mdnie_tune_state, &mdnie_list, used_list) {
+		real_mdnie_tune_state = mdnie_tune_state;
+
+		if (!vdd)
+			vdd = mdnie_tune_state->vdd;
+
+		mdnie_tune_state->color_lens_enable = enable;
+
+		DPRINT("%s: enable = %d, color = %d, level = %d\n", __func__, enable, color, level);
+
+		if (mdnie_tune_state->index == DSI_CTRL_0) {
+			if ((enable == true) && ((color >= 0) && (color < COLOR_LENS_COLOR_MAX)) && ((level >= 0) && (level < COLOR_LENS_LEVEL_MAX))) {
+				if (!IS_ERR_OR_NULL(mdnie_data.dsi0_color_lens_table)) {
+					buffer = &mdnie_data.dsi0_color_lens_table[(color * MDNIE_SCR_CMD_SIZE * COLOR_LENS_LEVEL_MAX) + (MDNIE_SCR_CMD_SIZE * level)];
+					if (!IS_ERR_OR_NULL(mdnie_data.DSI0_COLOR_LENS_MDNIE_SCR)) {
+						memcpy(&mdnie_data.DSI0_COLOR_LENS_MDNIE_SCR[mdnie_data.mdnie_color_blinde_cmd_offset],
+							buffer, MDNIE_SCR_CMD_SIZE);
+						mdnie_tune_state->color_lens_color = color;
+						mdnie_tune_state->color_lens_level = level;
+					}
+				}
+			}
+		} else {
+			if ((enable == true) && ((color >= 0) && (color < COLOR_LENS_COLOR_MAX)) && ((level >= 0) && (level < COLOR_LENS_LEVEL_MAX))) {
+				if (!IS_ERR_OR_NULL(mdnie_data.dsi1_color_lens_table)) {
+					buffer = &mdnie_data.dsi1_color_lens_table[(color * MDNIE_SCR_CMD_SIZE * COLOR_LENS_LEVEL_MAX) + (MDNIE_SCR_CMD_SIZE * level)];
+					if (!IS_ERR_OR_NULL(mdnie_data.DSI1_COLOR_LENS_MDNIE_SCR)) {
+						memcpy(&mdnie_data.DSI1_COLOR_LENS_MDNIE_SCR[mdnie_data.mdnie_color_blinde_cmd_offset],
+							buffer, MDNIE_SCR_CMD_SIZE);
+						mdnie_tune_state->color_lens_color = color;
+						mdnie_tune_state->color_lens_level = level;
 					}
 				}
 			}
@@ -953,6 +1043,55 @@ static ssize_t hdr_store(struct device *dev,
 
 		backup = mdnie_tune_state->hdr;
 		mdnie_tune_state->hdr = value;
+
+		DPRINT("%s : (%d) -> (%d)\n", __func__, backup, value);
+	}
+
+	update_dsi_tcon_mdnie_register(vdd);
+
+	return size;
+}
+
+static ssize_t light_notification_show(struct device *dev,
+					 struct device_attribute *attr,
+					 char *buf)
+{
+	int buffer_pos = 0;
+	struct mdnie_lite_tun_type *mdnie_tune_state = NULL;
+
+	buffer_pos += snprintf(buf, 256, "Current LIGHT NOTIFICATION SETTING : ");
+	list_for_each_entry_reverse(mdnie_tune_state, &mdnie_list , used_list) {
+		buffer_pos += snprintf(buf + buffer_pos, 256, "DSI%d : %s ", mdnie_tune_state->index, mdnie_light_notification_name[mdnie_tune_state->light_notification]);
+	}
+	buffer_pos += snprintf(buf + buffer_pos, 256, "\n");
+
+	DPRINT("%s\n", buf);
+
+	return buffer_pos;
+}
+
+static ssize_t light_notification_store(struct device *dev,
+					  struct device_attribute *attr,
+					  const char *buf, size_t size)
+{
+	int value;
+	int backup;
+	struct mdnie_lite_tun_type *mdnie_tune_state = NULL;
+	struct samsung_display_driver_data *vdd = NULL;
+
+	sscanf(buf, "%d", &value);
+
+	if (value < LIGHT_NOTIFICATION_OFF || value >= LIGHT_NOTIFICATION_MAX) {
+		DPRINT("[ERROR] wrong light notification value : %d\n", value);
+		return size;
+	}
+
+	list_for_each_entry_reverse(mdnie_tune_state, &mdnie_list , used_list) {
+		if (!vdd)
+			vdd = mdnie_tune_state->vdd;
+
+		backup = mdnie_tune_state->light_notification;
+		mdnie_tune_state->light_notification = value;
 
 		DPRINT("%s : (%d) -> (%d)\n", __func__, backup, value);
 	}
@@ -1062,7 +1201,9 @@ static DEVICE_ATTR(sensorRGB, 0664, sensorRGB_show, sensorRGB_store);
 static DEVICE_ATTR(whiteRGB, 0664, whiteRGB_show, whiteRGB_store);
 static DEVICE_ATTR(mdnie_ldu, 0664, mdnie_ldu_show, mdnie_ldu_store);
 static DEVICE_ATTR(night_mode, 0664, night_mode_show, night_mode_store);
+static DEVICE_ATTR(color_lens, 0664, color_lens_show, color_lens_store);
 static DEVICE_ATTR(hdr, 0664, hdr_show, hdr_store);
+static DEVICE_ATTR(light_notification, 0664, light_notification_show, light_notification_store);
 static DEVICE_ATTR(cabc, 0664, cabc_show, cabc_store);
 static DEVICE_ATTR(hmt_color_temperature, 0664, hmt_color_temperature_show, hmt_color_temperature_store);
 
@@ -1175,9 +1316,19 @@ void create_tcon_mdnie_node(void)
 			dev_attr_night_mode.attr.name);
 
 	if (device_create_file
+		(tune_mdnie_dev, &dev_attr_color_lens) < 0)
+		DPRINT("Failed to create device file(%s)!=n",
+			dev_attr_color_lens.attr.name);
+
+	if (device_create_file
 		(tune_mdnie_dev, &dev_attr_hdr) < 0)
 		DPRINT("Failed to create device file(%s)!=n",
 			dev_attr_hdr.attr.name);
+
+	if (device_create_file
+		(tune_mdnie_dev, &dev_attr_light_notification) < 0)
+		DPRINT("Failed to create device file(%s)!=n",
+			dev_attr_light_notification.attr.name);
 
 	/* hmt_color_temperature */
 	if (device_create_file
@@ -1226,6 +1377,7 @@ struct mdnie_lite_tun_type *init_dsi_tcon_mdnie_class(int index, struct samsung_
 		mdnie_tune_state->mdnie_mode = AUTO_MODE;
 		mdnie_tune_state->outdoor = OUTDOOR_OFF_MODE;
 		mdnie_tune_state->hdr = HDR_OFF;
+		mdnie_tune_state->light_notification = LIGHT_NOTIFICATION_OFF;
 
 		mdnie_tune_state->mdnie_accessibility = ACCESSIBILITY_OFF;
 
@@ -1239,6 +1391,10 @@ struct mdnie_lite_tun_type *init_dsi_tcon_mdnie_class(int index, struct samsung_
 
 		mdnie_tune_state->night_mode_enable = false;
 		mdnie_tune_state->night_mode_index = 0;
+
+		mdnie_tune_state->color_lens_enable = false;
+		mdnie_tune_state->color_lens_color = 0;
+		mdnie_tune_state->color_lens_level = 0;
 
 		INIT_LIST_HEAD(&mdnie_tune_state->used_list);
 

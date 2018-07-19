@@ -473,6 +473,7 @@ static const struct attribute_group da9155_attr_group = {
 	.attrs = da9155_attributes,
 };
 
+
 static int da9155_charger_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
@@ -539,12 +540,12 @@ static int da9155_charger_probe(struct i2c_client *client,
 #if defined(CONFIG_BATTERY_NOTIFIER)
 	da9155_set_battery_property(charger);
 #endif
-
 	ret = sysfs_create_group(&charger->psy_chg.dev->kobj, &da9155_attr_group);
 	if (ret) {
 		dev_info(&client->dev,
 			"%s: sysfs_create_group failed\n", __func__);
 	}
+
 	pr_info("%s: DA9155 Charger Driver Loaded\n", __func__);
 
 	return 0;

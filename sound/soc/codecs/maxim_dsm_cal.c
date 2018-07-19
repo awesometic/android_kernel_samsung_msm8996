@@ -306,8 +306,10 @@ static int maxdsm_cal_get_temp_from_power_supply(void)
 
 static void maxdsm_cal_completed(struct maxim_dsm_cal *mdc)
 {
+#ifdef WRITE_SPEAKER_CAL_VALUE_AT_KERNEL
 	char rdc[12] = {0,};
 	char temp[12] = {0,};
+#endif
 	int ret;
 
 	ret = maxdsm_cal_end_calibration(mdc);
@@ -319,7 +321,7 @@ static void maxdsm_cal_completed(struct maxim_dsm_cal *mdc)
 
 	/* We try to get ambient temp by using power supply core */
 	mdc->values.temp = maxdsm_cal_get_temp_from_power_supply();
-
+#ifdef WRITE_SPEAKER_CAL_VALUE_AT_KERNEL
 	sprintf(rdc, "%x", mdc->values.rdc);
 	sprintf(temp, "%x",
 			mdc->values.temp < 0 ? 23 * 10 : mdc->values.temp);
@@ -333,7 +335,7 @@ static void maxdsm_cal_completed(struct maxim_dsm_cal *mdc)
 			FILEPATH_RDC_CAL, rdc, sizeof(rdc));
 	if (ret < 0)
 		mdc->values.rdc = ret;
-
+#endif
 	mdc->values.status = 0;
 
 	dbg_maxdsm("temp=%d rdc=0x%08x",

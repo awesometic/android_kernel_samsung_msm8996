@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -2468,10 +2468,11 @@ int msm_camera_write_sysfs(char* path, const char* data, uint32_t data_size)
 
   old_fs = get_fs();
   set_fs(KERNEL_DS);
-  filp = filp_open(path, O_RDWR|O_CREAT, 0666);
+  filp = filp_open(path, O_RDWR, 0660);
   if(IS_ERR(filp)){
     pr_err("%s: sysfs open file failed. [%s]", __func__, path);
-    return -1;
+    ret = -1;
+    goto ERROR;
   }
 
   ret = vfs_write(filp, data, data_size, &filp->f_pos);

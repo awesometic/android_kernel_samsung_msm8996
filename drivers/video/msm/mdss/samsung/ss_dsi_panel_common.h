@@ -785,6 +785,7 @@ struct samsung_display_driver_data {
 	int mdnie_tune_size4;
 	int mdnie_tune_size5;
 	int mdnie_tune_size6;
+	int mdnie_lcd_on_notifiy;
 	int mdnie_disable_trans_dimming;
 	u32 samsung_hw_config;
 

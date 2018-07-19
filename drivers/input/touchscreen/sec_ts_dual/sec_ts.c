@@ -1485,6 +1485,13 @@ static ssize_t sec_ts_regread_show(struct device *dev, struct device_attribute *
 
 	mutex_lock(&ts->device_mutex);
 
+	if ((lv1_readsize <= 0) || (lv1_readsize > PAGE_SIZE)) {
+		input_err(true, &ts->client->dev, "%s: invalid lv1_readsize = %d\n",
+				__func__, lv1_readsize);
+		lv1_readsize = 0;
+		goto malloc_err;
+	}
+
 	read_lv1_buff = kzalloc(lv1_readsize, GFP_KERNEL);
 	if (!read_lv1_buff) {
 		input_err(true, &ts->client->dev, "%s kzalloc failed\n", __func__);

@@ -2596,6 +2596,7 @@ static int do_anonymous_page(struct mm_struct *mm, struct vm_area_struct *vma,
 
 	pte_unmap(page_table);
 	
+
 	/* File mapping without ->vm_ops ? */
 	if (vma->vm_flags & VM_SHARED)
 		return VM_FAULT_SIGBUS;
@@ -3169,11 +3170,10 @@ static int handle_pte_fault(struct mm_struct *mm,
 	if (!pte_present(entry)) {
 		if (pte_none(entry)) {
 			if (vma->vm_ops)
-				return do_linear_fault(mm, vma, address, pte, pmd,
-						flags, entry);
-
-			return do_anonymous_page(mm, vma, address, pte, pmd,
-					flags);
+				return do_linear_fault(mm, vma, address,
+						pte, pmd, flags, entry);
+			return do_anonymous_page(mm, vma, address,
+						 pte, pmd, flags);
 		}
 		if (pte_file(entry))
 			return do_nonlinear_fault(mm, vma, address,

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016,2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -741,6 +741,8 @@ static void mbim_notify_complete(struct usb_ep *ep, struct usb_request *req)
 	struct f_mbim			*mbim = req->context;
 	struct usb_cdc_notification	*event = req->buf;
 
+	pr_debug("dev:%pK\n", mbim);
+
 	spin_lock(&mbim->lock);
 	switch (req->status) {
 	case 0:
@@ -766,10 +768,9 @@ static void mbim_notify_complete(struct usb_ep *ep, struct usb_request *req)
 		break;
 	}
 
-	mbim_do_notify(mbim);
 	spin_unlock(&mbim->lock);
 
-	pr_debug("%s: Exit\n", __func__);
+	pr_debug("dev:%pK Exit\n", mbim);
 }
 
 static void mbim_ep0out_complete(struct usb_ep *ep, struct usb_request *req)
@@ -779,6 +780,8 @@ static void mbim_ep0out_complete(struct usb_ep *ep, struct usb_request *req)
 	struct usb_function	*f = req->context;
 	struct f_mbim		*mbim = func_to_mbim(f);
 	struct mbim_ntb_input_size *ntb = NULL;
+
+	pr_debug("dev:%pK\n", mbim);
 
 	req->context = NULL;
 	if (req->status || req->actual != req->length) {
@@ -816,7 +819,7 @@ static void mbim_ep0out_complete(struct usb_ep *ep, struct usb_request *req)
 invalid:
 	usb_ep_set_halt(ep);
 
-	pr_err("%s: Failed\n", __func__);
+	pr_err("dev:%pK Failed\n", mbim);
 
 	return;
 }
@@ -872,6 +875,17 @@ fmbim_cmd_complete(struct usb_ep *ep, struct usb_request *req)
 	wake_up(&dev->read_wq);
 
 	return;
+}
+
+static void mbim_response_complete(struct usb_ep *ep, struct usb_request *req)
+{
+	struct f_mbim *mbim = req->context;
+
+	pr_debug("%s: queue notify request if any new response available\n"
+			, __func__);
+	spin_lock(&mbim->lock);
+	mbim_do_notify(mbim);
+	spin_unlock(&mbim->lock);
 }
 
 static int
@@ -953,6 +967,8 @@ mbim_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 		pr_debug("copied encapsulated_response %d bytes\n",
 			value);
 
+		req->complete = mbim_response_complete;
+		req->context = mbim;
 		break;
 
 	case ((USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8)

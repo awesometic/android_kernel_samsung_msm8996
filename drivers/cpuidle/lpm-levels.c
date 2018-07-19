@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -470,8 +470,7 @@ static int cpu_power_select(struct cpuidle_device *dev,
 	int best_level = -1;
 	uint32_t latency_us = pm_qos_request_for_cpu(PM_QOS_CPU_DMA_LATENCY,
 							dev->cpu);
-	uint32_t sleep_us =
-		(uint32_t)(ktime_to_us(tick_nohz_get_sleep_length()));
+	s64 sleep_us = ktime_to_us(tick_nohz_get_sleep_length());
 	uint32_t modified_time_us = 0;
 	uint32_t next_event_us = 0;
 	int i;
@@ -481,7 +480,7 @@ static int cpu_power_select(struct cpuidle_device *dev,
 	if (!cpu)
 		return -EINVAL;
 
-	if (sleep_disabled)
+	if (sleep_disabled || sleep_us  < 0)
 		return 0;
 
 	next_event_us = (uint32_t)(ktime_to_us(get_next_event_time(dev->cpu)));
@@ -489,7 +488,7 @@ static int cpu_power_select(struct cpuidle_device *dev,
 	for (i = 0; i < cpu->nlevels; i++) {
 		struct lpm_cpu_level *level = &cpu->levels[i];
 		struct power_params *pwr_params = &level->pwr;
-		uint32_t next_wakeup_us = sleep_us;
+		uint32_t next_wakeup_us = (uint32_t)sleep_us;
 		enum msm_pm_sleep_mode mode = level->mode;
 		bool allow;
 
@@ -629,10 +628,10 @@ static int cluster_select(struct lpm_cluster *cluster, bool from_idle)
 		if (level->notify_rpm && msm_rpm_waiting_for_ack())
 			continue;
 
-		if (sleep_us <= pwr_params->max_residency) {
-			best_level = i;
+		best_level = i;
+
+		if (from_idle && sleep_us <= pwr_params->max_residency)
 			break;
-		}
 	}
 
 	return best_level;
@@ -677,6 +676,8 @@ static int cluster_configure(struct lpm_cluster *cluster, int idx,
 	if (level->notify_rpm) {
 		struct cpumask nextcpu, *cpumask;
 		uint64_t us;
+		uint64_t sec;
+		uint64_t nsec;
 
 		us = get_cluster_sleep_time(cluster, &nextcpu, from_idle);
 		cpumask = level->disable_dynamic_routing ? NULL : &nextcpu;
@@ -688,7 +689,16 @@ static int cluster_configure(struct lpm_cluster *cluster, int idx,
 		}
 
 		us = us + 1;
-		do_div(us, USEC_PER_SEC/SCLK_HZ);
+		sec = us;
+		do_div(sec, USEC_PER_SEC);
+		nsec = us - sec * USEC_PER_SEC;
+
+		sec = sec * SCLK_HZ;
+		if (nsec > 0) {
+			nsec = nsec * NSEC_PER_USEC;
+			do_div(nsec, NSEC_PER_SEC/SCLK_HZ);
+		}
+		us = sec + nsec;
 		msm_mpm_enter_sleep(us, from_idle, cpumask);
 
 		if (cluster->no_saw_devices && !use_psci)

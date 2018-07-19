@@ -77,6 +77,11 @@ config PROC_STLOG
 	depends on PROC_FS
 	default y
 
+config PROC_DELLOG
+	bool "Enable Delete log"
+	depends on PROC_FS
+	default y
+
 config PROC_AVC
     bool "support (/proc/avc_msg)"
     default n

@@ -3,7 +3,7 @@
  *
  * This code is based on drivers/scsi/ufs/ufshcd.c
  * Copyright (C) 2011-2013 Samsung India Software Operations
- * Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * Authors:
  *	Santosh Yaraganavi <santosh.sy@samsung.com>
@@ -42,6 +42,8 @@
 #include <linux/devfreq.h>
 #include <linux/nls.h>
 #include <linux/of.h>
+#include <linux/blkdev.h>
+
 #include "ufshcd.h"
 #include "ufshci.h"
 #include "ufs_quirks.h"
@@ -864,6 +866,24 @@ static inline int ufshcd_get_lists_status(u32 reg)
 	return ((reg & 0xFF) >> 1) ^ 0x07;
 }
 
+#ifdef CUSTOMIZE_UPIU_FLAGS
+static void set_customized_upiu_flags(struct ufshcd_lrb *lrbp, u32 *upiu_flags)
+{
+	if (lrbp->command_type == UTP_CMD_TYPE_SCSI) {
+		if (lrbp->cmd->request->cmd_flags & REQ_WRITE) {
+			if (lrbp->cmd->request->cmd_flags & REQ_FLUSH)
+				*upiu_flags |= UPIU_TASK_ATTR_HEADQ;
+			else if (lrbp->cmd->request->cmd_flags & REQ_DISCARD)
+				*upiu_flags |= UPIU_TASK_ATTR_ORDERED;
+			else if (lrbp->cmd->request->cmd_flags & REQ_SYNC)
+				*upiu_flags |= UPIU_COMMAND_PRIORITY_HIGH;
+		} else {
+			*upiu_flags |= UPIU_COMMAND_PRIORITY_HIGH;
+		}
+	}
+}
+#endif
+
 /**
  * ufshcd_get_uic_cmd_result - Get the UIC command result
  * @hba: Pointer to adapter instance
@@ -1246,7 +1266,8 @@ start:
 		hba->clk_gating.state = REQ_CLKS_ON;
 		trace_ufshcd_clk_gating(dev_name(hba->dev),
 			hba->clk_gating.state);
-		schedule_work(&hba->clk_gating.ungate_work);
+		queue_work(hba->clk_gating.ungating_workq,
+				&hba->clk_gating.ungate_work);
 		/*
 		 * fall through to check if we should wait for this
 		 * work to be done or not.
@@ -1495,6 +1516,7 @@ out:
 static void ufshcd_init_clk_gating(struct ufs_hba *hba)
 {
 	struct ufs_clk_gating *gating = &hba->clk_gating;
+	char wq_name[sizeof("ufs_clk_ungating_00")];
 
 	hba->clk_gating.state = CLKS_ON;
 
@@ -1503,6 +1525,10 @@ static void ufshcd_init_clk_gating(struct ufs_hba *hba)
 
 	INIT_DELAYED_WORK(&gating->gate_work, ufshcd_gate_work);
 	INIT_WORK(&gating->ungate_work, ufshcd_ungate_work);
+
+	snprintf(wq_name, ARRAY_SIZE(wq_name), "ufs_clk_ungating_%d",
+			hba->host->host_no);
+	hba->clk_gating.ungating_workq = create_singlethread_workqueue(wq_name);
 
 	gating->is_enabled = true;
 
@@ -1580,6 +1606,7 @@ static void ufshcd_exit_clk_gating(struct ufs_hba *hba)
 	device_remove_file(hba->dev, &hba->clk_gating.enable_attr);
 	cancel_work_sync(&hba->clk_gating.ungate_work);
 	cancel_delayed_work_sync(&hba->clk_gating.gate_work);
+	destroy_workqueue(hba->clk_gating.ungating_workq);
 }
 
 /**
@@ -2291,46 +2318,15 @@ static void ufshcd_prepare_req_desc_hdr(struct ufshcd_lrb *lrbp,
 	if (cmd_dir == DMA_FROM_DEVICE) {
 		data_direction = UTP_DEVICE_TO_HOST;
 		*upiu_flags = UPIU_CMD_FLAGS_READ;
-#ifdef COMMAND_PRIORITY
-		/*
-		 *	UFS header FLAGS bit3 meant for command priority
-		 *			0 - Normal priority
-		 *			1 - High priority
-		 *
-		 * Set High Priority for SYNC reads
-		 */
-		if (lrbp->command_type == UTP_CMD_TYPE_SCSI) {
-			*upiu_flags |= UPIU_COMMAND_PRIORITY_HIGH;
-		}
-#endif
 	} else if (cmd_dir == DMA_TO_DEVICE) {
 		data_direction = UTP_HOST_TO_DEVICE;
 		*upiu_flags = UPIU_CMD_FLAGS_WRITE;
-#ifdef COMMAND_PRIORITY
-		/*
-		 * Set High Priority for SYNC writes
-		 */
-		if ((lrbp->command_type == UTP_CMD_TYPE_SCSI) &&
-			(lrbp->cmd->request->cmd_flags & REQ_SYNC) &&
-			!(lrbp->cmd->request->cmd_flags & REQ_FLUSH)) {
-			*upiu_flags |= UPIU_COMMAND_PRIORITY_HIGH;
-		}
-#endif
 	} else {
 		data_direction = UTP_NO_DATA_TRANSFER;
 		*upiu_flags = UPIU_CMD_FLAGS_NONE;
 	}
 
-#ifdef HEAD_OF_Q_FEATURE
-	/*
-	 * Set HEAD_OF_QUEUE for FLUSH request (REQ_FLUSH)
-	 *	UFS header FLAGS bit0,1 denotes TASK_ATTRIBUTE
-	 */
-	if ((lrbp->command_type == UTP_CMD_TYPE_SCSI) &&
-			(lrbp->cmd->request->cmd_flags & REQ_FLUSH)) {
-		*upiu_flags |= UPIU_TASK_ATTR_HEADQ;
-	}
-#endif
+	set_customized_upiu_flags(lrbp,upiu_flags);
 
 	dword_0 = data_direction | (lrbp->command_type
 				<< UPIU_COMMAND_TYPE_OFFSET);
@@ -2619,6 +2615,18 @@ static int ufshcd_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 
 	/* Vote PM QoS for the request */
 	ufshcd_vops_pm_qos_req_start(hba, cmd->request);
+
+	/* IO svc time latency histogram */
+	if (hba != NULL && cmd->request != NULL) {
+		if (hba->latency_hist_enabled &&
+		    (cmd->request->cmd_type == REQ_TYPE_FS)) {
+			cmd->request->lat_hist_io_start = ktime_get();
+			cmd->request->lat_hist_enabled = 1;
+		} else
+			cmd->request->lat_hist_enabled = 0;
+	}
+
+	WARN_ON(hba->clk_gating.state != CLKS_ON);
 
 	lrbp = &hba->lrb[tag];
 
@@ -4691,6 +4699,32 @@ static void ufshcd_set_queue_depth(struct scsi_device *sdev)
 	scsi_activate_tcq(sdev, lun_qdepth);
 }
 
+/**
+ * ufshcd_get_boot_lun - get boot lun
+ * @sdev: pointer to SCSI device
+ *
+ * Read bBootLunID in UNIT Descriptor to find boot LUN
+ */
+static void ufshcd_get_bootlunID(struct scsi_device *sdev)
+{
+	int ret = 0;
+	u8 bBootLunID = 0;
+	struct ufs_hba *hba;
+
+	hba = shost_priv(sdev->host);
+	ret = ufshcd_read_unit_desc_param(hba,
+			ufshcd_scsi_to_upiu_lun(sdev->lun),
+			UNIT_DESC_PARAM_BOOT_LUN_ID,
+			&bBootLunID,
+			sizeof(bBootLunID));
+
+	/* Some WLUN doesn't support unit descriptor */
+	if (ret == -EOPNOTSUPP)
+		bBootLunID = 0;
+	else
+		sdev->bootlunID = bBootLunID;
+}
+
 /*
  * ufshcd_get_lu_wp - returns the "b_lu_write_protect" from UNIT DESCRIPTOR
  * @hba: per-adapter instance
@@ -4776,6 +4810,8 @@ static int ufshcd_slave_alloc(struct scsi_device *sdev)
 	ufshcd_set_queue_depth(sdev);
 
 	ufshcd_get_lu_power_on_wp_status(hba, sdev);
+
+	ufshcd_get_bootlunID(sdev);
 
 	return 0;
 }
@@ -4975,8 +5011,10 @@ ufshcd_transfer_rsp_status(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 			 * UFS device needs urgent BKOPs.
 			 */
 			if (!hba->pm_op_in_progress &&
-			    ufshcd_is_exception_event(lrbp->ucd_rsp_ptr))
+			    ufshcd_is_exception_event(lrbp->ucd_rsp_ptr)) {
 				schedule_work(&hba->eeh_work);
+				dev_info(hba->dev, "exception event reported\n");
+			}
 			break;
 		case UPIU_TRANSACTION_REJECT_UPIU:
 			/* TODO: handle Reject UPIU Response */
@@ -5119,6 +5157,7 @@ static void __ufshcd_transfer_req_compl(struct ufs_hba *hba,
 	struct scsi_cmnd *cmd;
 	int result;
 	int index;
+	struct request *req;
 
 	for_each_set_bit(index, &completed_reqs, hba->nutrs) {
 		lrbp = &hba->lrb[index];
@@ -5147,7 +5186,23 @@ static void __ufshcd_transfer_req_compl(struct ufs_hba *hba,
 				ufshcd_vops_crypto_engine_cfg_end(hba,
 					lrbp, cmd->request);
 			}
+			clear_bit_unlock(index, &hba->lrb_in_use);
+			req = cmd->request;
+			if (req) {
+				/* Update IO svc time latency histogram */
+				if (req->lat_hist_enabled) {
+					ktime_t completion;
+					u_int64_t delta_us;
 
+					completion = ktime_get();
+					delta_us = ktime_us_delta(completion,
+						  req->lat_hist_io_start);
+					/* rq_data_dir() => true if WRITE */
+					blk_update_latency_hist(&hba->io_lat_s,
+						(rq_data_dir(req) == READ),
+						delta_us);
+				}
+			}
 			/* Do not touch lrbp after scsi done */
 			cmd->scsi_done(cmd);
 		} else if (lrbp->command_type == UTP_CMD_TYPE_DEV_MANAGE) {
@@ -5415,9 +5470,12 @@ static int ufshcd_bkops_ctrl(struct ufs_hba *hba,
 		goto out;
 	}
 
-	if (curr_status >= status)
+	if (curr_status >= status) {
 		err = ufshcd_enable_auto_bkops(hba);
-	else
+		if (!err)
+			dev_info(hba->dev, "%s: auto_bkops enabled, status: %d\n",
+					__func__, curr_status);
+	} else
 		err = ufshcd_disable_auto_bkops(hba);
 out:
 	return err;
@@ -7123,6 +7181,21 @@ static int ufshcd_query_ioctl(struct ufs_hba *hba, u8 lun, void __user *buffer)
 		case QUERY_DESC_IDN_HEALTH:
 			index = 0;
 			break;
+		case QUERY_DESC_IDN_STRING:
+			index = 0;
+			if (ioctl_data->buf_size > 0) {
+				/* extract params from user buffer */
+				err = copy_from_user(&index,
+					buffer + sizeof(struct ufs_ioctl_query_data),
+					sizeof(u8));
+				if (err) {
+					dev_err(hba->dev,
+						"%s: Failed copying buffer from user, err %d\n",
+						__func__, err);
+					goto out_release_mem;
+				}
+			}
+			break;
 		case QUERY_DESC_IDN_UNIT:
 			if (!ufs_is_valid_unit_desc_lun(lun)) {
 				dev_err(hba->dev,
@@ -7945,7 +8018,7 @@ static int ufshcd_set_dev_pwr_mode(struct ufs_hba *hba,
 	 * already suspended childs.
 	 */
 	ret = scsi_execute_req_flags(sdp, cmd, DMA_NONE, NULL, 0, &sshdr,
-				     START_STOP_TIMEOUT, 0, NULL, REQ_PM);
+				     UFS_START_STOP_TIMEOUT, 2, NULL, REQ_PM);
 	if (ret) {
 		sdev_printk(KERN_WARNING, sdp,
 			  "START_STOP failed for power mode: %d\n", pwr_mode);
@@ -8960,6 +9033,54 @@ out:
 }
 EXPORT_SYMBOL(ufshcd_shutdown);
 
+/*
+ * Values permitted 0, 1, 2.
+ * 0 -> Disable IO latency histograms (default)
+ * 1 -> Enable IO latency histograms
+ * 2 -> Zero out IO latency histograms
+ */
+static ssize_t
+latency_hist_store(struct device *dev, struct device_attribute *attr,
+		   const char *buf, size_t count)
+{
+	struct ufs_hba *hba = dev_get_drvdata(dev);
+	long value;
+
+	if (kstrtol(buf, 0, &value))
+		return -EINVAL;
+	if (value == BLK_IO_LAT_HIST_ZERO)
+		blk_zero_latency_hist(&hba->io_lat_s);
+	else if (value == BLK_IO_LAT_HIST_ENABLE ||
+		 value == BLK_IO_LAT_HIST_DISABLE)
+		hba->latency_hist_enabled = value;
+	return count;
+}
+
+ssize_t
+latency_hist_show(struct device *dev, struct device_attribute *attr,
+		  char *buf)
+{
+	struct ufs_hba *hba = dev_get_drvdata(dev);
+
+	return blk_latency_hist_show(&hba->io_lat_s, buf);
+}
+
+static DEVICE_ATTR(latency_hist, S_IRUGO | S_IWUSR,
+		   latency_hist_show, latency_hist_store);
+
+static void
+ufshcd_init_latency_hist(struct ufs_hba *hba)
+{
+	if (device_create_file(hba->dev, &dev_attr_latency_hist))
+		dev_err(hba->dev, "Failed to create latency_hist sysfs entry\n");
+}
+
+static void
+ufshcd_exit_latency_hist(struct ufs_hba *hba)
+{
+	device_create_file(hba->dev, &dev_attr_latency_hist);
+}
+
 /**
  * ufshcd_remove - de-allocate SCSI host and host memory space
  *		data structure memory
@@ -9677,6 +9798,8 @@ int ufshcd_init(struct ufs_hba *hba, void __iomem *mmio_base, unsigned int irq)
 	/* Hold auto suspend until async scan completes */
 	pm_runtime_get_sync(dev);
 
+	ufshcd_init_latency_hist(hba);
+
 	/*
 	 * The device-initialize-sequence hasn't been invoked yet.
 	 * Set the device to power-off state
@@ -9695,6 +9818,7 @@ out_remove_scsi_host:
 	scsi_remove_host(hba->host);
 exit_gating:
 	ufshcd_exit_clk_gating(hba);
+	ufshcd_exit_latency_hist(hba);
 out_disable:
 	hba->is_irq_enabled = false;
 	ufshcd_hba_exit(hba);

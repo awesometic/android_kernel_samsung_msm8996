@@ -83,6 +83,7 @@ static irqreturn_t etspi_fingerprint_interrupt(int irq , void *dev_id)
 	etspi->finger_on = 1;
 	disable_irq_nosync(gpio_irq);
 	wake_up_interruptible(&interrupt_waitq);
+	wake_lock_timeout(&etspi->fp_signal_lock, 1 * HZ);
 	pr_info("%s FPS triggered.int_count(%d) On(%d)\n", __func__,
 		etspi->int_count, etspi->finger_on);
 	return IRQ_HANDLED;
@@ -195,7 +196,7 @@ static void etspi_power_control(struct etspi_data *etspi, int status)
 		if (etspi->sleepPin)
 			gpio_set_value(etspi->sleepPin, 1);
 		etspi_pin_control(etspi, true);
-		usleep_range(5000, 5050);
+		usleep_range(10000, 10050);
 	} else if (status == 0) {
 		etspi_pin_control(etspi, false);
 		if (etspi->sleepPin)
@@ -757,6 +758,8 @@ int etspi_platformInit(struct etspi_data *etspi)
 		WAKE_LOCK_SUSPEND, "etspi_wake_lock");
 #endif
 #endif
+	wake_lock_init(&etspi->fp_signal_lock,
+				WAKE_LOCK_SUSPEND, "etspi_sigwake_lock");
 
 	pr_info("%s successful status=%d\n", __func__, status);
 	return status;
@@ -790,6 +793,7 @@ void etspi_platformUninit(struct etspi_data *etspi)
 		wake_lock_destroy(&etspi->fp_spi_lock);
 #endif
 #endif
+		wake_lock_destroy(&etspi->fp_signal_lock);
 	}
 }
 
@@ -946,11 +950,31 @@ static int etspi_type_check(struct etspi_data *etspi)
 }
 #endif
 #ifdef CONFIG_SENSORS_FINGERPRINT_SYSFS
+static ssize_t etspi_bfs_values_show(struct device *dev,
+				      struct device_attribute *attr, char *buf)
+{
+	struct etspi_data *data = dev_get_drvdata(dev);
+
+	return snprintf(buf, PAGE_SIZE, "\"FP_SPICLK\":\"%d\"\n", data->spi->max_speed_hz);
+}
+
 static ssize_t etspi_type_check_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct etspi_data *data = dev_get_drvdata(dev);
-
+#ifndef ENABLE_SENSORS_FPRINT_SECURE
+		int retry = 0;
+		int status = 0;
+	
+		do {
+			status = etspi_type_check(data);
+			pr_info("%s type (%u), retry (%d)\n"
+				, __func__, data->sensortype, retry);
+		} while (!data->sensortype && ++retry < 3);
+	
+		if (status == -ENODEV)
+			pr_info("%s type check fail\n", __func__);
+#endif
 	return snprintf(buf, PAGE_SIZE, "%d\n", data->sensortype);
 }
 
@@ -972,6 +996,8 @@ static ssize_t etspi_adm_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%d\n", DETECT_ADM);
 }
 
+static DEVICE_ATTR(bfs_values, S_IRUGO,
+	etspi_bfs_values_show, NULL);
 static DEVICE_ATTR(type_check, S_IRUGO,
 	etspi_type_check_show, NULL);
 static DEVICE_ATTR(vendor, S_IRUGO,
@@ -982,6 +1008,7 @@ static DEVICE_ATTR(adm, S_IRUGO,
 	etspi_adm_show, NULL);
 
 static struct device_attribute *fp_attrs[] = {
+	&dev_attr_bfs_values,
 	&dev_attr_type_check,
 	&dev_attr_vendor,
 	&dev_attr_name,

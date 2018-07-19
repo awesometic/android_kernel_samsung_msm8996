@@ -421,8 +421,8 @@ static unsigned char _calc_FASTCHG_current_offset_to_mA(unsigned short mA)
 {
 	unsigned char offset;
 
-	if (mA < 100) {
-		offset = 0x00;
+	if (mA < 200) {
+		offset = 0x02;
 	} else {
 		mA = (mA > 3250) ? 3250 : mA;
 		offset = ((mA - 100) / 50) & 0x3F;

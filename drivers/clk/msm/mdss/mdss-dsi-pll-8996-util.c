@@ -23,7 +23,7 @@
 #include "mdss-dsi-pll-8996.h"
 
 #define DSI_PLL_POLL_MAX_READS          15
-#define DSI_PLL_POLL_TIMEOUT_US         10000
+#define DSI_PLL_POLL_TIMEOUT_US         100000
 #define MSM8996_DSI_PLL_REVISION_2		2
 
 #define DSI_PHY_SPARE_VAL	0x6a

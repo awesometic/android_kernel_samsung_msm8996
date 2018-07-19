@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,14 +12,12 @@
 #ifndef _MSM_PCM_ROUTING_H
 #define _MSM_PCM_ROUTING_H
 #include <sound/apr_audio-v2.h>
-#ifdef CONFIG_SND_SOC_4SPK_MULTI_DAI
-#include <sound/msm_audio_backend_interfaces.h>
-#endif /* CONFIG_SND_SOC_4SPK_MULTI_DAI */
 
 #define LPASS_BE_PRI_I2S_RX "PRIMARY_I2S_RX"
 #define LPASS_BE_PRI_I2S_TX "PRIMARY_I2S_TX"
 #define LPASS_BE_SLIMBUS_0_RX "SLIMBUS_0_RX"
 #define LPASS_BE_SLIMBUS_0_TX "SLIMBUS_0_TX"
+#define LPASS_BE_SLIMBUS_2_TX "SLIMBUS_2_TX"
 #define LPASS_BE_HDMI "HDMI"
 #define LPASS_BE_INT_BT_SCO_RX "INT_BT_SCO_RX"
 #define LPASS_BE_INT_BT_SCO_TX "INT_BT_SCO_TX"
@@ -134,6 +132,7 @@
 #define LPASS_BE_QUAT_TDM_TX_6 "QUAT_TDM_TX_6"
 #define LPASS_BE_QUAT_TDM_RX_7 "QUAT_TDM_RX_7"
 #define LPASS_BE_QUAT_TDM_TX_7 "QUAT_TDM_TX_7"
+#define LPASS_BE_AFE_LOOPBACK_TX "AFE_LOOPBACK_TX"
 
 /* For multimedia front-ends, asm session is allocated dynamically.
  * Hence, asm session/multimedia front-end mapping has to be maintained.
@@ -158,19 +157,13 @@ enum {
 	MSM_FRONTEND_DAI_MULTIMEDIA14,
 	MSM_FRONTEND_DAI_MULTIMEDIA15,
 	MSM_FRONTEND_DAI_MULTIMEDIA16,
-#if defined(CONFIG_SND_SOC_JACK_AUDIO)
 	MSM_FRONTEND_DAI_MULTIMEDIA17,
-#endif
-#if defined(CONFIG_SND_SOC_4SPK_MULTI_DAI)
+	MSM_FRONTEND_DAI_MULTIMEDIA18,
+	MSM_FRONTEND_DAI_MULTIMEDIA19,
+	MSM_FRONTEND_DAI_MULTIMEDIA20,
 	MSM_FRONTEND_DAI_MULTIMEDIA21,
-	MSM_FRONTEND_DAI_MULTIMEDIA22,	
-	MSM_FRONTEND_DAI_MULTIMEDIA23,
-	MSM_FRONTEND_DAI_MULTIMEDIA24,	
-	MSM_FRONTEND_DAI_MULTIMEDIA25,
-	MSM_FRONTEND_DAI_MULTIMEDIA26,	
-	MSM_FRONTEND_DAI_MULTIMEDIA27,
-	MSM_FRONTEND_DAI_MULTIMEDIA28,		
-#endif
+	MSM_FRONTEND_DAI_MULTIMEDIA28,
+	MSM_FRONTEND_DAI_MULTIMEDIA29,
 	MSM_FRONTEND_DAI_CS_VOICE,
 	MSM_FRONTEND_DAI_VOIP,
 	MSM_FRONTEND_DAI_AFE_RX,
@@ -196,20 +189,9 @@ enum {
 	MSM_FRONTEND_DAI_MAX,
 };
 
-#if defined(CONFIG_SND_SOC_4SPK_MULTI_DAI)
-#define MSM_FRONTEND_DAI_MM_SIZE (MSM_FRONTEND_DAI_MULTIMEDIA28 + 1)
-#define MSM_FRONTEND_DAI_MM_MAX_ID MSM_FRONTEND_DAI_MULTIMEDIA28
-#else
-#ifdef CONFIG_SND_SOC_JACK_AUDIO
-#define MSM_FRONTEND_DAI_MM_SIZE (MSM_FRONTEND_DAI_MULTIMEDIA17 + 1)
-#define MSM_FRONTEND_DAI_MM_MAX_ID MSM_FRONTEND_DAI_MULTIMEDIA17
-#else
-#define MSM_FRONTEND_DAI_MM_SIZE (MSM_FRONTEND_DAI_MULTIMEDIA16 + 1)
-#define MSM_FRONTEND_DAI_MM_MAX_ID MSM_FRONTEND_DAI_MULTIMEDIA16
-#endif
-#endif
+#define MSM_FRONTEND_DAI_MM_SIZE (MSM_FRONTEND_DAI_MULTIMEDIA29 + 1)
+#define MSM_FRONTEND_DAI_MM_MAX_ID MSM_FRONTEND_DAI_MULTIMEDIA29
 
-#ifndef CONFIG_SND_SOC_4SPK_MULTI_DAI
 enum {
 	MSM_BACKEND_DAI_PRI_I2S_RX = 0,
 	MSM_BACKEND_DAI_PRI_I2S_TX,
@@ -327,9 +309,10 @@ enum {
 	MSM_BACKEND_DAI_QUAT_TDM_RX_7,
 	MSM_BACKEND_DAI_QUAT_TDM_TX_7,
 	MSM_BACKEND_DAI_INT_BT_A2DP_RX,
+	MSM_BACKEND_DAI_SLIMBUS_2_TX,
+	MSM_BACKEND_DAI_AFE_LOOPBACK_TX,
 	MSM_BACKEND_DAI_MAX,
 };
-#endif /* !CONFIG_SND_SOC_4SPK_MULTI_DAI */
 
 enum msm_pcm_routing_event {
 	MSM_PCM_RT_EVT_BUF_RECFG,
@@ -379,7 +362,7 @@ struct msm_pcm_routing_bdai_data {
 	unsigned int  sample_rate;
 	unsigned int  channel;
 	unsigned int  format;
-	u32 compr_passthr_mode;
+	u32 passthr_mode[MSM_FRONTEND_DAI_MAX];
 	char *name;
 };
 
@@ -431,17 +414,8 @@ void msm_pcm_routing_get_fedai_info(int fe_idx, int sess_type,
 void msm_pcm_routing_acquire_lock(void);
 void msm_pcm_routing_release_lock(void);
 
-#ifdef CONFIG_SND_SOC_4SPK_MULTI_DAI
-void msm_pcm_routing_reg_stream_app_type_cfg(int fedai_id, int session_type,
-					     int be_id, int app_type,
-					     int acdb_dev_id, int sample_rate);
-int msm_pcm_routing_get_stream_app_type_cfg(int fedai_id, int session_type,
-					    int be_id, int *app_type,
-					    int *acdb_dev_id, int *sample_rate);
-#else
 void msm_pcm_routing_reg_stream_app_type_cfg(int fedai_id, int app_type,
 			int acdb_dev_id, int sample_rate, int session_type);
 int msm_pcm_routing_get_stream_app_type_cfg(int fedai_id, int session_type,
 			int *app_type, int *acdb_dev_id, int *sample_rate);
-#endif /* CONFIG_SND_SOC_4SPK_MULTI_DAI */
 #endif /*_MSM_PCM_H*/

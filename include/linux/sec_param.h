@@ -138,10 +138,10 @@ extern bool sec_get_param(enum sec_param_index index, void *value);
 extern bool sec_set_param(enum sec_param_index index, void *value);
 
 #define SEC_PARAM_FILE_SIZE	(0xA00000)		/* 10MB */
-#ifdef CONFIG_MMC //using eMMC
-#define SECTOR_UNIT_SIZE (512) /* eMMC */
-#else
+#ifdef CONFIG_SCSI_UFSHCD //using UFS
 #define SECTOR_UNIT_SIZE (4096) /* UFS */
+#else
+#define SECTOR_UNIT_SIZE (512) /* eMMC */
 #endif
 #define SEC_PARAM_FILE_OFFSET (SEC_PARAM_FILE_SIZE - (256*SECTOR_UNIT_SIZE))
 

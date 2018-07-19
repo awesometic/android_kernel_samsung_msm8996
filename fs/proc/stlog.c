@@ -16,7 +16,7 @@
 #include <asm/uaccess.h>
 #include <linux/stlog.h>
 
-extern wait_queue_head_t ringbuf_wait;
+// extern wait_queue_head_t ringbuf_wait;
 
 /*
  * Compatibility Issue :
@@ -125,6 +125,7 @@ module_init(stlog_init);
 #define CONFIG_STLOG_PID
 #define CONFIG_STLOG_TIME
 #define CONFIG_RINGBUF_SHIFT 15 /*32KB*/
+
 //#define DEBUG_STLOG
 
 #if defined(CONFIG_STLOG_CPU_ID)
@@ -133,14 +134,14 @@ static bool stlog_cpu_id = 1;
 static bool stlog_cpu_id;
 #endif
 
-module_param_named(cpu, stlog_cpu_id, bool, S_IRUGO | S_IWUSR);
+module_param_named(stlog_cpu, stlog_cpu_id, bool, S_IRUGO | S_IWUSR);
 
 #if defined(CONFIG_STLOG_PID)
 static bool stlog_pid = 1;
 #else
 static bool stlog_pid;
 #endif
-module_param_named(pid, stlog_pid, bool, S_IRUGO | S_IWUSR);
+module_param_named(stlog_pid, stlog_pid, bool, S_IRUGO | S_IWUSR);
 
 
 enum ringbuf_flags {
@@ -170,7 +171,7 @@ struct ringbuf {
  */
 static DEFINE_RAW_SPINLOCK(ringbuf_lock);
 
-DECLARE_WAIT_QUEUE_HEAD(ringbuf_wait);
+static DECLARE_WAIT_QUEUE_HEAD(ringbuf_wait);
 /* the next stlog record to read by /proc/stlog */
 static u64 stlog_seq;
 static u32 stlog_idx;
@@ -295,7 +296,7 @@ static bool stlog_time = 1;
 #else
 static bool stlog_time;
 #endif
-module_param_named(time, stlog_time, bool, S_IRUGO | S_IWUSR);
+module_param_named(stlog_time, stlog_time, bool, S_IRUGO | S_IWUSR);
 
 static size_t stlog_print_time(u64 ts, char *buf)
 {

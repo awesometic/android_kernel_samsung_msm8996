@@ -1087,6 +1087,9 @@ static void dsi_update_mdnie_data(void)
 	mdnie_data.hdr_tune_value_dsi0 = hdr_tune_value_dsi0;
 	mdnie_data.hdr_tune_value_dsi1 = hdr_tune_value_dsi0;
 
+	mdnie_data.light_notification_tune_value_dsi0 = NULL;
+	mdnie_data.light_notification_tune_value_dsi1 = NULL;
+
 	/* Update MDNIE data related with size, offset or index */
 	mdnie_data.dsi0_bypass_mdnie_size = ARRAY_SIZE(DSI0_BYPASS_MDNIE);
 	mdnie_data.mdnie_color_blinde_cmd_offset = MDNIE_COLOR_BLINDE_CMD_OFFSET;
@@ -1110,6 +1113,8 @@ static void dsi_update_mdnie_data(void)
 	mdnie_data.dsi1_night_mode_table = night_mode_data;
 	mdnie_data.dsi0_max_night_mode_index = 11;
 	mdnie_data.dsi1_max_night_mode_index = 11;
+	mdnie_data.dsi0_color_lens_table = NULL;
+	mdnie_data.dsi1_color_lens_table = NULL;
 	mdnie_data.dsi0_scr_step_index = MDNIE_STEP1_INDEX;
 	mdnie_data.dsi1_scr_step_index = MDNIE_STEP1_INDEX;
 	mdnie_data.dsi0_white_default_r = 0xff;

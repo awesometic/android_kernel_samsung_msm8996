@@ -191,7 +191,7 @@ static int32_t msm_vfe47_init_dt_parms(struct vfe_device *vfe_dev,
 	struct msm_vfe_hw_init_parms *dt_parms, void __iomem *dev_mem_base)
 {
 	struct device_node *of_node;
-	int32_t i = 0 , rc = 0;
+	int32_t i = 0, rc = 0;
 	uint32_t *dt_settings = NULL, *dt_regs = NULL, num_dt_entries = 0;
 
 	of_node = vfe_dev->pdev->dev.of_node;

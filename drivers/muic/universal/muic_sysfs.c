@@ -67,6 +67,56 @@ static int muic_resolve_attached_dev(muic_data_t *pmuic)
 	return pmuic->attached_dev;
 }
 
+#if defined(CONFIG_SEC_FACTORY)
+#if defined(CONFIG_MUIC_SM5705_SWITCH_CONTROL) && defined(CONFIG_MUIC_SUPPORT_KEYBOARDDOCK)
+static ssize_t muic_show_keyboard_test(struct device *dev,
+					   struct device_attribute *pattr,
+					   char *buf)
+{
+	muic_data_t *pmuic = dev_get_drvdata(dev);
+	if (!pmuic->is_keyboard_test) {
+		pr_info("%s:%s keyboard test is true\n", MUIC_DEV_NAME, __func__);
+		return sprintf(buf, "1\n");
+	}
+	pr_info("%s:%s keyboard test is false\n", MUIC_DEV_NAME, __func__);
+	return sprintf(buf, "0\n");
+}
+
+static ssize_t muic_set_keyboard_test(struct device *dev,
+		struct device_attribute *pattr,
+		const char *buf, size_t count)
+{
+	muic_data_t *pmuic = dev_get_drvdata(dev);
+	int adc = 0, attached_dev = 0;
+	adc = get_adc(pmuic);
+	attached_dev = muic_get_current_legacy_dev(pmuic);
+
+	if (!strncmp(buf, "1", 1)) {
+		if (attached_dev == ATTACHED_DEV_JIG_UART_OFF_MUIC ||
+			attached_dev == ATTACHED_DEV_JIG_UART_ON_MUIC ||
+			attached_dev == ATTACHED_DEV_JIG_UART_ON_VB_MUIC) {
+			pmuic->is_keyboard_test = true;
+			muic_switch_enable(pmuic, 0);
+		}
+	} else if (!strncmp(buf, "0", 1)) {
+		if (pmuic->is_keyboard_test) {
+			pmuic->is_keyboard_test = false;
+			muic_switch_enable(pmuic, 1);
+		}
+	} else {
+		pr_warn("%s:%s Wrong command\n", MUIC_DEV_NAME, __func__);
+		return count;
+	}
+
+	pr_info("%s:%s buf:%s, adc:0x%x, attached_dev:%d, is_keyboard_test(%s)\n",
+		 MUIC_DEV_NAME, __func__, buf, adc, attached_dev,
+		 pmuic->is_keyboard_test ? "true" : "false");
+
+	return count;
+}
+#endif
+#endif
+
 static ssize_t muic_show_uart_en(struct device *dev,
 						struct device_attribute *attr,
 						char *buf)
@@ -245,98 +295,6 @@ static ssize_t muic_show_usb_state(struct device *dev,
 
 	return 0;
 }
-
-#ifdef DEBUG_MUIC
-static ssize_t muic_show_registers(struct device *dev,
-					   struct device_attribute *attr,
-					   char *buf)
-{
-	muic_data_t *pmuic = dev_get_drvdata(dev);
-	char mesg[256] = "";
-
-	mutex_lock(&pmuic->muic_mutex);
-	muic_read_reg_dump(pmuic, mesg);
-	mutex_unlock(&pmuic->muic_mutex);
-	pr_info("%s:%s\n", __func__, mesg);
-
-	return sprintf(buf, "%s\n", mesg);
-}
-
-static char reg_dump_buf[256];
-static ssize_t muic_show_reg_sel(struct device *dev,
-					   struct device_attribute *attr,
-					   char *buf)
-{
-	pr_info("%s:%s\n", __func__, reg_dump_buf);
-
-	return sprintf(buf, "%s\n", reg_dump_buf);
-}
-
-static ssize_t muic_set_reg_sel(struct device *dev,
-					  struct device_attribute *attr,
-					  const char *buf, size_t count)
-{
-	muic_data_t *pmuic = dev_get_drvdata(dev);
-	int len = strlen(buf);
-	unsigned int reg_base = 0, reg_num = 0;
-	int ret = -EINVAL, i = 0;
-
-#if 0 /* For the compatibility in 64 bit */
-	pr_info("%s:%s -> %s(%d, %d)\n", MUIC_DEV_NAME, __func__,
-		buf, count, len);
-#endif
-	if (len < 6) {
-		ret = kstrtoint(buf, 0, &reg_base);
-		if (ret) {
-			pr_err("%s: Undefined Regs\n", __func__);
-			goto err;
-		}
-		reg_num = 1;
-	} else if (len < 10) {
-		char *ptr;
-		char reg_buf[8];
-
-		strcpy(reg_buf, buf);
-		ptr = strstr(reg_buf, "++");
-		*ptr = 0x00;
-		ret = kstrtoint(reg_buf, 0, &reg_base);
-		if (ret) {
-			pr_err("%s: Undefined Regs\n", __func__);
-			goto err;
-		}
-		ret = kstrtoint(ptr + 2, 0, &reg_num);
-		if (ret) {
-			pr_err("%s: Undefined Regs\n", __func__);
-			goto err;
-		}
-	} else {
-		pr_err("%s: Undefined Regs\n", __func__);
-		goto err;
-	}
-
-	pr_info(" (reg_base,reg_num) = (0x%02x,%d)\n", reg_base, reg_num);
-
-	memset(reg_dump_buf, 0x00, sizeof(reg_dump_buf));
-
-	while (reg_num--) {
-		mutex_lock(&pmuic->muic_mutex);
-		ret = muic_i2c_read_byte(pmuic->i2c, reg_base + i);
-		mutex_unlock(&pmuic->muic_mutex);
-		if (ret < 0) {
-			pr_err("%s:%s err read %d\n", MUIC_DEV_NAME, __func__,
-					reg_base);
-			goto err;
-		}
-		pr_info(" [%02x] : %02x\n", reg_base, ret);
-
-		sprintf(reg_dump_buf + strlen(reg_dump_buf),
-			" [%02x] : %02x\n", reg_base + i++, ret);
-	}
-
-err:
-	return count;
-}
-#endif
 
 #if defined(CONFIG_USB_HOST_NOTIFY)
 static ssize_t muic_show_otg_test(struct device *dev,
@@ -853,16 +811,17 @@ static DEVICE_ATTR(cc_xx, 0664, cc_xx_show,
 		cc_xx_set);
 #endif
 
+#if defined(CONFIG_SEC_FACTORY)
+#if defined(CONFIG_MUIC_SM5705_SWITCH_CONTROL) && defined(CONFIG_MUIC_SUPPORT_KEYBOARDDOCK)
+static DEVICE_ATTR(keyboard_test, 0664, muic_show_keyboard_test, muic_set_keyboard_test);
+#endif
+#endif
 static DEVICE_ATTR(uart_en, 0664, muic_show_uart_en, muic_set_uart_en);
 static DEVICE_ATTR(uart_sel, 0664, muic_show_uart_sel,
 		muic_set_uart_sel);
 static DEVICE_ATTR(usb_sel, 0664,
 		muic_show_usb_sel, muic_set_usb_sel);
 static DEVICE_ATTR(adc, 0664, muic_show_adc, NULL);
-#ifdef DEBUG_MUIC
-static DEVICE_ATTR(reg_dump, 0664, muic_show_registers, NULL);
-static DEVICE_ATTR(reg_sel, 0664, muic_show_reg_sel, muic_set_reg_sel);
-#endif
 static DEVICE_ATTR(usb_state, 0664, muic_show_usb_state, NULL);
 #if defined(CONFIG_USB_HOST_NOTIFY)
 static DEVICE_ATTR(otg_test, 0664,
@@ -898,14 +857,15 @@ static struct attribute *muic_attributes[] = {
 #if defined(CONFIG_MUIC_SUPPORT_CCIC)
 	&dev_attr_cc_xx.attr,
 #endif
+#if defined(CONFIG_SEC_FACTORY)
+#if defined(CONFIG_MUIC_SM5705_SWITCH_CONTROL) && defined(CONFIG_MUIC_SUPPORT_KEYBOARDDOCK)
+	&dev_attr_keyboard_test.attr,
+#endif
+#endif
 	&dev_attr_uart_en.attr,
 	&dev_attr_uart_sel.attr,
 	&dev_attr_usb_sel.attr,
 	&dev_attr_adc.attr,
-#ifdef DEBUG_MUIC
-	&dev_attr_reg_dump.attr,
-	&dev_attr_reg_sel.attr,
-#endif
 	&dev_attr_usb_state.attr,
 #if defined(CONFIG_USB_HOST_NOTIFY)
 	&dev_attr_otg_test.attr,

@@ -274,7 +274,13 @@ static struct mount *alloc_vfsmnt(const char *name)
 		mnt->mnt_count = 1;
 		mnt->mnt_writers = 0;
 #endif
-
+/*
+#ifdef CONFIG_RKP_NS_PROT
+		mnt->mnt->data = NULL;
+#else
+		mnt->mnt.data = NULL;
+#endif
+*/
 		INIT_HLIST_NODE(&mnt->mnt_hash);
 		INIT_LIST_HEAD(&mnt->mnt_child);
 		INIT_LIST_HEAD(&mnt->mnt_mounts);
@@ -682,6 +688,11 @@ extern int rkp_from_vfsmnt_cache(unsigned long addr);
 #endif
 static void free_vfsmnt(struct mount *mnt)
 {
+#ifdef CONFIG_RKP_NS_PROT
+	kfree(mnt->mnt->data);
+#else
+	kfree(mnt->mnt.data);
+#endif
 	kfree(mnt->mnt_devname);
 #ifdef CONFIG_SMP
 	free_percpu(mnt->mnt_pcp);
@@ -1048,6 +1059,25 @@ vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void 
 	if (!mnt)
 		return ERR_PTR(-ENOMEM);
 
+#ifdef CONFIG_RKP_NS_PROT
+	rkp_call(RKP_CMDID(0x56), (u64)(mnt->mnt), (u64)NULL, 0, 0, 0);
+#else
+	mnt->mnt.data = NULL;
+#endif
+	if (type->alloc_mnt_data) {
+#ifdef CONFIG_RKP_NS_PROT
+		u64 *mnt_data = (u64 *)(type->alloc_mnt_data());
+		rkp_call(RKP_CMDID(0x56), (u64)(mnt->mnt), (u64)mnt_data, 0, 0, 0);
+		if (!mnt->mnt->data) {
+#else
+		mnt->mnt.data = type->alloc_mnt_data();
+		if (!mnt->mnt.data) {
+#endif
+			mnt_free_id(mnt);
+			free_vfsmnt(mnt);
+			return ERR_PTR(-ENOMEM);
+		}
+	}
 	if (flags & MS_KERNMOUNT) {
 #ifdef CONFIG_RKP_NS_PROT
 		rkp_set_mnt_flags(mnt->mnt,MNT_INTERNAL);
@@ -1055,7 +1085,11 @@ vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void 
 		mnt->mnt.mnt_flags = MNT_INTERNAL;
 #endif
 	}
-	root = mount_fs(type, flags, name, data);
+#ifdef CONFIG_RKP_NS_PROT
+	root = mount_fs(type, flags, name, mnt->mnt, data);
+#else
+	root = mount_fs(type, flags, name, &mnt->mnt, data);
+#endif
 	if (IS_ERR(root)) {
 		mnt_free_id(mnt);
 		free_vfsmnt(mnt);
@@ -1098,6 +1132,23 @@ static struct mount *clone_mnt(struct mount *old, struct dentry *root,
 	mnt = alloc_vfsmnt(old->mnt_devname);
 	if (!mnt)
 		return ERR_PTR(-ENOMEM);
+
+	if (sb->s_op->clone_mnt_data) {
+#ifdef CONFIG_RKP_NS_PROT
+		u64 *mnt_data = (u64 *)(sb->s_op->clone_mnt_data(old->mnt->data));
+		rkp_call(RKP_CMDID(0x56), (u64)(mnt->mnt), (u64)mnt_data, 0, 0, 0);
+		if (!mnt->mnt->data) {
+			err = -ENOMEM;
+			goto out_free;
+		}
+#else
+		mnt->mnt.data = sb->s_op->clone_mnt_data(old->mnt.data);
+		if (!mnt->mnt.data) {
+			err = -ENOMEM;
+			goto out_free;
+		}
+#endif
+	}
 
 	if (flag & (CL_SLAVE | CL_PRIVATE | CL_SHARED_TO_SLAVE))
 		mnt->mnt_group_id = 0; /* not a peer of original */
@@ -1748,6 +1799,7 @@ void __detach_mounts(struct dentry *dentry)
 		goto out_unlock;
 
 	lock_mount_hash();
+	event++;
 	while (!hlist_empty(&mp->m_list)) {
 		mnt = hlist_entry(mp->m_list.first, struct mount, mnt_mp_list);
 		umount_tree(mnt, 0);
@@ -2461,8 +2513,14 @@ static int do_remount(struct path *path, int flags, int mnt_flags,
 		err = change_mount_flags(path->mnt, flags);
 	else if (!capable(CAP_SYS_ADMIN))
 		err = -EPERM;
-	else
-		err = do_remount_sb(sb, flags, data, 0);
+	else {
+		err = do_remount_sb2(path->mnt, sb, flags, data, 0);
+		namespace_lock();
+		lock_mount_hash();
+		propagate_remount(mnt);
+		unlock_mount_hash();
+		namespace_unlock();
+	}
 	if (!err) {
 		lock_mount_hash();
 #ifdef CONFIG_RKP_NS_PROT
@@ -2679,8 +2737,10 @@ static int do_new_mount(struct path *path, const char *fstype, int flags,
 			mnt_flags |= MNT_NODEV | MNT_LOCK_NODEV;
 		}
 		if (type->fs_flags & FS_USERNS_VISIBLE) {
-			if (!fs_fully_visible(type, &mnt_flags))
+			if (!fs_fully_visible(type, &mnt_flags)) {
+				put_filesystem(type);
 				return -EPERM;
+			}
 		}
 	}
 
@@ -3450,6 +3510,9 @@ void __init mnt_init(void)
 {
 	unsigned u;
 	int err;
+#ifdef CONFIG_RKP_NS_PROT
+	struct vfsmount_offset voff;
+#endif
 
 	mnt_cache = kmem_cache_create("mnt_cache", sizeof(struct mount),
 			0, SLAB_HWCACHE_ALIGN | SLAB_PANIC, NULL);
@@ -3460,8 +3523,13 @@ void __init mnt_init(void)
 
 	if(!vfsmnt_cache)
 		panic("Failed to allocate vfsmnt_cache \n");
-	rkp_call(RKP_CMDID(0x41),(u64)vfsmnt_cache->size,(u64)sizeof(struct vfsmount),(u64)offsetof(struct vfsmount,bp_mount),
-										(u64)offsetof(struct vfsmount,mnt_sb),(u64)offsetof(struct vfsmount,mnt_flags));
+	voff.bp_mount_offset = (u64)offsetof(struct vfsmount, bp_mount);
+	voff.mnt_sb_offset = (u64)offsetof(struct vfsmount, mnt_sb);
+	voff.mnt_flags_offset = (u64)offsetof(struct vfsmount, mnt_flags);
+	voff.data_offset = (u64)offsetof(struct vfsmount, data);
+
+	rkp_call(RKP_CMDID(0x41), (u64)vfsmnt_cache->size, (u64)sizeof(struct vfsmount),
+		(u64)&voff, 0, 0);
 #endif
 
 	mount_hashtable = alloc_large_system_hash("Mount-cache",

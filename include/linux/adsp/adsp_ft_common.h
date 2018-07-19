@@ -17,7 +17,7 @@
 
 #define PID 20000
 #define NETLINK_ADSP_FAC 23
-
+#define MAX_REG_NUM 128
 /* ENUMS for Selecting the current sensor being used */
 enum {
 	ADSP_FACTORY_ACCEL,
@@ -38,9 +38,20 @@ enum {
 	ADSP_FACTORY_ACCEL_MOTOR_ON, //14
 	ADSP_FACTORY_ACCEL_MOTOR_OFF, //15
 #endif
+#ifdef CONFIG_SLPI_MAG_CALIB_RESET
+	ADSP_FACTORY_MAG_CALIB_RESET, //16
+#endif
 	ADSP_FACTORY_SSC_CORE,
 	ADSP_FACTORY_HH_HOLE,
 	ADSP_FACTORY_SENSOR_MAX
+};
+
+enum {
+	PROX_THRESHOLD,
+#ifdef CONFIG_SUPPORT_PROX_AUTO_CAL
+	PROX_HD_THRESHOLD,
+#endif
+	PROX_THRESHOLDR_MAX
 };
 
 enum {
@@ -72,7 +83,16 @@ enum {
 	NETLINK_MESSAGE_MOBEAM_SEND_COUNT,
 	NETLINK_MESSAGE_MOBEAM_SEND_REG, //20
 	NETLINK_MESSAGE_MOBEAM_STOP,
+	NETLINK_MESSAGE_DUMP_REGISTER,
+	NETLINK_MESSAGE_DUMP_REGISTER_RCVD,
+	NETLINK_MESSAGE_READ_SI_PARAM,
 	NETLINK_MESSAGE_DUMPSTATE,
+	NETLINK_MESSAGE_THD_HI_DATA,
+	NETLINK_MESSAGE_THD_LO_DATA,
+	NETLINK_MESSAGE_THD_HI_LO_DATA_RCVD,
+#ifdef CONFIG_SLPI_MAG_CALIB_RESET
+	NETLINK_MESSAGE_MAG_CALIB_RESET,
+#endif
 	NETLINK_MESSAGE_THD_HI_STORE_DATA,
 	NETLINK_MESSAGE_THD_LO_STORE_DATA,
 #ifdef CONFIG_SUPPORT_PROX_AUTO_CAL
@@ -109,7 +129,8 @@ struct msg_data_hidden_hole {
 	int ct_coef;
 	int ct_offset;
 	int th_high;
-	int th_low;	
+	int th_low;
+	int irisprox_th;
 };
 #endif
 
@@ -139,9 +160,9 @@ struct sensor_value {
 			short a_time;
 			short a_gain;
 		};
-#ifdef CONFIG_SUPPORT_PROX_AUTO_CAL		
+#ifdef CONFIG_SUPPORT_PROX_AUTO_CAL
 		struct {
-		short prox;
+			short prox;
 			short offset;
 		};
 #else
@@ -153,10 +174,19 @@ struct sensor_value {
 	};
 };
 
+struct prox_th_value {
+	unsigned int th_high;
+	unsigned int th_low;
+	unsigned int hd_th_high;
+	unsigned int hd_th_low;
+};
+
 struct sensor_stop_value {
 	unsigned int sensor_type;
 	int result;
 };
+
+#define NUM_CAL_DATA 9
 
 /* Structs used in calibration show and store */
 struct sensor_calib_value {
@@ -183,6 +213,7 @@ struct sensor_calib_value {
 			int threDetectHi;
 #endif
 		};
+		int si_mat[NUM_CAL_DATA];
 	};
 	int result;
 };
@@ -269,6 +300,7 @@ struct hidden_hole_data {
 	int ct_offset;
 	int th_high;
 	int th_low;
+	int irisprox_th;
 	int sum_crc;
 };
 #endif
@@ -278,4 +310,8 @@ struct sensor_status {
 	unsigned char status;
 };
 
+struct dump_register {
+	uint8_t sensor_type;
+	uint8_t reg[MAX_REG_NUM];
+};
 #endif

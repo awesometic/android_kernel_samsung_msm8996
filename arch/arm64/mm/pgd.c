@@ -55,7 +55,14 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 			ret = (pgd_t *)__get_free_page(PGALLOC_GFP);
 		else
 			ret = kmem_cache_alloc(pgd_cache, PGALLOC_GFP);
+		}
+
+	if(unlikely(!ret)) {
+		pr_warn("%s: pgd alloc is failed\n", __func__);
+		return ret;
 	}
+
+
 	if (rkp_started)
 		rkp_call(RKP_PGD_NEW, (unsigned long)ret, 0, 0, 0, 0);
 	return ret;

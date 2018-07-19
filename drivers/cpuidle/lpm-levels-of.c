@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -704,7 +704,7 @@ static int calculate_residency(struct power_params *base_pwr,
 	residency /= (int32_t)(base_pwr->ss_power  - next_pwr->ss_power);
 
 	if (residency < 0) {
-		__WARN_printf("%s: Incorrect power attributes for LPM\n",
+		pr_err("%s: residency < 0 for LPM\n",
 				__func__);
 		return next_pwr->time_overhead_us;
 	}
@@ -804,14 +804,12 @@ failed:
 
 void free_cluster_node(struct lpm_cluster *cluster)
 {
-	struct list_head *list;
 	int i;
+	struct lpm_cluster *cl, *m;
 
-	list_for_each(list, &cluster->child) {
-		struct lpm_cluster *n;
-		n = list_entry(list, typeof(*n), list);
-		list_del(list);
-		free_cluster_node(n);
+	list_for_each_entry_safe(cl, m, &cluster->child, list) {
+		list_del(&cl->list);
+		free_cluster_node(cl);
 	};
 
 	if (cluster->cpu) {
@@ -868,7 +866,6 @@ struct lpm_cluster *parse_cluster(struct device_node *node,
 			continue;
 		key = "qcom,pm-cluster-level";
 		if (!of_node_cmp(n->name, key)) {
-			WARN_ON(!use_psci && c->no_saw_devices);
 			if (parse_cluster_level(n, c))
 				goto failed_parse_cluster;
 			continue;
@@ -878,7 +875,10 @@ struct lpm_cluster *parse_cluster(struct device_node *node,
 		if (!of_node_cmp(n->name, key)) {
 			struct lpm_cluster *child;
 
-			WARN_ON(!use_psci && c->no_saw_devices);
+			if (c->no_saw_devices)
+				pr_info("%s: SAW device not provided.\n",
+					__func__);
+
 			child = parse_cluster(n, c);
 			if (!child)
 				goto failed_parse_cluster;

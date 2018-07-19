@@ -401,10 +401,11 @@ void process_cc_water(void * data, LP_STATE_Type *Lp_DATA)
 	REG_ADD = 0x60;
 	R_len = 4;
 	s2mm005_read_byte(i2c, REG_ADD, Lp_DATA->BYTE, R_len);
-	dev_info(&i2c->dev, "%s: WATER reg:0x%02X WATER=%d DRY=%d\n", __func__,
+	dev_info(&i2c->dev, "%s: WATER reg:0x%02X WATER=%d DRY=%d PDSTATE29_SBU_DONE=%d\n", __func__,
 		Lp_DATA->BYTE[0],
 		Lp_DATA->BITS.WATER_DET,
-		Lp_DATA->BITS.RUN_DRY);
+		Lp_DATA->BITS.RUN_DRY,
+		Lp_DATA->BITS.PDSTATE29_SBU_DONE);
 
 #if defined(CONFIG_SEC_FACTORY)
 	if (!Lp_DATA->BITS.WATER_DET) {
@@ -589,10 +590,20 @@ void process_cc_attach(void * data,u8 *plug_attach_done)
 				usbpd_data->is_host = HOST_OFF;
 				msleep(300);
 			}
-			/* muic */
-			ccic_event_work(usbpd_data,
-				CCIC_NOTIFY_DEV_MUIC, CCIC_NOTIFY_ID_ATTACH,
-				1/*attach*/, 0/*rprd*/, Func_DATA.BITS.VBUS_CC_Short? Rp_Abnormal:Func_DATA.BITS.RP_CurrentLvl);
+
+			if (Lp_DATA.BITS.PDSTATE29_SBU_DONE) {
+				dev_info(&i2c->dev, "%s SBU check done\n", __func__);
+				ccic_event_work(usbpd_data,
+					CCIC_NOTIFY_DEV_MUIC, CCIC_NOTIFY_ID_ATTACH,
+					1/*attach*/, 0/*rprd*/,
+					(Func_DATA.BITS.VBUS_CC_Short || Func_DATA.BITS.VBUS_SBU_Short) ? Rp_Abnormal:Func_DATA.BITS.RP_CurrentLvl);
+			} else {
+				/* muic */
+				ccic_event_work(usbpd_data,
+						CCIC_NOTIFY_DEV_MUIC, CCIC_NOTIFY_ID_ATTACH,
+						1/*attach*/, 0/*rprd*/, Rp_Sbu_check);
+			}
+
 			if (usbpd_data->is_client == CLIENT_OFF && usbpd_data->is_host == HOST_OFF) {
 				/* usb */
 				usbpd_data->is_client = CLIENT_ON;

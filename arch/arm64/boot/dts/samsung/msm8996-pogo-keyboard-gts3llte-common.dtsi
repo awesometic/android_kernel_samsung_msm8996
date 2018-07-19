@@ -83,7 +83,7 @@
 					0x03040022	//   3       4     KEY_G		34
 					0x03050023	//   3       5     KEY_H		35
 					0x03060017	//   3       6     KEY_I		23
-					0x03070028	//   3       7     KEY_APOSTROPHE	40		
+					0x03070028	//   3       7     KEY_APOSTROPHE	40
 					0x03080019	//   3       8     KEY_P		25
 					0x0309002B	//   3       9     KEY_BACKSLASH	43// UK KEY
 

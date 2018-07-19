@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -314,6 +314,7 @@ typedef struct
     tANI_U8  nonRoamReassoc;
     uint32_t nss; /* Number of spatial streams supported */
     tANI_U8  max_amsdu_num;
+    uint8_t  channelwidth;
 } tAddStaParams, *tpAddStaParams;
 
 
@@ -545,6 +546,7 @@ typedef struct
     uint32_t tx_aggregation_size;
     uint32_t rx_aggregation_size;
     uint16_t beacon_tx_rate;
+    uint8_t  channelwidth;
 } tAddBssParams, * tpAddBssParams;
 
 typedef struct
@@ -1037,6 +1039,10 @@ typedef struct
     tANI_U8  dot11_mode;
 
     uint8_t restart_on_chan_switch;
+
+    uint32_t channelwidth;
+
+    uint16_t reduced_beacon_interval;
 }tSwitchChannelParams, *tpSwitchChannelParams;
 
 typedef struct CSAOffloadParams {
@@ -1047,6 +1053,7 @@ typedef struct CSAOffloadParams {
    tANI_U8 new_op_class;       /* New operating class */
    tANI_U8 new_ch_freq_seg1;   /* Channel Center frequency 1 */
    tANI_U8 new_ch_freq_seg2;   /* Channel Center frequency 2 */
+   tANI_U8 new_sub20_channelwidth;  /* 5MHz or 10Mhz channel width */
    tANI_U32 ies_present_flag;   /* WMI_CSA_EVENT_IES_PRESENT_FLAG */
    tSirMacAddr bssId;
 }*tpCSAOffloadParams, tCSAOffloadParams;
@@ -1134,102 +1141,6 @@ typedef struct
 
 eHalStatus halMsg_setPromiscMode(tpAniSirGlobal pMac);
 
-
-//
-// Mesg header is used from tSirMsgQ
-// Mesg Type = SIR_HAL_ADDBA_REQ
-//
-typedef struct sAddBAParams
-{
-
-    // Station Index
-    tANI_U16 staIdx;
-
-    // Peer MAC Address
-    tSirMacAddr peerMacAddr;
-
-    // ADDBA Action Frame dialog token
-    // HAL will not interpret this object
-    tANI_U8 baDialogToken;
-
-    // TID for which the BA is being setup
-    // This identifies the TC or TS of interest
-    tANI_U8 baTID;
-
-    // 0 - Delayed BA (Not supported)
-    // 1 - Immediate BA
-    tANI_U8 baPolicy;
-
-    // Indicates the number of buffers for this TID (baTID)
-    // NOTE - This is the requested buffer size. When this
-    // is processed by HAL and subsequently by HDD, it is
-    // possible that HDD may change this buffer size. Any
-    // change in the buffer size should be noted by PE and
-    // advertized appropriately in the ADDBA response
-    tANI_U16 baBufferSize;
-
-    // BA timeout in TU's
-    // 0 means no timeout will occur
-    tANI_U16 baTimeout;
-
-    // b0..b3 - Fragment Number - Always set to 0
-    // b4..b15 - Starting Sequence Number of first MSDU
-    // for which this BA is setup
-    tANI_U16 baSSN;
-
-    // ADDBA direction
-    // 1 - Originator
-    // 0 - Recipient
-    tANI_U8 baDirection;
-
-    //
-    // Following parameters are for returning status from
-    // HAL to PE via response message. HAL does not read them
-    //
-    // The return status of SIR_HAL_ADDBA_REQ is reported
-    // in the SIR_HAL_ADDBA_RSP message
-    eHalStatus status;
-
-    // Indicating to HAL whether a response message is required.
-    tANI_U8 respReqd;
-    tANI_U8    sessionId; // PE session id for PE<->HAL interface
-                          //  HAL Sends back the PE session
-                          //  id unmodified
-
-} tAddBAParams, * tpAddBAParams;
-
-
-//
-// Mesg header is used from tSirMsgQ
-// Mesg Type = SIR_HAL_DELBA_IND
-//
-typedef struct sDelBAParams
-{
-
-    // Station Index
-    tANI_U16 staIdx;
-
-    // TID for which the BA session is being deleted
-    tANI_U8 baTID;
-
-    // DELBA direction
-    // 1 - Originator
-    // 0 - Recipient
-    tANI_U8 baDirection;
-
-    // FIXME - Do we need a response for this?
-    // Maybe just the IND/REQ will suffice?
-    //
-    // Following parameters are for returning status from
-    // HAL to PE via response message. HAL does not read them
-    //
-    // The return status of SIR_HAL_DELBA_REQ is reported
-    // in the SIR_HAL_DELBA_RSP message
-    //eHalStatus status;
-
-} tDelBAParams, * tpDelBAParams;
-
-
 //
 // Mesg header is used from tSirMsgQ
 // Mesg Type = SIR_HAL_SET_MIMOPS_REQ
@@ -1289,44 +1200,6 @@ typedef struct sExitUapsdParams
     eHalStatus  status;
     tANI_U8     bssIdx;
 }tExitUapsdParams, *tpExitUapsdParams;
-
-//
-// Mesg header is used from tSirMsgQ
-// Mesg Type = SIR_LIM_DEL_BA_IND
-//
-typedef struct sBADeleteParams
-{
-
-    // Station Index
-    tANI_U16 staIdx;
-
-    // Peer MAC Address, whose BA session has timed out
-    tSirMacAddr peerMacAddr;
-
-    // TID for which a BA session timeout is being triggered
-    tANI_U8 baTID;
-
-    // DELBA direction
-    // 1 - Originator
-    // 0 - Recipient
-    tANI_U8 baDirection;
-
-    tANI_U32 reasonCode;
-
-    tSirMacAddr  bssId; // TO SUPPORT BT-AMP
-                        // HAL copies the sta bssid to this.
-} tBADeleteParams, * tpBADeleteParams;
-
-
-// Mesg Type = SIR_LIM_ADD_BA_IND
-typedef struct sBaActivityInd
-{
-    tANI_U16 baCandidateCnt;
-    //baCandidateCnt is followed by BA Candidate List ( tAddBaCandidate)
-
-    tSirMacAddr  bssId; // TO SUPPORT BT-AMP
-} tBaActivityInd, * tpBaActivityInd;
-
 
 // Mesg Type = SIR_LIM_IBSS_PEER_INACTIVITY_IND
 typedef struct sIbssPeerInactivityInd

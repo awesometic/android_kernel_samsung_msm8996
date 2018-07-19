@@ -39,7 +39,7 @@
 #endif
 
 #define VENDOR_NAME              "SEMTECH"
-#define MODEL_NAME               "SX9310_wifi"
+#define MODEL_NAME               "SX9310_WIFI"
 #define MODULE_NAME              "grip_sensor_wifi"
 
 #define I2C_M_WR                 0 /* for i2c Write */

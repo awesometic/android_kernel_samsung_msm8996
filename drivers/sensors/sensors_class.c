@@ -306,7 +306,7 @@ static ssize_t max_latency_store(struct device *dev,
 	}
 
 	/* Disable batching for this sensor */
-	if (latency < sensors_cdev->delay_msec) {
+	if ((latency < sensors_cdev->delay_msec) && (latency != 0)) {
 		dev_err(dev, "max_latency is less than delay_msec\n");
 		return -EINVAL;
 	}

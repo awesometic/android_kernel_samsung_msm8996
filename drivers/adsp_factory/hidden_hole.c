@@ -42,11 +42,10 @@ static int read_window_type(void)
 	type_filp = filp_open("/sys/class/lcd/panel/window_type",
 		O_RDONLY, 0440);
 	if (IS_ERR(type_filp)) {
-		set_fs(old_fs);
 		iRet = PTR_ERR(type_filp);
 		pr_err("[FACTORY] %s: open fail window_type:%d\n",
 			__func__, iRet);
-		return iRet;
+		goto err_open_exit;
 	}
 
 	iRet = type_filp->f_op->read(type_filp, (char *)window_type,
@@ -54,15 +53,17 @@ static int read_window_type(void)
 	if (iRet != 9 * sizeof(char)) {
 		pr_err("[FACTORY] %s: fd read fail\n", __func__);
 		iRet = -EIO;
-		return iRet;
+		goto err_read_exit;
 	}
-
-	filp_close(type_filp, current->files);
-	set_fs(old_fs);
 
 	pr_info("%s - 0x%x, 0x%x, 0x%x", __func__,
 		window_type[0], window_type[1], window_type[2]);
 	iRet = (window_type[1] - '0') & 0x0f;
+
+err_read_exit:
+	filp_close(type_filp, current->files);
+err_open_exit:
+	set_fs(old_fs);
 
 	return iRet;
 }
@@ -146,6 +147,7 @@ static int need_update_coef_efs(void)
 	type_filp = filp_open("/efs/FactoryApp/hh_version", O_RDONLY, 0440);
 	if (PTR_ERR(type_filp) == -ENOENT || PTR_ERR(type_filp) == -ENXIO) {
 		pr_err("[FACTORY] %s : no version file\n", __func__);
+		set_fs(old_fs);
 		return true;
 	} else if (IS_ERR(type_filp)) {
 		set_fs(old_fs);
@@ -362,7 +364,6 @@ void hidden_hole_data_read(struct adsp_data *data)
 
 	hole_filp = filp_open(predefine_value_path, O_RDONLY, 0440);
 	if (IS_ERR(hole_filp)) {
-		set_fs(old_fs);
 		iRet = PTR_ERR(hole_filp);
 		pr_err("[FACTORY] %s - Can't open hidden hole file:%d\n",
 			__func__, iRet);
@@ -453,7 +454,6 @@ static int tmd490x_hh_check_crc(void)
 
 		hole_filp = filp_open(predefine_value_path, O_RDONLY, 0440);
 		if (IS_ERR(hole_filp)) {
-			set_fs(old_fs);
 			iRet = PTR_ERR(hole_filp);
 			pr_err("%s - Can't open hidden hole file:%d\n",
 				__func__, iRet);
@@ -487,10 +487,10 @@ static int tmd490x_hh_check_crc(void)
 crc_err_read_ver:
 crc_err_read:
 	filp_close(hole_filp, current->files);
+crc_err_open_ver:
 crc_err_open:
 	set_fs(old_fs);
 crc_err_sum:
-crc_err_open_ver:
 	return iRet;
 
 }

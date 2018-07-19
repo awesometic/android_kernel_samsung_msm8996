@@ -34,6 +34,7 @@
 // s2mm005_cc.c called s2mm005_alternate.c
 ////////////////////////////////////////////////////////////////////////////////
 #if defined(CONFIG_CCIC_ALTERNATE_MODE)
+extern struct device *ccic_device;
 #if defined(CONFIG_SWITCH)
 static struct switch_dev switch_dock = {
 	.name = "ccic_dock",
@@ -79,6 +80,31 @@ static void ccic_send_dock_intent(int type)
 #endif /* CONFIG_SWITCH */
 }
 
+void ccic_send_dock_uevent(u32 vid, u32 pid, int state)
+{
+	char switch_string[32];
+	char pd_ids_string[32];
+	char *envp[3] = { switch_string, pd_ids_string, NULL };
+
+	pr_info("%s: CCIC dock : USBPD_IPS=%04x:%04x SWITCH_STATE=%d\n",
+			__func__,
+			le16_to_cpu(vid),
+			le16_to_cpu(pid),
+			state);
+
+	if (IS_ERR(ccic_device)) {
+		pr_err("%s CCIC ERROR: Failed to send a dock uevent!\n",
+				__func__);
+		return;
+	}
+
+	snprintf(switch_string, 32, "SWITCH_STATE=%d", state);
+	snprintf(pd_ids_string, 32, "USBPD_IDS=%04x:%04x",
+			le16_to_cpu(vid),
+			le16_to_cpu(pid));
+	kobject_uevent_env(&ccic_device->kobj, KOBJ_CHANGE, envp);
+}
+
 void acc_detach_check(struct work_struct *wk)
 {
 	struct delayed_work *delay_work =
@@ -87,7 +113,11 @@ void acc_detach_check(struct work_struct *wk)
 		container_of(delay_work, struct s2mm005_data, acc_detach_work);
 	pr_info("%s: usbpd_data->pd_state : %d\n", __func__, usbpd_data->pd_state);
 	if (usbpd_data->pd_state == State_PE_Initial_detach) {
-		ccic_send_dock_intent(CCIC_DOCK_DETACHED);
+		if (usbpd_data->acc_type == CCIC_DOCK_HMT)
+			ccic_send_dock_intent(CCIC_DOCK_DETACHED);
+		ccic_send_dock_uevent(usbpd_data->Vendor_ID,
+					usbpd_data->Product_ID,
+					CCIC_DOCK_DETACHED);
 		usbpd_data->acc_type = CCIC_DOCK_DETACHED;
 	}
 }
@@ -104,8 +134,11 @@ static int process_check_accessory(void * data)
 		if (usbpd_data->acc_type == CCIC_DOCK_DETACHED) {
 			ccic_send_dock_intent(CCIC_DOCK_HMT);
 			usbpd_data->acc_type = CCIC_DOCK_HMT;
+			ccic_send_dock_uevent(usbpd_data->Vendor_ID, usbpd_data->Product_ID, usbpd_data->acc_type);
 		}
 		return 1;
+	} else {
+		ccic_send_dock_uevent(usbpd_data->Vendor_ID, usbpd_data->Product_ID, CCIC_DOCK_NEW);
 	}
 	return 0;
 }
@@ -130,8 +163,10 @@ static void process_discover_identity(void * data)
 
 	usbpd_data->Vendor_ID = DATA_MSG_ID->BITS.USB_Vendor_ID;
 	usbpd_data->Product_ID = DATA_MSG_PRODUCT->BITS.Product_ID;
+	usbpd_data->Device_Version = DATA_MSG_PRODUCT->BITS.Device_Version;
 
-	dev_info(&i2c->dev, "%s Vendor_ID : 0x%X, Product_ID : 0x%X\n", __func__, usbpd_data->Vendor_ID, usbpd_data->Product_ID);
+	dev_info(&i2c->dev, "%s Vendor_ID : 0x%X, Product_ID : 0x%X Device Version 0x%X \n",\
+		 __func__, usbpd_data->Vendor_ID, usbpd_data->Product_ID, usbpd_data->Device_Version);
 	if (process_check_accessory(usbpd_data))
 		dev_info(&i2c->dev, "%s : Samsung Accessory Connected.\n", __func__);
 }

@@ -1436,7 +1436,7 @@ static ssize_t vfsspi_retain_show(struct device *dev,
 	if (g_data->retain_pin)
 		return sprintf(buf, "%d\n", gpio_get_value(g_data->retain_pin));
 	else
-		return 0;
+		return sprintf(buf, "-1\n");
 }
 
 static ssize_t vfsspi_retain_store(struct device *dev,

@@ -1129,6 +1129,12 @@ static int sec_nfc_probe(struct i2c_client *client,
 {
 	int ret = 0;
 
+#if !defined(CONFIG_SEC_FACTORY) && defined(CONFIG_ESE_SECURE) && !defined(ENABLE_ESE_SPI_SECURED)
+	/* should not be here! */
+	pr_err("%s: [error] ese support but not secured? check!!\n", __func__);
+	return -ENODEV;
+#endif
+
 	ret = __sec_nfc_probe(&client->dev);
 	if (ret)
 		return ret;

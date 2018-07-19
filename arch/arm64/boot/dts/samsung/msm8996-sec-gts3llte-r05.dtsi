@@ -532,12 +532,12 @@
 	};
 	qcom,cnss {
 		/delete-property/ wlan-bootstrap-gpio;
-		/delete-property/ qcom,wlan-ramdump-dynamic;
 		/delete-property/ qcom,enable-bootstrap-gpio;
 		/delete-property/ pinctrl-names;
 		/delete-property/ pinctrl-0;
 		/delete-property/ pinctrl-1;
 		pinctrl-names = "default";
+		qcom,wlan-ramdump-dynamic = <0x200000>;
 		pinctrl-0 = <&host_wake_default &rome_cable_default>;
 		
 	};
@@ -1300,6 +1300,7 @@
 		wacom,fw_path = "epen/w9019_gts3l.fw";
 		wacom,ic_type = <9019>;
 		wacom,boot_on_ldo; /* Use regulator-boot-on */
+		wacom,support_aop_mode = "1"; /* S-note want to check to use aop */
 	};
 };
 

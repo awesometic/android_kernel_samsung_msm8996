@@ -2051,7 +2051,7 @@ int sec_debug_print_file_list(void)
 		}
 		rcu_read_unlock();
 	}
-	if(ret == nCnt)
+	if(ret > nCnt - 50)
 		return 1;
 	else
 		return 0;

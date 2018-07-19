@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -46,6 +46,7 @@
 #include "vos_api.h"
 #include "vos_sched.h"
 #include "wma_api.h"
+#include "wma.h"
 #include "adf_os_atomic.h"
 #include "wlan_hdd_power.h"
 #include "wlan_hdd_main.h"
@@ -60,11 +61,13 @@
 
 #define AR9888_DEVICE_ID (0x003c)
 #define AR6320_DEVICE_ID (0x003e)
+#define QCA9379_DEVICE_ID (0x0042)
 #define AR6320_FW_1_1  (0x11)
 #define AR6320_FW_1_3  (0x13)
 #define AR6320_FW_2_0  (0x20)
 #define AR6320_FW_3_0  (0x30)
 #define AR6320_FW_3_2  (0x32)
+#define QCA9379_FW_3_2  (0x31)
 
 #ifdef CONFIG_SLUB_DEBUG_ON
 #define MAX_NUM_OF_RECEIVES 400 /* Maximum number of Rx buf to process before*
@@ -126,6 +129,7 @@ static void print_config_soc_reg(struct hif_pci_softc *sc)
 static struct pci_device_id hif_pci_id_table[] = {
 	{ 0x168c, 0x003c, PCI_ANY_ID, PCI_ANY_ID },
 	{ 0x168c, 0x003e, PCI_ANY_ID, PCI_ANY_ID },
+	{ 0x168c, 0x0042, PCI_ANY_ID, PCI_ANY_ID },
 	{ 0 }
 };
 
@@ -899,7 +903,7 @@ static int hif_pci_autopm_debugfs_show(struct seq_file *s, void *data)
 						"SUSPENDED"};
 	unsigned int msecs_age;
 	int pm_state = atomic_read(&sc->pm_state);
-	unsigned long timer_expires, flags;
+	unsigned long timer_expires;
 	struct hif_pm_runtime_context *ctx;
 
 	seq_printf(s, "%30s: %s\n", "Runtime PM state",
@@ -937,9 +941,9 @@ static int hif_pci_autopm_debugfs_show(struct seq_file *s, void *data)
 				msecs_age / 1000, msecs_age % 1000);
 	}
 
-	spin_lock_irqsave(&sc->runtime_lock, flags);
+	spin_lock_bh(&sc->runtime_lock);
 	if (list_empty(&sc->prevent_suspend_list)) {
-		spin_unlock_irqrestore(&sc->runtime_lock, flags);
+		spin_unlock_bh(&sc->runtime_lock);
 		return 0;
 	}
 
@@ -951,7 +955,7 @@ static int hif_pci_autopm_debugfs_show(struct seq_file *s, void *data)
 		seq_puts(s, " ");
 	}
 	seq_puts(s, "\n");
-	spin_unlock_irqrestore(&sc->runtime_lock, flags);
+	spin_unlock_bh(&sc->runtime_lock);
 
 	return 0;
 #undef HIF_PCI_AUTOPM_STATS
@@ -1052,18 +1056,15 @@ void hif_runtime_test_init(struct hif_pci_softc *sc)
 {
 	int i;
 	struct hif_pm_runtime_context *ctx = NULL, *tmp;
-	unsigned long flags;
 
 	for (i = 0; i < MAX_RUNTIME_DEBUG_CONTEXT; i++) {
 		ctx = &rpm_data[i];
 		ctx->active = false;
 		ctx->name = NULL;
-		spin_lock_irqsave(&sc->runtime_lock, flags);
 		list_for_each_entry_safe(ctx, tmp,
 				&sc->prevent_suspend_list, list) {
 			list_del(&ctx->list);
 		}
-		spin_unlock_irqrestore(&sc->runtime_lock, flags);
 	}
 }
 
@@ -1499,7 +1500,6 @@ static void hif_pci_pm_runtime_exit(struct hif_pci_softc *sc)
  */
 static void hif_pci_pm_runtime_post_exit(struct hif_pci_softc *sc)
 {
-	unsigned long flags;
 	struct hif_pm_runtime_context *ctx, *tmp;
 
 	/*
@@ -1507,20 +1507,18 @@ static void hif_pci_pm_runtime_post_exit(struct hif_pci_softc *sc)
 	 * HTT/WMI pkts should get tx complete and driver should
 	 * will increment the usage count to 1 to prevent any suspend
 	 */
-	if (atomic_read(&sc->dev->power.usage_count) != 1) {
-		spin_lock_irqsave(&sc->runtime_lock, flags);
+	if (atomic_read(&sc->dev->power.usage_count) != 1)
 		hif_pci_runtime_pm_warn(sc, "Driver UnLoading");
-		spin_unlock_irqrestore(&sc->runtime_lock, flags);
-	} else
+	else
 		return;
 
-	spin_lock_irqsave(&sc->runtime_lock, flags);
+	spin_lock_bh(&sc->runtime_lock);
 	list_for_each_entry_safe(ctx, tmp, &sc->prevent_suspend_list, list) {
-		spin_unlock_irqrestore(&sc->runtime_lock, flags);
+		spin_unlock_bh(&sc->runtime_lock);
 		hif_runtime_pm_prevent_suspend_deinit(ctx);
-		spin_lock_irqsave(&sc->runtime_lock, flags);
+		spin_lock_bh(&sc->runtime_lock);
 	}
-	spin_unlock_irqrestore(&sc->runtime_lock, flags);
+	spin_unlock_bh(&sc->runtime_lock);
 	/*
 	 * This is totally a preventive measure to ensure Runtime PM
 	 * isn't disabled for life time.
@@ -1547,14 +1545,13 @@ static void hif_pci_pm_runtime_post_exit(struct hif_pci_softc *sc)
  */
 static void hif_pci_pm_runtime_ssr_post_exit(struct hif_pci_softc *sc)
 {
-	unsigned long flags;
 	struct hif_pm_runtime_context *ctx, *tmp;
 
-	spin_lock_irqsave(&sc->runtime_lock, flags);
+	spin_lock_bh(&sc->runtime_lock);
 	list_for_each_entry_safe(ctx, tmp, &sc->prevent_suspend_list, list) {
 		hif_pm_ssr_runtime_allow_suspend(sc, ctx);
 	}
-	spin_unlock_irqrestore(&sc->runtime_lock, flags);
+	spin_unlock_bh(&sc->runtime_lock);
 }
 
 #else
@@ -1682,6 +1679,7 @@ again:
 
     OS_MEMZERO(sc, sizeof(*sc));
     sc->mem = mem;
+    sc->mem_len = pci_resource_len(pdev, BAR_NUM);
     sc->pdev = pdev;
     sc->dev = &pdev->dev;
 
@@ -1704,6 +1702,7 @@ again:
         break;
 
     case AR6320_DEVICE_ID:
+    case QCA9379_DEVICE_ID:
         switch(revision_id) {
         case AR6320_FW_1_1:
         case AR6320_FW_1_3:
@@ -1714,6 +1713,7 @@ again:
         case AR6320_FW_2_0:
         case AR6320_FW_3_0:
         case AR6320_FW_3_2:
+        case QCA9379_FW_3_2:
             hif_type = HIF_TYPE_AR6320V2;
             target_type = TARGET_TYPE_AR6320V2;
             break;
@@ -1916,8 +1916,10 @@ int hif_pci_reinit(struct pci_dev *pdev, const struct pci_device_id *id)
 again:
     ret = 0;
 
-    if (vos_is_load_unload_in_progress(VOS_MODULE_ID_HIF, NULL)) {
-        printk("Load/unload in progress, ignore SSR reinit\n");
+    if (vos_is_load_unload_in_progress(VOS_MODULE_ID_HIF, NULL) &&
+        !vos_is_logp_in_progress(VOS_MODULE_ID_VOSS, NULL)) {
+        printk("%s: Load/unload is in progress and SSR is not,"
+               "ignore SSR reinit...\n", __func__);
         return 0;
     }
 
@@ -2040,6 +2042,7 @@ again:
         break;
 
     case AR6320_DEVICE_ID:
+    case QCA9379_DEVICE_ID:
         switch(revision_id) {
         case AR6320_FW_1_1:
         case AR6320_FW_1_3:
@@ -2050,6 +2053,7 @@ again:
         case AR6320_FW_2_0:
         case AR6320_FW_3_0:
         case AR6320_FW_3_2:
+        case QCA9379_FW_3_2:
             hif_type = HIF_TYPE_AR6320V2;
             target_type = TARGET_TYPE_AR6320V2;
             break;
@@ -2556,6 +2560,7 @@ void hif_pci_shutdown(struct pci_dev *pdev)
 
     if (vos_is_load_unload_in_progress(VOS_MODULE_ID_HIF, NULL)) {
         printk("Load/unload in progress, ignore SSR shutdown\n");
+        vos_set_logp_in_progress(VOS_MODULE_ID_HIF, FALSE);
         return;
     }
     /* this is for cases, where shutdown invoked from CNSS */
@@ -2657,13 +2662,42 @@ static void hif_dump_crash_debug_info(struct hif_pci_softc *sc)
 	struct HIF_CE_state *hif_state = (struct HIF_CE_state *)sc->hif_device;
 	struct ol_softc *scn = sc->ol_sc;
 	int ret;
+	tp_wma_handle wma_handle;
+	void *vos_context = vos_get_global_context(VOS_MODULE_ID_HIF, NULL);
 
 	if (!hif_state)
 		return;
+	if (vos_context == NULL) {
+		pr_err("%s: vos context is null\n", __func__);
+		return;
+	}
+	wma_handle = (tp_wma_handle) vos_get_context(
+			VOS_MODULE_ID_WDA, vos_context);
+	if (wma_handle == NULL) {
+		pr_err("%s: wma_handle is null\n", __func__);
+		return;
+	}
+
+	/*
+	 * When kernel panic happen, if WiFi FW is still active,
+	 * it may cause NOC errors/memory corruption when dumping
+	 * target DRAM/IRAM, to avoid this, inject a fw crash first.
+	 * send crash_inject to FW directly, because we are now
+	 * in an atomic context, and preempt has been disabled,
+	 * MCThread won't be scheduled at the moment, at the same
+	 * time, TargetFailure event wont't be received after inject
+	 * crash due to the same reason
+	 */
+	ret = wma_crash_inject(wma_handle, 1, 0);
 
 	adf_os_spin_lock_irqsave(&hif_state->suspend_lock);
 	hif_irq_record(HIF_CRASH, sc);
 	hif_dump_soc_and_ce_registers(sc);
+	if (ret) {
+		pr_err("%s: failed to send crash inject - %d\n",
+				__func__, ret);
+		goto out;
+	}
 
 	ret = ol_copy_ramdump(scn);
 
@@ -2721,6 +2755,43 @@ void hif_pci_crash_shutdown(struct pci_dev *pdev)
 #endif
 
 #define OL_ATH_PCI_PM_CONTROL 0x44
+
+/**
+ * hif_disable_tasklet_noclient() - API to disable tasklet in D3WOW
+ * @sc: HIF Context
+ * @wma_hdl: WMA Handle
+ *
+ * This API allows to disable the tasklet in D3-wow
+ * cases.
+ *
+ * Return: None
+ */
+static void hif_disable_tasklet_noclient(struct hif_pci_softc *sc,
+			void *wma_hdl)
+{
+	if (!wma_get_client_count(wma_hdl)) {
+		tasklet_disable(&sc->intr_tq);
+		pr_debug("%s: tasklet disabled\n", __func__);
+	}
+}
+
+/**
+ * hif_enable_tasklet_noclient() - API to enable tasklet in D3WOW
+ * @sc: HIF Context
+ * @wma_hdl: WMA Handle
+ *
+ * This API allows to enable the tasklet in D3-wow
+ * cases.
+ *
+ * Return: None
+ */
+static void hif_enable_tasklet_noclient(struct hif_pci_softc *sc, void *wma_hdl)
+{
+	if (!wma_get_client_count(wma_hdl)) {
+		tasklet_enable(&sc->intr_tq);
+		pr_debug("%s: tasklet disabled\n", __func__);
+	}
+}
 
 static int
 __hif_pci_suspend(struct pci_dev *pdev, pm_message_t state, bool runtime_pm)
@@ -2799,7 +2870,7 @@ __hif_pci_suspend(struct pci_dev *pdev, pm_message_t state, bool runtime_pm)
         msleep(10);
     }
 
-    tasklet_disable(&sc->intr_tq);
+    hif_disable_tasklet_noclient(sc, temp_module);
     hif_irq_record(HIF_SUSPEND_AFTER_WOW, sc);
 
 #ifdef FEATURE_WLAN_D0WOW
@@ -2956,7 +3027,6 @@ __hif_pci_resume(struct pci_dev *pdev, bool runtime_pm)
 
         tmp = A_PCI_READ32(sc->mem +
                           (SOC_CORE_BASE_ADDRESS | PCIE_INTR_ENABLE_ADDRESS));
-
         pr_err("%s: PCIE_INTR_ENABLE : %x\n", __func__, tmp);
         if (tmp != 0xffffffff)
             break;
@@ -2964,11 +3034,11 @@ __hif_pci_resume(struct pci_dev *pdev, bool runtime_pm)
         if (retry > MAX_REG_READ_RETRIES) {
             pr_err("%s: PCIe link is possible down!\n", __func__);
             print_config_soc_reg(sc);
-            adf_os_atomic_set(&sc->pci_link_suspended, 1); 
-            adf_os_atomic_set(&sc->wow_done, 1); 
-            sc->recovery = true; 
-            vos_set_logp_in_progress(VOS_MODULE_ID_VOSS, TRUE); 
-            vos_wlan_pci_link_down(); 
+            adf_os_atomic_set(&sc->pci_link_suspended, 1);
+            adf_os_atomic_set(&sc->wow_done, 1);
+            sc->recovery = true;
+            vos_set_logp_in_progress(VOS_MODULE_ID_VOSS, TRUE);
+            vos_wlan_pci_link_down();
             return -EACCES;
         }
 
@@ -3030,7 +3100,7 @@ skip:
         goto out;
     }
 
-    tasklet_enable(&sc->intr_tq);
+    hif_enable_tasklet_noclient(sc, temp_module);
 
     if (!wma_is_wow_mode_selected(temp_module))
         err = wma_resume_target(temp_module, runtime_pm);

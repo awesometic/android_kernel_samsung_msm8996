@@ -102,6 +102,7 @@
 #define BATT_MISC_EVENT_TIMEOUT_OPEN_TYPE		0x00000004
 #define BATT_MISC_EVENT_CISD					0x00000010
 
+#define SEC_INPUT_VOLTAGE_0V	0
 #define SEC_INPUT_VOLTAGE_5V	5
 #define SEC_INPUT_VOLTAGE_7V	7
 #define SEC_INPUT_VOLTAGE_9V	9
@@ -291,6 +292,8 @@ struct sec_battery_info {
 	struct notifier_block vbus_nb;
 	int muic_vbus_status;
 #endif
+	bool safety_timer_set;
+	bool lcd_status;
 	bool skip_swelling;
 
 	unsigned int ab_vbat_max_count;
@@ -508,8 +511,11 @@ struct sec_battery_info {
 	struct mutex batt_handlelock;
 	struct mutex current_eventlock;
 	struct mutex typec_notylock;
-	unsigned long lcd_on_total_time;
-	unsigned long lcd_on_time;
+
+	bool stop_timer;
+	unsigned long prev_safety_time;
+	unsigned long expired_time;
+	unsigned long cal_safety_time;
 };
 
 ssize_t sec_bat_show_attrs(struct device *dev,
@@ -679,7 +685,9 @@ enum {
 	MODE,
 	CHECK_PS_READY,
 	BATT_CHIP_ID,
+	SAFETY_TIMER_SET,
 	BATT_SWELLING_CONTROL,
+	SAFETY_TIMER_INFO,
 
 	CISD_ONOFF,
 	CISD_INFO_VALUE,

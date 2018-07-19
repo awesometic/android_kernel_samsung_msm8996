@@ -473,6 +473,7 @@ static int mdss_samsung_dsi_panel_event_handler(
 		case MDSS_SAMSUNG_EVENT_PANEL_ESD_RECOVERY:
 			if (vdd->send_esd_recovery)
 				mdss_samsung_send_esd_recovery_cmd(ctrl);
+			break;
 		case MDSS_SAMSUNG_EVENT_MULTI_RESOLUTION:
 			if (panel_func->samsung_multires)
 				panel_func->samsung_multires(vdd);
@@ -497,13 +498,14 @@ static ssize_t mdss_samsung_panel_lpm_ctrl_debug(struct file *file,
 	struct mdss_dsi_ctrl_pdata *ctrl;
 	int mode, ret = count;
 	char buf[10];
+	size_t buf_size = min(count, sizeof(buf) - 1);
 
 	if (IS_ERR_OR_NULL(vdd)) {
 		ret = -EFAULT;
 		goto end;
 	}
 
-	if (copy_from_user(buf, user_buf, count)) {
+	if (copy_from_user(buf, user_buf, buf_size)) {
 		ret = -EFAULT;
 		goto end;
 	}
@@ -1679,6 +1681,7 @@ int mdss_samsung_panel_on_post(struct mdss_panel_data *pdata)
 	mutex_unlock(&vdd->mfd_dsi[DISPLAY_1]->bl_lock);
 
 	if (vdd->support_mdnie_lite){
+		vdd->mdnie_lcd_on_notifiy = true;
 		update_dsi_tcon_mdnie_register(vdd);
 		if(vdd->support_mdnie_trans_dimming)
 			vdd->mdnie_disable_trans_dimming = false;
@@ -3757,6 +3760,7 @@ void mdss_samsung_panel_pbaboot_config(struct device_node *np,
 		pinfo->mipi.lp11_init = false;
 
 		vdd->support_mdnie_lite = false;
+		vdd->mdnie_lcd_on_notifiy = false;
 		vdd->support_mdnie_trans_dimming = false;
 		vdd->mdnie_disable_trans_dimming = false;
 
@@ -5479,6 +5483,7 @@ static void mdss_samsung_panel_lpm_ctrl(struct mdss_panel_data *pdata, int enabl
 		mutex_unlock(&vdd->mfd_dsi[DISPLAY_1]->bl_lock);
 
 		if (vdd->support_mdnie_lite) {
+			vdd->mdnie_lcd_on_notifiy = true;
 			update_dsi_tcon_mdnie_register(vdd);
 			if(vdd->support_mdnie_trans_dimming)
 				vdd->mdnie_disable_trans_dimming = false;

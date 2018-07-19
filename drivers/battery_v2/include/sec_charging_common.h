@@ -758,6 +758,10 @@ struct sec_battery_platform_data {
 	unsigned int normal_charging_total_time;
 	unsigned int usb_charging_total_time;
 
+	unsigned int expired_time;
+	unsigned int recharging_expired_time;
+	int standard_curr;
+
 	/* fuel gauge */
 	char *fuelgauge_name;
 	int fg_irq;
@@ -796,6 +800,7 @@ struct sec_battery_platform_data {
 #else
 	int chg_float_voltage;
 #endif
+	unsigned int chg_float_voltage_conv;
 #if defined(CONFIG_BATTERY_AGE_FORECAST)
 	int num_age_step;
 	int age_step;

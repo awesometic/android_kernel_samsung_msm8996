@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -90,6 +90,8 @@ htt_t2h_mac_addr_deswizzle(u_int8_t *tgt_mac_addr, u_int8_t *buffer)
 
 #if defined(CONFIG_HL_SUPPORT)
 #define HTT_RX_FRAG_SET_LAST_MSDU(pdev, msg) /* no-op */
+#define HTT_FAIL_NOTIFY_BREAK_CHECK(status) \
+	((status) == htt_tx_status_fail_notify)
 #else
 static void HTT_RX_FRAG_SET_LAST_MSDU(
     struct htt_pdev_t *pdev, adf_nbuf_t msg)
@@ -135,6 +137,8 @@ static void HTT_RX_FRAG_SET_LAST_MSDU(
     rx_desc->msdu_end.last_msdu = 1;
     adf_nbuf_map(pdev->osdev, msdu, ADF_OS_DMA_FROM_DEVICE);
 }
+
+#define HTT_FAIL_NOTIFY_BREAK_CHECK(status)  0
 #endif /* CONFIG_HL_SUPPORT */
 
 /* Target to host Msg/event  handler  for low priority messages*/
@@ -172,7 +176,7 @@ htt_t2h_lp_msg_handler(void *context, adf_nbuf_t htt_t2h_msg )
         {
             u_int16_t peer_id;
             u_int8_t tid;
-            int seq_num_start, seq_num_end;
+            u_int16_t seq_num_start, seq_num_end;
             enum htt_rx_flush_action action;
 
             peer_id = HTT_RX_FLUSH_PEER_ID_GET(*msg_word);
@@ -495,6 +499,7 @@ htt_t2h_lp_msg_handler(void *context, adf_nbuf_t htt_t2h_msg )
                 break;
             }
         }
+        break;
     }
     case HTT_T2H_MSG_TYPE_RATE_REPORT:
         {
@@ -614,9 +619,14 @@ if (adf_os_unlikely(pdev->rx_ring.rx_reset)) {
                  * TODO: remove copy after stopping reuse skb on HIF layer
                  * because SDIO HIF may reuse skb before upper layer release it
                  */
-                ol_rx_indication_handler(
-                    pdev->txrx_pdev, htt_t2h_msg, peer_id, tid,
-                    num_mpdu_ranges);
+                if (VOS_MONITOR_MODE == vos_get_conparam())
+                    ol_rx_mon_indication_handler(
+                            pdev->txrx_pdev, htt_t2h_msg, peer_id, tid,
+                            num_mpdu_ranges);
+                else
+                    ol_rx_indication_handler(
+                            pdev->txrx_pdev, htt_t2h_msg, peer_id, tid,
+                            num_mpdu_ranges);
 
                 return;
             } else {
@@ -630,10 +640,26 @@ if (adf_os_unlikely(pdev->rx_ring.rx_reset)) {
         {
             int num_msdus;
             enum htt_tx_status status;
+            int msg_len = adf_nbuf_len(htt_t2h_msg);
 
             /* status - no enum translation needed */
             status = HTT_TX_COMPL_IND_STATUS_GET(*msg_word);
             num_msdus = HTT_TX_COMPL_IND_NUM_GET(*msg_word);
+
+            /*
+             * each desc id will occupy 2 bytes.
+             * the 4 is for htt msg header
+             */
+            if ((num_msdus * HTT_TX_COMPL_BYTES_PER_MSDU_ID +
+                HTT_TX_COMPL_HEAD_SZ) > msg_len) {
+                adf_os_print("%s: num_msdus(%d) is invalid,"
+                            "adf_nbuf_len = %d\n",
+                            __FUNCTION__,
+                            num_msdus,
+                            msg_len);
+                break;
+            }
+
             if (num_msdus & 0x1) {
                 struct htt_tx_compl_ind_base *compl = (void *)msg_word;
 
@@ -650,7 +676,25 @@ if (adf_os_unlikely(pdev->rx_ring.rx_reset)) {
                 }
             }
 
+            /* Indicate failure status to user space */
+            ol_tx_failure_indication(pdev->txrx_pdev,
+                                     HTT_TX_COMPL_IND_TID_GET(*msg_word),
+                                     num_msdus, status);
+
             if (pdev->cfg.is_high_latency) {
+                /*
+                 * For regular frms in HL case, frms have already been
+                 * freed and tx credit has been updated. FW indicates
+                 * special message for failure MSDUs with status type
+                 * htt_tx_status_fail_notify. Once such message was
+                 * received, just break here.
+                 */
+                if (ol_cfg_tx_free_at_download(pdev->ctrl_pdev) &&
+                    HTT_FAIL_NOTIFY_BREAK_CHECK(status)) {
+                    adf_os_print("HTT TX COMPL for failed data frm.\n");
+                    break;
+                }
+
                 if (!pdev->cfg.default_tx_comp_req) {
                     int credit_delta;
                     HTT_TX_MUTEX_ACQUIRE(&pdev->credit_mutex);
@@ -667,7 +711,7 @@ if (adf_os_unlikely(pdev->rx_ring.rx_reset)) {
                 }
             }
             ol_tx_completion_handler(
-                pdev->txrx_pdev, num_msdus, status, msg_word + 1);
+                pdev->txrx_pdev, num_msdus, status, msg_word);
             HTT_TX_SCHED(pdev);
             break;
         }
@@ -675,7 +719,7 @@ if (adf_os_unlikely(pdev->rx_ring.rx_reset)) {
         {
             u_int16_t peer_id;
             u_int8_t tid, pn_ie_cnt, *pn_ie=NULL;
-            int seq_num_start, seq_num_end;
+            u_int16_t seq_num_start, seq_num_end;
 
             /*First dword */
             peer_id = HTT_RX_PN_IND_PEER_ID_GET(*msg_word);
@@ -702,8 +746,23 @@ if (adf_os_unlikely(pdev->rx_ring.rx_reset)) {
     case HTT_T2H_MSG_TYPE_TX_INSPECT_IND:
         {
             int num_msdus;
+            int msg_len = adf_nbuf_len(htt_t2h_msg);
 
             num_msdus = HTT_TX_COMPL_IND_NUM_GET(*msg_word);
+            /*
+             * each desc id will occupy 2 bytes.
+             * the 4 is for htt msg header
+             */
+            if ((num_msdus * HTT_TX_COMPL_BYTES_PER_MSDU_ID +
+                HTT_TX_COMPL_HEAD_SZ) > msg_len) {
+                adf_os_print("%s: num_msdus(%d) is invalid,"
+                            "adf_nbuf_len = %d,inspect\n",
+                            __FUNCTION__,
+                            num_msdus,
+                            msg_len);
+                break;
+            }
+
             if (num_msdus & 0x1) {
                 struct htt_tx_compl_ind_base *compl = (void *)msg_word;
 
@@ -929,6 +988,49 @@ htt_rx_ind_rssi_dbm_chain(htt_pdev_handle pdev, adf_nbuf_t rx_ind_msg,
 }
 
 /**
+ * htt_rx_ind_noise_floor_chain() - Return the nosie floor for a chain
+ *              provided in a rx indication message.
+ * @pdev:       the HTT instance the rx data was received on
+ * @rx_ind_msg: the netbuf containing the rx indication message
+ * @chain:      the index of the chain (0-1) for DSRC
+ *
+ * Return the noise floor for a chain from an rx indication message.
+ *
+ * Return: noise floor, or HTT_NOISE_FLOOR_INVALID
+ */
+int8_t
+htt_rx_ind_noise_floor_chain(htt_pdev_handle pdev, adf_nbuf_t rx_ind_msg,
+			     int8_t chain)
+{
+	int8_t noise_floor;
+	u_int32_t *msg_word;
+
+	/* only chain0/1 used with 11p DSRC */
+	if (chain < 0 || chain > 1) {
+		return HTT_NOISE_FLOOR_INVALID;
+	}
+
+	msg_word = (u_int32_t *)
+		(adf_nbuf_data(rx_ind_msg) +
+		 HTT_RX_IND_FW_RX_PPDU_DESC_BYTE_OFFSET);
+
+	/* check if the RX_IND message contains valid rx PPDU start info */
+	if (!HTT_RX_IND_START_VALID_GET(*msg_word)) {
+		return HTT_NOISE_FLOOR_INVALID;
+	}
+
+	msg_word = (u_int32_t *)
+		(adf_nbuf_data(rx_ind_msg) + HTT_RX_IND_HDR_SUFFIX_BYTE_OFFSET);
+
+	if (chain == 0)
+		noise_floor = HTT_RX_IND_NOISE_FLOOR_CHAIN0_GET(*msg_word);
+	else if (chain == 1)
+		noise_floor = HTT_RX_IND_NOISE_FLOOR_CHAIN1_GET(*msg_word);
+
+	return noise_floor;
+}
+
+/**
  * htt_rx_ind_legacy_rate() - Return the data rate
  * @pdev:        the HTT instance the rx data was received on
  * @rx_ind_msg:  the netbuf containing the rx indication message
@@ -1077,8 +1179,8 @@ void
 htt_rx_frag_ind_flush_seq_num_range(
     htt_pdev_handle pdev,
     adf_nbuf_t rx_frag_ind_msg,
-    int *seq_num_start,
-    int *seq_num_end)
+    u_int16_t *seq_num_start,
+    u_int16_t *seq_num_end)
 {
     u_int32_t *msg_word;
 

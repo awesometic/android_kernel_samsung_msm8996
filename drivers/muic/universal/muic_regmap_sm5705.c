@@ -1272,11 +1272,19 @@ static int sm5705_afc_init_check(struct regmap_desc *pdesc)
 	if (pmuic->intr.intr3 & 0x01 || pmuic->vps.s.val1 == 0x40) {
 #endif
 #if !defined(CONFIG_SEC_FACTORY) && defined(CONFIG_MUIC_SUPPORT_CCIC)
-		if (pmuic->is_ccic_attach && pmuic->ccic_rp == Rp_56K)
-			afcops->afc_ta_attach(pmuic->regmapdesc);
-		else {
+		/* To prevent damage by RP0 Cable, AFC should be progress after ccic_attach */
+		if (pmuic->is_ccic_attach)  { // AFC_TA_ATTACHED 
+			if (pmuic->ccic_rp == Rp_56K)
+				afcops->afc_ta_attach(pmuic->regmapdesc);
+			else {
+				pmuic->retry_afc = true;
+				pr_info("%s: Rp isn't 56K, but is (%d)K\n", __func__, pmuic->ccic_rp);
+				pmuic->attached_dev = ATTACHED_DEV_AFC_CHARGER_5V_MUIC;
+				muic_notifier_attach_attached_dev(pmuic->attached_dev);
+			}
+		} else {
 			pmuic->retry_afc = true;
-			pr_info("%s: Need AFC restart for late ccic_attach\n", __func__);
+			pr_info("%s: Need to restart AFC for late ccic_attach\n", __func__);
 		}
 #else
 		afcops->afc_ta_attach(pmuic->regmapdesc);

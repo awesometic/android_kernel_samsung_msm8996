@@ -36,7 +36,7 @@
 		battery,input_current_limit = <1800 500 500 1800 460 900 1000 460 100 460 900 1800 1800 460 460 400 700 1300 300 1000 1500 460 1650 500 1650 80 1800 1650 1400 1000 1000 460 900 900 700 900 900 900 2100 1650 2000 500>;
 		battery,fast_charging_current = <2100 450 450 2100 700 1200 1000 500 1200 450 2100 1600 2100 450 450 400 700 1300 300 1000 1500 450 2700 1000 2700 80 1800 1000 1400 450 1000 500 2100 2100 2100 2100 2100 2100 2700 450 2100 500>;
 		battery,full_check_current_1st = <400 0 0 400 400 400 400 400 400 0 400 400 400 0 0 400 400 400 400 400 400 0 400 400 400 0 400 400 400 0 400 0 400 400 400 400 400 400 400 400 400 400>;
-		battery,full_check_current_2nd = <200 0 0 200 200 200 200 200 200 0 200 200 200 0 0 200 200 200 200 200 200 0 200 200 200 0 200 200 200 0 200 0 200 200 200 200 200 200 200 200 200 200>;
+		battery,full_check_current_2nd = <300 0 0 300 300 300 300 300 300 0 300 300 300 0 0 300 300 300 300 300 300 0 300 300 300 0 300 300 300 0 300 0 300 300 300 300 300 300 300 300 300 300>;
 
 		battery,adc_check_count = <5>;
 
@@ -94,17 +94,21 @@
 		battery,recharge_check_count = <1>;
 		battery,recharge_condition_type = <4>; /* SEC_BATTERY_RECHARGE_CONDITION_VCELL */
 		battery,recharge_condition_soc = <98>;
-		battery,recharge_condition_vcell = <4250>;
+		battery,recharge_condition_vcell = <4230>;
 
 		battery,charging_total_time = <36000>;
 		battery,recharging_total_time = <5400>;
 		battery,charging_reset_time = <0>;
 		qcom,sec-battery-vadc = <&pm8994_vadc>;
 
+		battery,standard_curr = <2700>;
+		battery,expired_time = <14400>;
+		battery,recharging_expired_time = <5400>;
+
 		battery,chg_float_voltage = <4300>;
 
 		battery,swelling_high_temp_block = <410>;
-		battery,swelling_high_temp_recov = <360>;
+		battery,swelling_high_temp_recov = <390>;
 		battery,swelling_low_temp_block_1st = <150>;
 		battery,swelling_low_temp_recov_1st = <200>;
 		battery,swelling_low_temp_block_2nd = <50>;
@@ -115,9 +119,9 @@
 		battery,swelling_high_temp_current = <1350>;  // 0.45*3000
 		battery,swelling_high_temp_topoff = <300>;  // 0.05C
 
-		battery,swelling_drop_float_voltage = <4150>;
-		battery,swelling_high_rechg_voltage = <4000>;
-		battery,swelling_low_rechg_voltage = <4000>;
+		battery,swelling_drop_float_voltage = <4100>;
+		battery,swelling_high_rechg_voltage = <3950>;
+		battery,swelling_low_rechg_voltage = <3950>;
 
 		battery,siop_event_check_type = <1>;
 		battery,siop_call_cv_current = <500>;
@@ -143,11 +147,11 @@
 		battery,battery,usb_charging_total_time = <72000>;
 
 		/* cycle, chg_float_voltage, recharge_condition_vcell, full_condition_vcell, full_condition_soc */
-		battery,age_data = <0   4300 4250 4200 93
-				200  4280 4230 4180 92
-				250  4260 4210 4160 91
-				300  4240 4190 4140 90
-				1000 4190 4140 4090 89>;
+		battery,age_data = <0   4300 4230 4200 93
+				200  4280 4210 4180 92
+				250  4260 4190 4160 91
+				300  4240 4170 4140 90
+				1000 4190 4120 4090 89>;
 	};
 
 	sm5705-charger {

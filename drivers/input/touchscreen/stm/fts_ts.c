@@ -2309,6 +2309,10 @@ static int fts_parse_dt(struct device *dev,
 	if (rc < 0)
 		dt_data->bringup = 0;
 
+	rc = of_property_read_u32(np, "stm,poweroff-pinctrl", &dt_data->poweroff_pinctrl);
+	if (rc < 0)
+		dt_data->poweroff_pinctrl = 0;
+
 	dev_err(dev, "%s: tsp_int= %d, X= %d, Y= %d, grip_area= %d, project= %s, gesture[%d], string[%d], bringup[%d], tsp_id=%d, tsp_id2=%d, fw_name=%s\n",
 		__func__, dt_data->irq_gpio,
 			dt_data->max_x, dt_data->max_y, dt_data->grip_area, dt_data->project,
@@ -3380,6 +3384,9 @@ static int fts_stop_device(struct fts_ts_info *info)
 		fts_power_ctrl(info->client, false);
 		mutex_unlock(&info->i2c_mutex);
 		info->power_state = STATE_POWEROFF;
+
+		if (info->dt_data->poweroff_pinctrl)
+			i2c_msm_pinctrl_set_slave_power_off(info->client->adapter);
 	}
 	fts_pinctrl_configure(info, false);
 out:

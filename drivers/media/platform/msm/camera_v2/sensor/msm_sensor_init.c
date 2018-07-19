@@ -974,10 +974,6 @@ static int __init msm_sensor_init_module(void)
 		ret = -ENODEV;
 		goto device_create_fail;
 	}
-	if (device_create_file(cam_dev_back, &dev_attr_ssrm_camera_info) < 0) {
-		printk("Failed to create device file!(%s)!\n",
-			dev_attr_ssrm_camera_info.attr.name);
-	}
 	if (sysfs_create_file(SVC, &dev_attr_SVC_rear_module.attr) < 0) {
 		printk("Failed to create device file!(%s)!\n",
 			dev_attr_SVC_rear_module.attr.name);
@@ -985,7 +981,10 @@ static int __init msm_sensor_init_module(void)
 		goto device_create_fail;
 	}
 #endif
-
+	if (device_create_file(cam_dev_back, &dev_attr_ssrm_camera_info) < 0) {
+		printk("Failed to create device file!(%s)!\n",
+			dev_attr_ssrm_camera_info.attr.name);
+	}
 	cam_dev_front = device_create(camera_class, NULL,
 		2, NULL, "front");
 	if (IS_ERR(cam_dev_front)) {

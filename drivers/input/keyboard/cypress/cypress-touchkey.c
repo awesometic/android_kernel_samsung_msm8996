@@ -109,17 +109,20 @@ static int read_window_type(void)
 	if (ret != 9 * sizeof(char)) {
 		pr_err("%s touchkey %s: fd read fail\n", SECLOG, __func__);
 		ret = -EIO;
-		return ret;
+		goto out;
 	}
 
-	filp_close(type_filp, current->files);
-	set_fs(old_fs);
-
-	if (window_type[1] < '0' || window_type[1] >= 'f')
-		return -EAGAIN;
+	if (window_type[1] < '0' || window_type[1] >= 'f') {
+		ret = -EAGAIN;
+		goto out;
+	}
 
 	ret = (window_type[1] - '0') & 0x0f;
 	pr_info("%s touchkey %s: %d\n", SECLOG, __func__, ret);
+out:
+	filp_close(type_filp, current->files);
+	set_fs(old_fs);
+
 	return ret;
 }
 

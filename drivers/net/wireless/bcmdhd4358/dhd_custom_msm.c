@@ -1,7 +1,7 @@
 /*
  * Platform Dependent file for Qualcomm MSM/APQ
  *
- * Copyright (C) 1999-2016, Broadcom Corporation
+ * Copyright (C) 1999-2017, Broadcom Corporation
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_custom_msm.c 632765 2016-04-20 11:29:41Z $
+ * $Id: dhd_custom_msm.c 719112 2017-09-04 02:49:00Z $
  *
  */
 
@@ -38,9 +38,6 @@
 #include <linux/fcntl.h>
 #include <linux/fs.h>
 #include <linux/of_gpio.h>
-#ifdef CONFIG_ARCH_MSM8996
-#include <linux/msm_pcie.h>
-#endif /* CONFIG_ARCH_MSM8996 */
 
 #ifdef CONFIG_BROADCOM_WIFI_RESERVED_MEM
 extern int dhd_init_wlan_mem(void);

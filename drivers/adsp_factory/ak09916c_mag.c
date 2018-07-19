@@ -173,7 +173,7 @@ static ssize_t mag_raw_data_read(struct device *dev,
 		data->sensor_data[ADSP_FACTORY_MAG].z);
 }
 
-static ssize_t mag_selttest_show(struct device *dev,
+static ssize_t mag_selftest_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct adsp_data *data = dev_get_drvdata(dev);
@@ -247,7 +247,7 @@ static DEVICE_ATTR(adc, S_IRUGO, mag_read_adc, NULL);
 static DEVICE_ATTR(dac, S_IRUGO, mag_check_cntl, NULL);
 static DEVICE_ATTR(chk_registers, S_IRUGO, mag_check_registers, NULL);
 static DEVICE_ATTR(selftest, S_IRUSR | S_IRGRP,
-	mag_selttest_show, NULL);
+	mag_selftest_show, NULL);
 static DEVICE_ATTR(asa, S_IRUGO, mag_get_asa, NULL);
 static DEVICE_ATTR(status, S_IRUGO, mag_get_status, NULL);
 

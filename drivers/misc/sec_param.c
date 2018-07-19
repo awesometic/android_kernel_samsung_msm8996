@@ -84,12 +84,13 @@ bool sec_open_param(void)
 	
 	pr_info("%s start \n",__func__);
 
-	if (param_data != NULL)
-		return true;
+	if (!param_data)
+		param_data = kmalloc(sizeof(struct sec_param_data), GFP_KERNEL);
 
-	mutex_lock(&sec_param_mutex);
-
-	param_data = kmalloc(sizeof(struct sec_param_data), GFP_KERNEL);
+	if (unlikely(!param_data)) {
+		pr_err("failed to alloc for param_data\n");
+		return false;
+	}
 
 	sched_sec_param_data.value=param_data;
 	sched_sec_param_data.offset=SEC_PARAM_FILE_OFFSET;
@@ -101,19 +102,15 @@ bool sec_open_param(void)
 
 	pr_info("%s end \n",__func__);
 
-	mutex_unlock(&sec_param_mutex);
-
 	return ret;
 
-	}
+}
 
 bool sec_write_param(void)
 {
 	int ret = true;
 	
 	pr_info("%s start\n",__func__);
-
-	mutex_lock(&sec_param_mutex);
 
 	sched_sec_param_data.value=param_data;
 	sched_sec_param_data.offset=SEC_PARAM_FILE_OFFSET;
@@ -125,18 +122,19 @@ bool sec_write_param(void)
 
 	pr_info("%s end\n",__func__);
 
-	mutex_unlock(&sec_param_mutex);
-
 	return ret;
 
 }
 
 bool sec_get_param(enum sec_param_index index, void *value)
 {
-	int ret = true;
+	bool ret = true;
+
+	mutex_lock(&sec_param_mutex);
+
 	ret = sec_open_param();
 	if (!ret)
-		return ret;
+		goto out;
 
 	switch (index) {
 	case param_index_debuglevel:
@@ -204,45 +202,37 @@ bool sec_get_param(enum sec_param_index index, void *value)
 		break;
 #ifdef CONFIG_USER_RESET_DEBUG
 	case param_index_reset_ex_info:
-		mutex_lock(&sec_param_mutex);
 		sched_sec_param_data.value=value;
 		sched_sec_param_data.offset=SEC_PARAM_EX_INFO_OFFSET;
 		sched_sec_param_data.size=SEC_DEBUG_EX_INFO_SIZE;
 		sched_sec_param_data.direction=PARAM_RD;
 		schedule_work(&sched_sec_param_data.sec_param_work);
 		wait_for_completion(&sched_sec_param_data.work);
-		mutex_unlock(&sec_param_mutex);
 		break;
 	case param_index_reset_klog_info:
 	case param_index_reset_summary_info:
-		mutex_lock(&sec_param_mutex);
 		sched_sec_param_data.value=value;
 		sched_sec_param_data.offset=SEC_PARAM_DEBUG_HEADER_OFFSET;
 		sched_sec_param_data.size=sizeof(struct param_debug_header);
 		sched_sec_param_data.direction=PARAM_RD;
 		schedule_work(&sched_sec_param_data.sec_param_work);
 		wait_for_completion(&sched_sec_param_data.work);
-		mutex_unlock(&sec_param_mutex);
 		break;
 	case param_index_reset_summary:
-		mutex_lock(&sec_param_mutex);
 		sched_sec_param_data.value=value;
 		sched_sec_param_data.offset=SEC_PARAM_DUMP_SUMMARY_OFFSET;
 		sched_sec_param_data.size=SEC_PARAM_DUMP_SUMMARY_SIZE;
 		sched_sec_param_data.direction=PARAM_RD;
 		schedule_work(&sched_sec_param_data.sec_param_work);
 		wait_for_completion(&sched_sec_param_data.work);
-		mutex_unlock(&sec_param_mutex);
 		break;
 	case param_index_reset_klog:
-		mutex_lock(&sec_param_mutex);
 		sched_sec_param_data.value=value;
 		sched_sec_param_data.offset=SEC_PARAM_KLOG_OFFSET;
 		sched_sec_param_data.size=SEC_PARAM_KLOG_SIZE;
 		sched_sec_param_data.direction=PARAM_RD;
 		schedule_work(&sched_sec_param_data.sec_param_work);
 		wait_for_completion(&sched_sec_param_data.work);
-		mutex_unlock(&sec_param_mutex);
 		break;
 #endif
 #ifdef CONFIG_SEC_NAD
@@ -254,20 +244,23 @@ bool sec_get_param(enum sec_param_index index, void *value)
 		break;
 #endif
 	default:
-		return false;
+		ret = false;
 	}
 
-	return true;
+out:
+	mutex_unlock(&sec_param_mutex);
+	return ret;
 }
 EXPORT_SYMBOL(sec_get_param);
 
 bool sec_set_param(enum sec_param_index index, void *value)
 {
-	int ret = true;
+	bool ret = true;
 
+	mutex_lock(&sec_param_mutex);
 	ret = sec_open_param();
 	if (!ret)
-		return ret;
+		goto out;
 
 	switch (index) {
 	case param_index_debuglevel:
@@ -341,14 +334,12 @@ bool sec_set_param(enum sec_param_index index, void *value)
 #ifdef CONFIG_USER_RESET_DEBUG
 	case param_index_reset_klog_info:
 	case param_index_reset_summary_info:
-		mutex_lock(&sec_param_mutex);
 		sched_sec_param_data.value=(struct param_debug_header *)value;
 		sched_sec_param_data.offset=SEC_PARAM_DEBUG_HEADER_OFFSET;
 		sched_sec_param_data.size=sizeof(struct param_debug_header);
 		sched_sec_param_data.direction=PARAM_WR;
 		schedule_work(&sched_sec_param_data.sec_param_work);
 		wait_for_completion(&sched_sec_param_data.work);
-		mutex_unlock(&sec_param_mutex);
 		break;
 	case param_index_reset_ex_info:
 	case param_index_reset_summary:
@@ -366,11 +357,14 @@ bool sec_set_param(enum sec_param_index index, void *value)
 		break;
 #endif
 	default:
-		return false;
+		ret = false;
+		goto out;
 	}
 
 	ret = sec_write_param();
 
+out:
+	mutex_unlock(&sec_param_mutex);
 	return ret;
 }
 EXPORT_SYMBOL(sec_set_param);

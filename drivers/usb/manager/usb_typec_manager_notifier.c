@@ -795,9 +795,9 @@ int manager_notifier_register(struct notifier_block *nb, notifier_fn_t notifier,
 		if (typec_manager.ccic_drp_state == USB_STATUS_NOTIFY_ATTACH_UFP
 			|| typec_manager.cable_type == MANAGER_NOTIFY_MUIC_USB) {
 			cancel_delayed_work_sync(&typec_manager.cable_check_work);
-			if (typec_manager.muic_cable_type != ATTACHED_DEV_JIG_USB_OFF_MUIC && 
-					typec_manager.muic_cable_type != ATTACHED_DEV_JIG_USB_ON_MUIC) 
-				schedule_delayed_work(&typec_manager.cable_check_work, msecs_to_jiffies(15000));	// booting_delay_sec is 15 in Usb_notifier
+			if (typec_manager.muic_cable_type != ATTACHED_DEV_JIG_USB_OFF_MUIC &&
+					typec_manager.muic_cable_type != ATTACHED_DEV_JIG_USB_ON_MUIC)
+				schedule_delayed_work(&typec_manager.cable_check_work, msecs_to_jiffies(350000));
 		}
 
 		pr_info("usb: [M] %s USB: attach=%d, drp=%s \n", __func__,	m_noti.sub1,

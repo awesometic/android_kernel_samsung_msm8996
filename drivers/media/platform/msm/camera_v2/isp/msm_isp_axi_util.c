@@ -667,7 +667,7 @@ void msm_isp_update_framedrop_reg(struct vfe_device *vfe_dev,
 					MSM_VFE_STREAM_STOP_PERIOD;
 		}
 
-		if (stream_info->undelivered_request_cnt > 0)
+		if (stream_info->undelivered_request_cnt == 1)
 			stream_info->current_framedrop_period =
 				MSM_VFE_STREAM_STOP_PERIOD;
 
@@ -2016,8 +2016,7 @@ static void msm_isp_get_camif_update_state_and_halt(
 				*camif_update = DISABLE_CAMIF_IMMEDIATELY;
 			else
 				*camif_update = DISABLE_CAMIF;
-		}
-		else
+		} else
 			*camif_update = NO_UPDATE;
 	} else
 		*camif_update = NO_UPDATE;

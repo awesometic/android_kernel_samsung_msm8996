@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -464,6 +464,9 @@ struct diagchar_dev {
 	struct class *diagchar_class;
 	struct device *diag_dev;
 	int ref_count;
+	int mask_clear;
+	struct mutex diag_maskclear_mutex;
+	struct mutex diag_notifier_mutex;
 	struct mutex diagchar_mutex;
 	struct mutex diag_file_mutex;
 	wait_queue_head_t wait_q;
@@ -504,7 +507,7 @@ struct diagchar_dev {
 	struct list_head cmd_reg_list;
 	struct mutex cmd_reg_mutex;
 	uint32_t cmd_reg_count;
-	struct mutex diagfwd_channel_mutex;
+	struct mutex diagfwd_channel_mutex[NUM_PERIPHERALS];
 	/* Sizes that reflect memory pool sizes */
 	unsigned int poolsize;
 	unsigned int poolsize_hdlc;
@@ -536,6 +539,7 @@ struct diagchar_dev {
 	unsigned char *buf_feature_mask_update;
 	uint8_t hdlc_disabled;
 	struct mutex hdlc_disable_mutex;
+	struct mutex hdlc_recovery_mutex;
 	struct timer_list hdlc_reset_timer;
 	struct mutex diag_hdlc_mutex;
 	unsigned char *hdlc_buf;
@@ -581,8 +585,10 @@ struct diagchar_dev {
 	struct diag_mask_info *event_mask;
 	struct diag_mask_info *build_time_mask;
 	uint8_t msg_mask_tbl_count;
+	uint8_t bt_msg_mask_tbl_count;
 	uint16_t event_mask_size;
 	uint16_t last_event_id;
+	struct mutex msg_mask_lock;
 	/* Variables for Mask Centralization */
 	uint16_t num_event_id[NUM_PERIPHERALS];
 	uint32_t num_equip_id[NUM_PERIPHERALS];
@@ -596,6 +602,7 @@ struct diagchar_dev {
 	uint8_t uses_time_api;
 	/* pid for diag_mdlog(CP silent log app) */
 	struct pid *silent_log_pid;
+	struct platform_device *pdev;
 };
 
 extern struct diagchar_dev *driver;
@@ -625,6 +632,8 @@ void diag_cmd_remove_reg(struct diag_cmd_reg_entry_t *entry, uint8_t proc);
 void diag_cmd_remove_reg_by_pid(int pid);
 void diag_cmd_remove_reg_by_proc(int proc);
 int diag_cmd_chk_polling(struct diag_cmd_reg_entry_t *entry);
+int diag_mask_param(void);
+void diag_clear_masks(struct diag_md_session_t *info);
 
 void diag_record_stats(int type, int flag);
 
