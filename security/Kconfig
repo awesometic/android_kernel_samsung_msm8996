@@ -180,6 +180,7 @@ source security/mstdrv/Kconfig
 source security/integrity/Kconfig
 source security/tz_iccc/Kconfig
 source security/knox_test/Kconfig
+source security/samsung/dsms/Kconfig
 
 choice
 	prompt "Default security module"

@@ -403,7 +403,7 @@ static int sm5705_get_soc_cycle(struct i2c_client *client)
 
 static void sm5705_fg_test_read(struct i2c_client *client)
 {
-	int ret0, ret1, ret2, ret3, ret4, ret5, ret6, ret7, ret8, ret9;
+	int ret0, ret1, ret2, ret3, ret4, ret5, ret6, ret7, ret8, ret9, ret10, ret11;
 
 	ret0 = sm5705_fg_i2c_read_word(client, 0xA0);
 	ret1 = sm5705_fg_i2c_read_word(client, 0xAC);
@@ -426,8 +426,11 @@ static void sm5705_fg_test_read(struct i2c_client *client)
 	ret7 = sm5705_fg_i2c_read_word(client, 0x87);
 	ret8 = sm5705_fg_i2c_read_word(client, 0x1F);
 	ret9 = sm5705_fg_i2c_read_word(client, 0x94);
-	pr_info("%s: 0xB0=0x%04x, 0xBC=0x%04x, 0xBD=0x%04x, 0xBE=0x%04x, 0xBF=0x%04x, 0x85=0x%04x, 0x86=0x%04x, 0x87=0x%04x, 0x1F=0x%04x, 0x94=0x%04x\n",
-		__func__, ret0, ret1, ret2, ret3, ret4, ret5, ret6, ret7, ret8, ret9);
+	ret10 = sm5705_fg_i2c_read_word(client, 0x13);
+	ret11 = sm5705_fg_i2c_read_word(client, 0x14);
+
+	pr_info("%s: 0xB0=0x%04x, 0xBC=0x%04x, 0xBD=0x%04x, 0xBE=0x%04x, 0xBF=0x%04x, 0x85=0x%04x, 0x86=0x%04x, 0x87=0x%04x, 0x1F=0x%04x, 0x94=0x%04x , 0x13=0x%04x, 0x14=0x%04x\n",
+		__func__, ret0, ret1, ret2, ret3, ret4, ret5, ret6, ret7, ret8, ret9, ret10, ret11);
 
 	return;
 }
@@ -1923,7 +1926,11 @@ static int sm5705_fg_parse_dt(struct sec_fuelgauge_info *fuelgauge)
 					__func__, ret);
 		fuelgauge->pdata->repeated_fuelalert = of_property_read_bool(np,
 				"fuelgaguge,repeated_fuelalert");
-
+		ret = of_property_read_u32(np, "fuelgauge,capacity",
+				&fuelgauge->capacity);
+		if (ret < 0)
+			pr_err("%s error reading battery capacity %d\n",
+					__func__, ret);
 		pr_info("%s: fg_irq: %d, "
 				"calculation_type: 0x%x, fuel_alert_soc: %d,\n"
 				"repeated_fuelalert: %d\n", __func__, fuelgauge->pdata->fg_irq,
@@ -2618,6 +2625,9 @@ static int sm5705_fg_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
 	case POWER_SUPPLY_PROP_ENERGY_NOW:
 		return -ENODATA;
+	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
+		val->intval = fuelgauge->capacity * sm5705_get_soc(fuelgauge->client); // uAh
+		break; 
 	default:
 		return -EINVAL;
 	}
@@ -2649,14 +2659,6 @@ static int sm5705_fg_set_property(struct power_supply *psy,
 		if (fuelgauge->pdata->capacity_calculation_type &
 				SEC_FUELGAUGE_CAPACITY_TYPE_DYNAMIC_SCALE)
 				sm5705_fg_calculate_dynamic_scale(fuelgauge, val->intval);
-#ifdef ENABLE_BATT_LONG_LIFE
-		pr_info("%s: POWER_SUPPLY_PROP_CHARGE_FULL : q_max_now = 0x%x \n", __func__, fuelgauge->info.q_max_now);
-		if(fuelgauge->info.q_max_now != 
-			fuelgauge->info.q_max_table[get_v_max_index_by_cycle(fuelgauge->client)]){
-			if (!sm5705_fg_reset(fuelgauge->client))
- 				return -EINVAL;
-		}
-#endif
 		break;
 	case POWER_SUPPLY_PROP_ONLINE:
 		fuelgauge->cable_type = val->intval;

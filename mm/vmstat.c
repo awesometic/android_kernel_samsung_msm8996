@@ -680,6 +680,9 @@ static char * const migratetype_names[MIGRATE_TYPES] = {
 	"Movable",
 #ifdef CONFIG_CMA
 	"CMA",
+#ifdef CONFIG_RBIN
+	"RBIN",
+#endif
 #endif
 	"Reserve",
 #ifdef CONFIG_MEMORY_ISOLATION
@@ -796,6 +799,7 @@ const char * const vmstat_text[] = {
 	"workingset_nodereclaim",
 	"nr_anon_transparent_hugepages",
 	"nr_free_cma",
+	"nr_free_rbin",
 	"nr_swapcache",
 
 	/* enum writeback_stat_item counters */

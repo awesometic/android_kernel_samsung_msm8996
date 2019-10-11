@@ -18,6 +18,7 @@
 #include "msm8996-max77838.dtsi"
 #include "msm8996-s2mpb02-hero.dtsi"
 #include "msm8996-sec-common.dtsi"
+#include "msm8996-sec-heroqlte-common.dtsi"
 #include "msm8996-sec-heroqlte-r07.dtsi"
 #include "msm8996-sec-heroqlte-chn-battery.dtsi"
 

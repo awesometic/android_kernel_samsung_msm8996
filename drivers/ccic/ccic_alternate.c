@@ -122,6 +122,102 @@ void acc_detach_check(struct work_struct *wk)
 	}
 }
 
+void set_enable_powernego(int mode)
+{
+	struct s2mm005_data *usbpd_data;
+	u8 W_DATA[2];
+
+	if (!ccic_device)
+		return;
+	usbpd_data = dev_get_drvdata(ccic_device);
+	if (!usbpd_data)
+		return;
+
+	if(mode) {
+		W_DATA[0] = 0x3;
+		W_DATA[1] = 0x42;
+		s2mm005_write_byte(usbpd_data->i2c, 0x10, &W_DATA[0], 2);
+		pr_info("%s : Power nego start\n", __func__);
+	} else {
+		W_DATA[0] = 0x3;
+		W_DATA[1] = 0x42;
+		s2mm005_write_byte(usbpd_data->i2c, 0x10, &W_DATA[0], 2);
+		pr_info("%s : Power nego stop\n", __func__);
+	}
+}
+
+void set_enable_alternate_mode(int mode)
+{
+	struct s2mm005_data *usbpd_data;
+	static int check_is_driver_loaded = 0;
+	static int prev_alternate_mode = 0;
+	u8 W_DATA[2];
+
+	if (!ccic_device)
+		return;
+	usbpd_data = dev_get_drvdata(ccic_device);
+	if (!usbpd_data)
+		return;
+
+#ifdef CONFIG_USB_NOTIFY_PROC_LOG
+	store_usblog_notify(NOTIFY_ALTERNATEMODE, (void *)&mode, NULL);
+#endif
+	if ((mode & ALTERNATE_MODE_NOT_READY) && (mode & ALTERNATE_MODE_READY)) {
+		pr_info("%s : mode is invalid! \n", __func__);
+		return;
+	}
+	if ((mode & ALTERNATE_MODE_START) && (mode & ALTERNATE_MODE_STOP)) {
+		pr_info("%s : mode is invalid! \n", __func__);
+		return;
+	}
+	if (mode & ALTERNATE_MODE_RESET) {
+		pr_info("%s : mode is reset! check_is_driver_loaded=%d, prev_alternate_mode=%d\n",
+			__func__, check_is_driver_loaded, prev_alternate_mode);
+		if (check_is_driver_loaded && (prev_alternate_mode == ALTERNATE_MODE_START)) {
+			W_DATA[0] = 0x3;
+			W_DATA[1] = 0x31;
+			s2mm005_write_byte(usbpd_data->i2c, 0x10, &W_DATA[0], 2);
+			pr_info("%s : alternate mode is reset as start! \n",	__func__);
+			prev_alternate_mode = ALTERNATE_MODE_START;
+			set_enable_powernego(1);
+		} else if (check_is_driver_loaded && (prev_alternate_mode == ALTERNATE_MODE_STOP)) {
+			W_DATA[0] = 0x3;
+			W_DATA[1] = 0x33;
+			s2mm005_write_byte(usbpd_data->i2c, 0x10, &W_DATA[0], 2);
+			pr_info("%s : alternate mode is reset as stop! \n",__func__);
+			prev_alternate_mode = ALTERNATE_MODE_STOP;
+		} else
+			;
+	} else {
+		if (mode & ALTERNATE_MODE_NOT_READY) {
+			check_is_driver_loaded = 0;
+			pr_info("%s : alternate mode is not ready! \n", __func__);
+		} else if (mode & ALTERNATE_MODE_READY) {
+			check_is_driver_loaded = 1;
+			pr_info("%s : alternate mode is ready! \n", __func__);
+		} else
+			;
+
+		if (check_is_driver_loaded) {
+			if (mode & ALTERNATE_MODE_START) {
+				W_DATA[0] = 0x3;
+				W_DATA[1] = 0x31;
+				s2mm005_write_byte(usbpd_data->i2c, 0x10, &W_DATA[0], 2);
+				pr_info("%s : alternate mode is started! \n",	__func__);
+				prev_alternate_mode = ALTERNATE_MODE_START;
+				set_enable_powernego(1);
+			} else if(mode & ALTERNATE_MODE_STOP) {
+				W_DATA[0] = 0x3;
+				W_DATA[1] = 0x33;
+				s2mm005_write_byte(usbpd_data->i2c, 0x10, &W_DATA[0], 2);
+				pr_info("%s : alternate mode is stopped! \n",__func__);
+				prev_alternate_mode = ALTERNATE_MODE_STOP;
+			}
+		}
+	}
+	return;
+}
+
 static int process_check_accessory(void * data)
 {
 	struct s2mm005_data *usbpd_data = data;
@@ -138,6 +234,7 @@ static int process_check_accessory(void * data)
 		}
 		return 1;
 	} else {
+		usbpd_data->acc_type = CCIC_DOCK_NEW;
 		ccic_send_dock_uevent(usbpd_data->Vendor_ID, usbpd_data->Product_ID, CCIC_DOCK_NEW);
 	}
 	return 0;

@@ -1425,8 +1425,6 @@ struct hdd_adapter_s
     /* Time stamp for start RoC request */
     v_TIME_t startRocTs;
 
-    /* State for synchronous OCB requests to WMI */
-    struct sir_ocb_set_config_response ocb_set_config_resp;
     struct sir_ocb_get_tsf_timer_response ocb_get_tsf_timer_resp;
     struct sir_dcc_get_stats_response *dcc_get_stats_resp;
     struct sir_dcc_update_ndl_response dcc_update_ndl_resp;
@@ -1925,6 +1923,11 @@ struct hdd_context_s
 
     /* debugfs entry */
     struct dentry *debugfs_phy;
+
+#ifdef WLAN_POWER_DEBUGFS
+    /* mutex lock to block concurrent access */
+    struct mutex power_stats_lock;
+#endif
 
     /* Use below lock to protect access to isSchedScanUpdatePending
      * since it will be accessed in two different contexts.

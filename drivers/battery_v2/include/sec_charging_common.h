@@ -831,6 +831,7 @@ struct sec_battery_platform_data {
 
 	bool fake_capacity;
 
+	unsigned int battery_full_capacity;
 	/* ADC setting */
 	unsigned int adc_check_count;
 	/* ADC type for each channel */

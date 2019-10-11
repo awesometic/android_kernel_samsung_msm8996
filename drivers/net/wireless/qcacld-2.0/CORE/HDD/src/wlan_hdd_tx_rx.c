@@ -886,9 +886,7 @@ static void __hdd_tx_timeout(struct net_device *dev)
    hddLog(LOGE, FL("Transmission timeout occurred jiffies %lu trans_start %lu"),
           jiffies, dev->trans_start);
 #endif
-   // Tx pending for 25 sec
-   if(msecs_to_jiffies(25000) < (jiffies-(dev->trans_start)))
-           VOS_BUG(0);
+
    DPTRACE(adf_dp_trace(NULL, ADF_DP_TRACE_HDD_TX_TIMEOUT,
                         NULL, 0, ADF_TX));
    /*

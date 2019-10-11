@@ -503,7 +503,7 @@ void input_booster(struct input_dev *dev)
 {
 	int i, j, DetectedCategory = false, iTouchID = -1, iTouchSlot = -1/*,lcdoffcounter = 0*/;
 
-	for(i=0;i<input_count;i++) {
+	for (i = 0; i < input_count && i < MAX_EVENTS; i++) {
 		if (DetectedCategory) {
 			break;
 		} else if (input_events[i].type == EV_KEY) {
@@ -806,6 +806,7 @@ void input_event(struct input_dev *dev,
 		 unsigned int type, unsigned int code, int value)
 {
 	unsigned long flags;
+	int idx;
 
 	if (is_event_supported(type, dev->evbit, EV_MAX)) {
 
@@ -819,14 +820,17 @@ void input_event(struct input_dev *dev,
 				pr_debug("[Input Booster1] ==============================================\n");
 				input_booster(dev);
 				input_count=0;
-			} else {
+			} else if (input_count < MAX_EVENTS) {
 				pr_debug("[Input Booster1] type = %x, code = %x, value =%x\n", type, code, value);
-				input_events[input_count].type = type;
-				input_events[input_count].code = code;
-				input_events[input_count].value = value;
-				if(input_count < MAX_EVENTS) {
-					input_count++;
+				idx = input_count;
+				input_events[idx].type = type;
+				input_events[idx].code = code;
+				input_events[idx].value = value;
+				if (idx < MAX_EVENTS) {
+					input_count = idx + 1 ;
 				}
+			} else {
+				pr_debug("[Input Booster1] type = %x, code = %x, value =%x   Booster Event Exceeded\n", type, code, value);
 			}
 		}
 #endif  // Input Booster -

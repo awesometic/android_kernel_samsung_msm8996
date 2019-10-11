@@ -20,7 +20,7 @@ arm64-obj-y		:= debug-monitors.o entry.o irq.o fpsimd.o		\
 			   hyp-stub.o psci.o cpu_ops.o insn.o	\
 			   return_address.o cpuinfo.o cpu_errata.o		\
 			   cpufeature.o alternative.o psci-call.o		\
-			   smp.o smp_spin_table.o topology.o
+			   smp.o smp_spin_table.o topology.o cacheinfo.o
 
 arm64-obj-$(CONFIG_COMPAT)		+= sys32.o kuser32.o signal32.o 	\
 					   sys_compat.o				\
@@ -43,6 +43,10 @@ arm64-obj-$(CONFIG_MSM_APP_API)		+= app_api.o
 arm64-obj-$(CONFIG_MSM_APP_SETTINGS)	+= app_setting.o
 arm64-obj-$(CONFIG_RKP_CFP_ROPP)	+= rkp_cfp.o
 arm64-obj-$(CONFIG_TIMA_RKP)            += rkp_entry.o
+
+ifeq ($(CONFIG_KVM),y)
+arm64-obj-$(CONFIG_HARDEN_BRANCH_PREDICTOR)	+= bpi.o
+endif
 
 obj-y					+= $(arm64-obj-y) vdso/
 obj-m					+= $(arm64-obj-m)

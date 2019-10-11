@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -111,10 +111,16 @@
 #include "wlan_hdd_tsf.h"
 #include "vos_nvitem.h"
 #include "wlan_hdd_oemdata.h"
+#include "wlan_hdd_request_manager.h"
 
+#include "wlan_hdd_ocb.h"
 #define HDD_FINISH_ULA_TIME_OUT         800
 #define HDD_SET_MCBC_FILTERS_TO_FW      1
 #define HDD_DELETE_MCBC_FILTERS_FROM_FW 0
+
+#ifdef SEC_WRITE_VERSION_IN_SYSFS
+tANI_U8 sec_versionString[128];
+#endif /* SEC_WRITE_VERSION_IN_SYSFS */
 
 static int ioctl_debug;
 module_param(ioctl_debug, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -896,16 +902,11 @@ void hdd_wlan_get_version(hdd_adapter_t *pAdapter, union iwreq_data *wrqu,
                                      CRMId,
                                      pHWversion);
     } else {
-#ifdef SEC_WRITE_VERSION_IN_FILE
-        tANI_U8 versionString[128];
-        scnprintf(versionString, 128,
+#ifdef SEC_WRITE_VERSION_IN_SYSFS
+        scnprintf(sec_versionString, 128,
 				"Host SW:%s, FW:%d.%d.%d.%d, HW:%s",
 				QWLAN_VERSIONSTR, MSPId, mSPId, SIId, CRMId, pHWversion);
-        if (!wlan_hdd_sec_write_version_file(versionString)) {
-			hddLog(VOS_TRACE_LEVEL_FATAL,
-					"%s: faild to write version info in the file",__func__);
-        }
-#endif /* SEC_WRITE_VERSION_IN_FILE */
+#endif /* SEC_WRITE_VERSION_IN_SYSFS */
         pr_info("Host SW:%s, FW:%d.%d.%d.%d, HW:%s\n",
                 QWLAN_VERSIONSTR,
                 MSPId,
@@ -1184,66 +1185,6 @@ hdd_IsAuthTypeRSN( tHalHandle halHandle, eCsrAuthType authType)
     return rsnType;
 }
 
-static void hdd_GetRssiCB( v_S7_t rssi, tANI_U32 staId, void *pContext )
-{
-   struct statsContext *pStatsContext;
-   hdd_adapter_t *pAdapter;
-
-   if (ioctl_debug)
-   {
-      pr_info("%s: rssi [%d] STA [%d] pContext [%pK]\n",
-              __func__, (int)rssi, (int)staId, pContext);
-   }
-
-   if (NULL == pContext)
-   {
-      hddLog(VOS_TRACE_LEVEL_ERROR,
-             "%s: Bad param, pContext [%pK]",
-             __func__, pContext);
-      return;
-   }
-
-   pStatsContext = pContext;
-   pAdapter      = pStatsContext->pAdapter;
-
-   /* there is a race condition that exists between this callback
-      function and the caller since the caller could time out either
-      before or while this code is executing.  we use a spinlock to
-      serialize these actions */
-   spin_lock(&hdd_context_lock);
-
-   if ((NULL == pAdapter) || (PEER_INFO_CONTEXT_MAGIC != pStatsContext->magic))
-   {
-      /* the caller presumably timed out so there is nothing we can do */
-      spin_unlock(&hdd_context_lock);
-      hddLog(VOS_TRACE_LEVEL_WARN,
-             "%s: Invalid context, pAdapter [%pK] magic [%08x]",
-              __func__, pAdapter, pStatsContext->magic);
-      if (ioctl_debug)
-      {
-         pr_info("%s: Invalid context, pAdapter [%pK] magic [%08x]\n",
-                 __func__, pAdapter, pStatsContext->magic);
-      }
-      return;
-   }
-
-   /* context is valid so caller is still waiting */
-
-   /* paranoia: invalidate the magic */
-   pStatsContext->magic = 0;
-
-   /* copy over the rssi */
-   pAdapter->rssi = rssi;
-
-   if (pAdapter->rssi > 0)
-       pAdapter->rssi = 0;
-   /* notify the caller */
-   complete(&pStatsContext->completion);
-
-   /* serialization is complete */
-   spin_unlock(&hdd_context_lock);
-}
-
 static void hdd_GetSnrCB(tANI_S8 snr, tANI_U32 staId, void *pContext)
 {
    struct statsContext *pStatsContext;
@@ -1302,91 +1243,137 @@ static void hdd_GetSnrCB(tANI_S8 snr, tANI_U32 staId, void *pContext)
    spin_unlock(&hdd_context_lock);
 }
 
+struct rssi_priv {
+	v_S7_t rssi;
+};
+
+/**
+ * hdd_get_rssi_cb() - "Get RSSI" callback function
+ * @rssi: Current RSSI of the station
+ * @sta_id: ID of the station
+ * @context: opaque context originally passed to SME.  HDD always passes
+ *	     a cookie for the request context
+ *
+ * Return: None
+ */
+static void hdd_get_rssi_cb(v_S7_t rssi, tANI_U32 sta_id, void *context)
+{
+	struct hdd_request *request;
+	struct rssi_priv *priv;
+
+	if (ioctl_debug) {
+		pr_info("%s: rssi [%d] sta_id [%d] context [%pK]\n",
+			__func__, (int)rssi, (int)sta_id, context);
+	}
+
+	request = hdd_request_get(context);
+	if (!request) {
+		hddLog(VOS_TRACE_LEVEL_ERROR, "%s: Obsolete request", __func__);
+		return;
+	}
+
+	priv = hdd_request_priv(request);
+	priv->rssi = rssi;
+	hdd_request_complete(request);
+	hdd_request_put(request);
+}
+
+/**
+ * wlan_hdd_get_rssi() - Get the current RSSI
+ * @pAdapter: adapter upon which the measurement is requested
+ * @rssi_value: pointer to where the RSSI should be returned
+ *
+ * Return: VOS_STATUS_SUCCESS on success, VOS_STATUS_E_** on error
+ */
 VOS_STATUS wlan_hdd_get_rssi(hdd_adapter_t *pAdapter, v_S7_t *rssi_value)
 {
-   struct statsContext context;
-   hdd_context_t *pHddCtx;
-   hdd_station_ctx_t *pHddStaCtx;
-   eHalStatus hstatus;
-   unsigned long rc;
+	hdd_context_t *pHddCtx;
+	hdd_station_ctx_t *pHddStaCtx;
+	eHalStatus hstatus;
+	int ret;
+	void *cookie;
+	struct hdd_request *request;
+	struct rssi_priv *priv;
+	static const struct hdd_request_params params = {
+		.priv_size = sizeof(*priv),
+		.timeout_ms = WLAN_WAIT_TIME_STATS,
+	};
 
-   if (NULL == pAdapter)
-   {
-       hddLog(VOS_TRACE_LEVEL_WARN,
-              "%s: Invalid context, pAdapter", __func__);
-       return VOS_STATUS_E_FAULT;
-   }
-   if ((WLAN_HDD_GET_CTX(pAdapter))->isLogpInProgress)
-   {
-       VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR, "%s:LOGP in Progress. Ignore!!!",__func__);
-       /* return a cached value */
-       *rssi_value = pAdapter->rssi;
-       return VOS_STATUS_SUCCESS;
-   }
+	if (NULL == pAdapter) {
+		hddLog(VOS_TRACE_LEVEL_WARN,
+			"%s: Invalid context, pAdapter", __func__);
+		return VOS_STATUS_E_FAULT;
+	}
+	if ((WLAN_HDD_GET_CTX(pAdapter))->isLogpInProgress) {
+		VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+				"%s:LOGP in Progress. Ignore!!!",__func__);
+		/* return a cached value */
+		*rssi_value = pAdapter->rssi;
+		return VOS_STATUS_SUCCESS;
+	}
 
-   pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
-   pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
+	pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
+	pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
 
-   if (eConnectionState_Associated != pHddStaCtx->conn_info.connState) {
-       hddLog(LOG1, "%s: Not associated, rssi on disconnect %d",
-                    __func__, pAdapter->rssi_on_disconnect);
-       *rssi_value = pAdapter->rssi_on_disconnect;
-       return VOS_STATUS_SUCCESS;
-   }
+	if (eConnectionState_Associated != pHddStaCtx->conn_info.connState) {
+		hddLog(LOG1, "%s: Not associated, rssi on disconnect %d",
+			__func__, pAdapter->rssi_on_disconnect);
+		*rssi_value = pAdapter->rssi_on_disconnect;
+		return VOS_STATUS_SUCCESS;
+	}
 
-   if (VOS_TRUE == pHddStaCtx->hdd_ReassocScenario)
-   {
-       VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
-                 "%s: Roaming in progress, return cached RSSI", __func__);
-       *rssi_value = pAdapter->rssi;
-       return VOS_STATUS_SUCCESS;
-   }
+	if (pHddStaCtx->hdd_ReassocScenario) {
+		VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
+				"%s: Roaming in progress, return cached RSSI",
+				__func__);
+		*rssi_value = pAdapter->rssi;
+		return VOS_STATUS_SUCCESS;
+	}
 
-   init_completion(&context.completion);
-   context.pAdapter = pAdapter;
-   context.magic = PEER_INFO_CONTEXT_MAGIC;
+	request = hdd_request_alloc(&params);
+	if (!request) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+			"%s: Request allocation failure, return cached RSSI",
+			__func__);
+		*rssi_value = pAdapter->rssi;
+		return VOS_STATUS_SUCCESS;
+	}
+	cookie = hdd_request_cookie(request);
 
-   hstatus = sme_GetRssi(pHddCtx->hHal, hdd_GetRssiCB,
-                         pHddStaCtx->conn_info.staId[ 0 ],
-                         pHddStaCtx->conn_info.bssId, pAdapter->rssi,
-                         &context, pHddCtx->pvosContext);
-   if (eHAL_STATUS_SUCCESS != hstatus)
-   {
-       hddLog(VOS_TRACE_LEVEL_ERROR,"%s: Unable to retrieve RSSI",
-              __func__);
-       /* we'll returned a cached value below */
-   }
-   else
-   {
-       /* request was sent -- wait for the response */
-       rc = wait_for_completion_timeout(&context.completion,
-                                    msecs_to_jiffies(WLAN_WAIT_TIME_STATS));
-       if (!rc) {
-          hddLog(VOS_TRACE_LEVEL_ERROR,
-              FL("SME timed out while retrieving RSSI"));
-          /* we'll now returned a cached value below */
-       }
-   }
+	hstatus = sme_GetRssi(pHddCtx->hHal, hdd_get_rssi_cb,
+			      pHddStaCtx->conn_info.staId[0],
+			      pHddStaCtx->conn_info.bssId, pAdapter->rssi,
+			      cookie, pHddCtx->pvosContext);
+	if (eHAL_STATUS_SUCCESS != hstatus) {
+		hddLog(VOS_TRACE_LEVEL_ERROR, "%s: Unable to retrieve RSSI",
+			__func__);
+		/* we'll returned a cached value below */
+	} else {
+		/* request was sent -- wait for the response */
+		ret = hdd_request_wait_for_response(request);
+		if (ret) {
+			hddLog(VOS_TRACE_LEVEL_ERROR,
+				FL("SME timed out while retrieving RSSI"));
+			/* we'll returned a cached value below */
+		} else {
+			/* update the adapter with the fresh results */
+			priv = hdd_request_priv(request);
+			pAdapter->rssi = priv->rssi;
+			if (pAdapter->rssi > 0)
+				pAdapter->rssi = 0;
+		}
+	}
 
-   /* either we never sent a request, we sent a request and received a
-      response or we sent a request and timed out.  if we never sent a
-      request or if we sent a request and got a response, we want to
-      clear the magic out of paranoia.  if we timed out there is a
-      race condition such that the callback function could be
-      executing at the same time we are. of primary concern is if the
-      callback function had already verified the "magic" but had not
-      yet set the completion variable when a timeout occurred. we
-      serialize these activities by invalidating the magic while
-      holding a shared spinlock which will cause us to block if the
-      callback is currently executing */
-   spin_lock(&hdd_context_lock);
-   context.magic = 0;
-   spin_unlock(&hdd_context_lock);
+	/*
+	 * either we never sent a request, we sent a request and
+	 * received a response or we sent a request and timed out.
+	 * regardless we are done with the request.
+	 */
+	hdd_request_put(request);
 
-   *rssi_value = pAdapter->rssi;
-   hddLog(LOG1, FL("RSSI = %d"), *rssi_value);
+	*rssi_value = pAdapter->rssi;
 
-   return VOS_STATUS_SUCCESS;
+	return VOS_STATUS_SUCCESS;
 }
 
 VOS_STATUS wlan_hdd_get_snr(hdd_adapter_t *pAdapter, v_S7_t *snr)
@@ -3716,321 +3703,253 @@ void hdd_tx_per_hit_cb (void *pCallbackContext)
     wireless_send_event(pAdapter->dev, IWEVCUSTOM, &wrqu, tx_fail);
 }
 
-void hdd_GetClassA_statisticsCB(void *pStats, void *pContext)
+struct class_a_stats {
+	tCsrGlobalClassAStatsInfo class_a_stats;
+};
+
+/**
+ * hdd_get_class_a_statistics_cb() - Get Class A stats callback function
+ * @stats: pointer to Class A stats
+ * @context: user context originally registered with SME (always the
+ *	     cookie from the request context)
+ *
+ * Return: None
+ */
+static void hdd_get_class_a_statistics_cb(void *stats, void *context)
 {
-   struct statsContext *pStatsContext;
-   tCsrGlobalClassAStatsInfo *pClassAStats;
-   hdd_adapter_t *pAdapter;
+	struct hdd_request *request;
+	struct class_a_stats *priv;
+	tCsrGlobalClassAStatsInfo *returned_stats;
 
-   if (ioctl_debug)
-   {
-      pr_info("%s: pStats [%pK] pContext [%pK]\n",
-              __func__, pStats, pContext);
-   }
+	ENTER();
+	if (ioctl_debug) {
+		pr_info("%s: stats [%pK], context [%pK]\n",
+			__func__, stats, context);
+	}
 
-   if ((NULL == pStats) || (NULL == pContext))
-   {
-      hddLog(VOS_TRACE_LEVEL_ERROR,
-             "%s: Bad param, pStats [%pK] pContext [%pK]",
-              __func__, pStats, pContext);
-      return;
-   }
+	if (NULL == stats) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+			"%s: Bad param, stats [%pK]", __func__, stats);
+		return;
+	}
 
-   pClassAStats  = pStats;
-   pStatsContext = pContext;
-   pAdapter      = pStatsContext->pAdapter;
+	request = hdd_request_get(context);
+	if (!request) {
+		hddLog(VOS_TRACE_LEVEL_ERROR, "%s: Obsolete request", __func__);
+		return;
+	}
 
-   /* there is a race condition that exists between this callback
-      function and the caller since the caller could time out either
-      before or while this code is executing.  we use a spinlock to
-      serialize these actions */
-   spin_lock(&hdd_context_lock);
-
-   if ((NULL == pAdapter) || (STATS_CONTEXT_MAGIC != pStatsContext->magic))
-   {
-      /* the caller presumably timed out so there is nothing we can do */
-      spin_unlock(&hdd_context_lock);
-      hddLog(VOS_TRACE_LEVEL_WARN,
-             "%s: Invalid context, pAdapter [%pK] magic [%08x]",
-              __func__, pAdapter, pStatsContext->magic);
-      if (ioctl_debug)
-      {
-         pr_info("%s: Invalid context, pAdapter [%pK] magic [%08x]\n",
-                 __func__, pAdapter, pStatsContext->magic);
-      }
-      return;
-   }
-
-   /* context is valid so caller is still waiting */
-
-   /* paranoia: invalidate the magic */
-   pStatsContext->magic = 0;
-
-   /* copy over the stats. do so as a struct copy */
-   pAdapter->hdd_stats.ClassA_stat = *pClassAStats;
-
-   /* notify the caller */
-   complete(&pStatsContext->completion);
-
-   /* serialization is complete */
-   spin_unlock(&hdd_context_lock);
+	returned_stats = stats;
+	priv = hdd_request_priv(request);
+	priv->class_a_stats = *returned_stats;
+	hdd_request_complete(request);
+	hdd_request_put(request);
+	EXIT();
 }
 
-void hdd_GetLink_SpeedCB(tSirLinkSpeedInfo *pLinkSpeed, void *pContext)
+/**
+ * wlan_hdd_get_classAstats() - Get Class A statistics
+ * @pAdapter: adapter for which statistics are desired
+ *
+ * Return: VOS_STATUS_SUCCESS if adapter's Class A statistics were updated
+ */
+VOS_STATUS wlan_hdd_get_classAstats(hdd_adapter_t *pAdapter)
 {
-   struct linkspeedContext *pLinkSpeedContext;
-   hdd_adapter_t *pAdapter;
+	hdd_station_ctx_t *pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
+	eHalStatus hstatus;
+	int ret;
+	void *cookie;
+	struct hdd_request *request;
+	struct class_a_stats *priv;
+	static const struct hdd_request_params params = {
+		.priv_size = sizeof(*priv),
+		.timeout_ms = WLAN_WAIT_TIME_STATS,
+	};
 
-   if ((NULL == pLinkSpeed) || (NULL == pContext))
-   {
-      hddLog(VOS_TRACE_LEVEL_ERROR,
-             "%s: Bad param, pLinkSpeed [%pK] pContext [%pK]",
-             __func__, pLinkSpeed, pContext);
-      return;
-   }
-   spin_lock(&hdd_context_lock);
-   pLinkSpeedContext = pContext;
-   pAdapter      = pLinkSpeedContext->pAdapter;
+	if (NULL == pAdapter) {
+		hddLog(VOS_TRACE_LEVEL_ERROR, "%s: pAdapter is NULL", __func__);
+		return VOS_STATUS_E_FAULT;
+	}
+	if ((WLAN_HDD_GET_CTX(pAdapter))->isLogpInProgress) {
+		VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
+			  "%s:LOGP in Progress. Ignore!!!",__func__);
+		return VOS_STATUS_SUCCESS;
+	}
 
-   /* there is a race condition that exists between this callback
-      function and the caller since the caller could time out either
-      before or while this code is executing.  we use a spinlock to
-      serialize these actions */
+	request = hdd_request_alloc(&params);
+	if (!request) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+			"%s: Request allocation failure", __func__);
+		return VOS_STATUS_E_NOMEM;
+	}
+	cookie = hdd_request_cookie(request);
 
-   if ((NULL == pAdapter) || (LINK_CONTEXT_MAGIC != pLinkSpeedContext->magic))
-   {
-       /* the caller presumably timed out so there is nothing we can do */
-      spin_unlock(&hdd_context_lock);
-      hddLog(VOS_TRACE_LEVEL_WARN,
-             "%s: Invalid context, pAdapter [%pK] magic [%08x]",
-              __func__, pAdapter, pLinkSpeedContext->magic);
-      if (ioctl_debug)
-      {
-         pr_info("%s: Invalid context, pAdapter [%pK] magic [%08x]\n",
-                 __func__, pAdapter, pLinkSpeedContext->magic);
-      }
-      return;
-   }
-   /* context is valid so caller is still waiting */
+	/* query only for Class A statistics (which include link speed) */
+	hstatus = sme_GetStatistics(WLAN_HDD_GET_HAL_CTX(pAdapter),
+				    eCSR_HDD, SME_GLOBAL_CLASSA_STATS,
+				    hdd_get_class_a_statistics_cb,
+				    0, /* not periodic */
+				    FALSE, /* non-cached results */
+				    pHddStaCtx->conn_info.staId[0],
+				    cookie, pAdapter->sessionId);
+	if (eHAL_STATUS_SUCCESS != hstatus) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+			"%s: Unable to retrieve Class A statistics",
+			__func__);
+		goto return_cached_results;
+	}
 
-   /* paranoia: invalidate the magic */
-   pLinkSpeedContext->magic = 0;
+	/* request was sent -- wait for the response */
+	ret = hdd_request_wait_for_response(request);
+	if (ret) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+		       FL("SME timed out while retrieving Class A statistics"));
+		goto return_cached_results;
+	}
 
-   /* copy over the stats. do so as a struct copy */
-   pAdapter->ls_stats = *pLinkSpeed;
+	/* update the adapter with the fresh results */
+	priv = hdd_request_priv(request);
+	pAdapter->hdd_stats.ClassA_stat = priv->class_a_stats;
 
-   /* notify the caller */
-   complete(&pLinkSpeedContext->completion);
+return_cached_results:
+	/*
+	 * either we never sent a request, we sent a request and
+	 * received a response or we sent a request and timed out.
+	 * regardless we are done with the request.
+	 */
+	hdd_request_put(request);
 
-   /* serialization is complete */
-   spin_unlock(&hdd_context_lock);
+	return VOS_STATUS_SUCCESS;
 }
 
-VOS_STATUS  wlan_hdd_get_classAstats(hdd_adapter_t *pAdapter)
+struct station_stats {
+	tCsrSummaryStatsInfo summary_stats;
+	tCsrGlobalClassAStatsInfo class_a_stats;
+	struct csr_per_chain_rssi_stats_info per_chain_rssi_stats;
+};
+
+/**
+ * hdd_get_station_statistics_cb() - Get stats callback function
+ * @stats: pointer to combined station stats
+ * @context: user context originally registered with SME (always the
+ *	     cookie from the request context)
+ *
+ * Return: None
+ */
+static void hdd_get_station_statistics_cb(void *stats, void *context)
 {
-   hdd_station_ctx_t *pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
-   eHalStatus hstatus;
-   unsigned long rc;
-   struct statsContext context;
+	struct hdd_request *request;
+	struct station_stats *priv;
+	tCsrSummaryStatsInfo *summary_stats;
+	tCsrGlobalClassAStatsInfo *class_a_stats;
+	struct csr_per_chain_rssi_stats_info *per_chain_rssi_stats;
 
-   if (NULL == pAdapter)
-   {
-       hddLog(VOS_TRACE_LEVEL_ERROR, "%s: pAdapter is NULL", __func__);
-       return VOS_STATUS_E_FAULT;
-   }
-   if ((WLAN_HDD_GET_CTX(pAdapter))->isLogpInProgress)
-   {
-       VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR, "%s:LOGP in Progress. Ignore!!!",__func__);
-       return VOS_STATUS_SUCCESS;
-   }
+	if (ioctl_debug) {
+		pr_info("%s: stats [%pK] context [%pK]\n",
+			__func__, stats, context);
+	}
 
-   /* we are connected
-   prepare our callback context */
-   init_completion(&context.completion);
-   context.pAdapter = pAdapter;
-   context.magic = STATS_CONTEXT_MAGIC;
-   /* query only for Class A statistics (which include link speed) */
-   hstatus = sme_GetStatistics( WLAN_HDD_GET_HAL_CTX(pAdapter),
-                                  eCSR_HDD,
-                                  SME_GLOBAL_CLASSA_STATS,
-                                  hdd_GetClassA_statisticsCB,
-                                  0, // not periodic
-                                  FALSE, //non-cached results
-                                  pHddStaCtx->conn_info.staId[0],
-                                  &context,
-                                  pAdapter->sessionId );
-   if (eHAL_STATUS_SUCCESS != hstatus)
-   {
-       hddLog(VOS_TRACE_LEVEL_ERROR,
-               "%s: Unable to retrieve Class A statistics",
-               __func__);
-       /* we'll returned a cached value below */
-   }
-   else
-   {
-       /* request was sent -- wait for the response */
-       rc = wait_for_completion_timeout(&context.completion,
-                                msecs_to_jiffies(WLAN_WAIT_TIME_STATS));
-       if (!rc) {
-          hddLog(VOS_TRACE_LEVEL_ERROR,
-              FL("SME timed out while retrieving Class A statistics"));
-      }
-   }
+	if (NULL == stats) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+			"%s: Bad param, stats [%pK]", __func__, stats);
+		return;
+	}
 
-   /* either we never sent a request, we sent a request and received a
-      response or we sent a request and timed out.  if we never sent a
-      request or if we sent a request and got a response, we want to
-      clear the magic out of paranoia.  if we timed out there is a
-      race condition such that the callback function could be
-      executing at the same time we are. of primary concern is if the
-      callback function had already verified the "magic" but had not
-      yet set the completion variable when a timeout occurred. we
-      serialize these activities by invalidating the magic while
-      holding a shared spinlock which will cause us to block if the
-      callback is currently executing */
-   spin_lock(&hdd_context_lock);
-   context.magic = 0;
-   spin_unlock(&hdd_context_lock);
+	request = hdd_request_get(context);
+	if (!request) {
+		hddLog(VOS_TRACE_LEVEL_ERROR, "%s: Obsolete request", __func__);
+		return;
+	}
 
-   /* either callback updated pAdapter stats or it has cached data */
-   return VOS_STATUS_SUCCESS;
+	summary_stats = (tCsrSummaryStatsInfo *) stats;
+	class_a_stats = (tCsrGlobalClassAStatsInfo *) (summary_stats + 1);
+	per_chain_rssi_stats = (struct csr_per_chain_rssi_stats_info *)
+				(class_a_stats + 1);
+	priv = hdd_request_priv(request);
+
+	/* copy over the stats. do so as a struct copy */
+	priv->summary_stats = *summary_stats;
+	priv->class_a_stats = *class_a_stats;
+	priv->per_chain_rssi_stats = *per_chain_rssi_stats;
+
+	hdd_request_complete(request);
+	hdd_request_put(request);
 }
 
-static void hdd_get_station_statisticsCB(void *pStats, void *pContext)
+/**
+ * wlan_hdd_get_station_stats() - Get station statistics
+ * @pAdapter: adapter for which statistics are desired
+ *
+ * Return: VOS_STATUS_SUCCESS if adapter's statistics were updated
+ */
+VOS_STATUS wlan_hdd_get_station_stats(hdd_adapter_t *pAdapter)
 {
-   struct statsContext *pStatsContext;
-   tCsrSummaryStatsInfo      *pSummaryStats;
-   tCsrGlobalClassAStatsInfo *pClassAStats;
-   struct csr_per_chain_rssi_stats_info *per_chain_rssi_stats;
-   hdd_adapter_t *pAdapter;
+	hdd_station_ctx_t *pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
+	eHalStatus hstatus;
+	int ret;
+	void *cookie;
+	struct hdd_request *request;
+	struct station_stats *priv;
+	static const struct hdd_request_params params = {
+		.priv_size = sizeof(*priv),
+		.timeout_ms = WLAN_WAIT_TIME_STATS,
+	};
 
-   if (ioctl_debug)
-   {
-      pr_info("%s: pStats [%pK] pContext [%pK]\n",
-              __func__, pStats, pContext);
-   }
+	if (NULL == pAdapter) {
+		hddLog(VOS_TRACE_LEVEL_ERROR, "%s: pAdapter is NULL", __func__);
+		return VOS_STATUS_SUCCESS;
+	}
 
-   if ((NULL == pStats) || (NULL == pContext))
-   {
-      hddLog(VOS_TRACE_LEVEL_ERROR,
-             "%s: Bad param, pStats [%pK] pContext [%pK]",
-             __func__, pStats, pContext);
-      return;
-   }
+	request = hdd_request_alloc(&params);
+	if (!request) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+			"%s: Request allocation failure", __func__);
+		return VOS_STATUS_E_NOMEM;
+	}
+	cookie = hdd_request_cookie(request);
 
-   /* there is a race condition that exists between this callback
-      function and the caller since the caller could time out either
-      before or while this code is executing.  we use a spinlock to
-      serialize these actions */
-   spin_lock(&hdd_context_lock);
+	/* query only for Summary & Class A statistics */
+	hstatus = sme_GetStatistics(WLAN_HDD_GET_HAL_CTX(pAdapter),
+				     eCSR_HDD,
+				     SME_SUMMARY_STATS |
+				     SME_GLOBAL_CLASSA_STATS |
+				     SME_PER_CHAIN_RSSI_STATS,
+				     hdd_get_station_statistics_cb,
+				     0, /* not periodic */
+				     FALSE, /* non-cached results */
+				     pHddStaCtx->conn_info.staId[0],
+				     cookie, pAdapter->sessionId);
+	if (eHAL_STATUS_SUCCESS != hstatus) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+			"%s: Unable to retrieve statistics", __func__);
+		/* we'll return with cached values */
+	} else {
+		/* request was sent -- wait for the response */
+		ret = hdd_request_wait_for_response(request);
+		if (ret) {
+			hddLog(VOS_TRACE_LEVEL_WARN,
+			       FL("SME timed out while retrieving statistics"));
+			/* we'll returned a cached value below */
+		} else {
+			/* update the adapter with the fresh results */
+			priv = hdd_request_priv(request);
+			pAdapter->hdd_stats.summary_stat = priv->summary_stats;
+			pAdapter->hdd_stats.ClassA_stat = priv->class_a_stats;
+			pAdapter->hdd_stats.per_chain_rssi_stats =
+				priv->per_chain_rssi_stats;
+		}
+	}
 
-   pSummaryStats = (tCsrSummaryStatsInfo *)pStats;
-   pClassAStats  = (tCsrGlobalClassAStatsInfo *)( pSummaryStats + 1 );
-   per_chain_rssi_stats = (struct csr_per_chain_rssi_stats_info *)
-                                  (pClassAStats + 1);
-   pStatsContext = pContext;
-   pAdapter      = pStatsContext->pAdapter;
-   if ((NULL == pAdapter) || (STATS_CONTEXT_MAGIC != pStatsContext->magic))
-   {
-      /* the caller presumably timed out so there is nothing we can do */
-      spin_unlock(&hdd_context_lock);
-      hddLog(VOS_TRACE_LEVEL_WARN,
-             "%s: Invalid context, pAdapter [%pK] magic [%08x]",
-             __func__, pAdapter, pStatsContext->magic);
-      if (ioctl_debug)
-      {
-         pr_info("%s: Invalid context, pAdapter [%pK] magic [%08x]\n",
-                 __func__, pAdapter, pStatsContext->magic);
-      }
-      return;
-   }
+	/*
+	 * either we never sent a request, we sent a request and
+	 * received a response or we sent a request and timed out.
+	 * regardless we are done with the request.
+	 */
+	hdd_request_put(request);
 
-   /* context is valid so caller is still waiting */
-
-   /* paranoia: invalidate the magic */
-   pStatsContext->magic = 0;
-
-   /* copy over the stats. do so as a struct copy */
-   pAdapter->hdd_stats.summary_stat = *pSummaryStats;
-   pAdapter->hdd_stats.ClassA_stat = *pClassAStats;
-   pAdapter->hdd_stats.per_chain_rssi_stats = *per_chain_rssi_stats;
-
-   /* notify the caller */
-   complete(&pStatsContext->completion);
-
-   /* serialization is complete */
-   spin_unlock(&hdd_context_lock);
+	/* either callback updated pAdapter stats or it has cached data */
+	return VOS_STATUS_SUCCESS;
 }
-
-VOS_STATUS  wlan_hdd_get_station_stats(hdd_adapter_t *pAdapter)
-{
-   hdd_station_ctx_t *pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
-   eHalStatus hstatus;
-   unsigned long rc;
-   struct statsContext context;
-
-   if (NULL == pAdapter)
-   {
-       hddLog(VOS_TRACE_LEVEL_ERROR, "%s: pAdapter is NULL", __func__);
-       return VOS_STATUS_SUCCESS;
-   }
-
-   /* we are connected
-   prepare our callback context */
-   init_completion(&context.completion);
-   context.pAdapter = pAdapter;
-   context.magic = STATS_CONTEXT_MAGIC;
-
-   /* query only for Summary & Class A statistics */
-   hstatus = sme_GetStatistics(WLAN_HDD_GET_HAL_CTX(pAdapter),
-                               eCSR_HDD,
-                               SME_SUMMARY_STATS |
-                               SME_GLOBAL_CLASSA_STATS |
-                               SME_PER_CHAIN_RSSI_STATS,
-                               hdd_get_station_statisticsCB,
-                               0, // not periodic
-                               FALSE, //non-cached results
-                               pHddStaCtx->conn_info.staId[0],
-                               &context,
-                               pAdapter->sessionId);
-   if (eHAL_STATUS_SUCCESS != hstatus)
-   {
-      hddLog(VOS_TRACE_LEVEL_ERROR,
-             "%s: Unable to retrieve statistics",
-             __func__);
-      /* we'll return with cached values */
-   }
-   else
-   {
-      /* request was sent -- wait for the response */
-      rc = wait_for_completion_timeout(&context.completion,
-                           msecs_to_jiffies(WLAN_WAIT_TIME_STATS));
-
-      if (!rc) {
-          hddLog(VOS_TRACE_LEVEL_ERROR,
-              FL("SME timed out while retrieving statistics"));
-      }
-   }
-
-   /* either we never sent a request, we sent a request and received a
-      response or we sent a request and timed out.  if we never sent a
-      request or if we sent a request and got a response, we want to
-      clear the magic out of paranoia.  if we timed out there is a
-      race condition such that the callback function could be
-      executing at the same time we are. of primary concern is if the
-      callback function had already verified the "magic" but had not
-      yet set the completion variable when a timeout occurred. we
-      serialize these activities by invalidating the magic while
-      holding a shared spinlock which will cause us to block if the
-      callback is currently executing */
-   spin_lock(&hdd_context_lock);
-   context.magic = 0;
-   spin_unlock(&hdd_context_lock);
-
-   /* either callback updated pAdapter stats or it has cached data */
-   return VOS_STATUS_SUCCESS;
-}
-
 
 /*
  * Support for the LINKSPEED private command
@@ -4108,130 +4027,123 @@ static int iw_get_linkspeed_priv(struct net_device *dev,
 	return ret;
 }
 
-void hdd_get_isolation_cb(struct sir_isolation_resp *isolation,
-        void *context)
+struct isolation_info {
+	uint32_t isolation_chain0:8;
+	uint32_t isolation_chain1:8;
+	uint32_t isolation_chain2:8;
+	uint32_t isolation_chain3:8;
+};
+
+static void hdd_get_isolation_cb(struct sir_isolation_resp *isolation,
+				 void *cookie)
 {
-    struct statsContext *isolation_context;
-    int buf = 0;
-    int length = 0;
-    char *isolation_output;
-    union iwreq_data *wrqu;
+	struct hdd_request *request;
+	struct isolation_info *priv;
 
-    if ((NULL == isolation) || (NULL == context)) {
+	if (!isolation) {
+	    hddLog(LOGE, FL("Bad param"));
+	    return;
+	}
 
-        hddLog(VOS_TRACE_LEVEL_ERROR,
-                "%s: Bad param, %s",
-                __func__,
-				isolation ? "context is NULL" : "isolation is NULL");
-        return;
-    }
+	request = hdd_request_get(cookie);
+	if (!request) {
+	    hddLog(LOGE, FL("Obsolete request"));
+	    return;
+	}
 
-    spin_lock(&hdd_context_lock);
+	priv = hdd_request_priv(request);
+	priv->isolation_chain0 = isolation->isolation_chain0;
+	priv->isolation_chain1 = isolation->isolation_chain1;
+	priv->isolation_chain2 = isolation->isolation_chain2;
+	priv->isolation_chain3 = isolation->isolation_chain3;
 
-    isolation_context = context;
-    if (ISOLATION_CONTEXT_MAGIC !=
-            isolation_context->magic) {
+	hdd_request_complete(request);
+	hdd_request_put(request);
+}
 
-        /*
-         * the caller presumably timed out so there is nothing
-         * we can do
-         */
-        spin_unlock(&hdd_context_lock);
-        hddLog(VOS_TRACE_LEVEL_WARN,
-                "%s: Invalid context, magic [%08x]",
-                __func__,
-                isolation_context->magic);
-        return;
-    }
+static void hdd_post_isolation(union iwreq_data *wrqu, char *extra,
+			       struct isolation_info *isolation)
+{
+	int buf = 0;
+	int length = 0;
 
-    isolation_output = isolation_context->extra;
-    wrqu = isolation_context->wrqu;
-    isolation_context->magic = 0;
+	hddLog(LOG1, "%s: chain1 %d chain2 %d chain3 %d chain4 %d", __func__,
+	       isolation->isolation_chain0, isolation->isolation_chain1,
+	       isolation->isolation_chain2, isolation->isolation_chain3);
 
-    hddLog(LOG1, "%s: chain1 %d chain2 %d chain3 %d chain4 %d", __func__,
-            isolation->isolation_chain0, isolation->isolation_chain1,
-            isolation->isolation_chain2, isolation->isolation_chain3);
+	length = scnprintf((extra), WE_MAX_STR_LEN, "\n");
+	buf = scnprintf((extra + length), WE_MAX_STR_LEN - length,
+			"isolation chain 0 : %d\n",
+			isolation->isolation_chain0);
+	length += buf;
+	buf = scnprintf((extra + length), WE_MAX_STR_LEN - length,
+			"isolation chain 1 : %d\n",
+			isolation->isolation_chain1);
+	length += buf;
+	buf = scnprintf((extra + length), WE_MAX_STR_LEN - length,
+			"isolation chain 2 : %d\n",
+			isolation->isolation_chain2);
+	length += buf;
+	buf = scnprintf((extra + length), WE_MAX_STR_LEN - length,
+			"isolation chain 3 : %d\n",
+			isolation->isolation_chain3);
+	length += buf;
 
-    length = scnprintf((isolation_output), WE_MAX_STR_LEN, "\n");
-    buf = scnprintf
-        (
-         (isolation_output + length), WE_MAX_STR_LEN - length,
-         "isolation chain 0 : %d\n",
-         isolation->isolation_chain0
-        );
-    length += buf;
-    buf = scnprintf
-        (
-         (isolation_output + length), WE_MAX_STR_LEN - length,
-         "isolation chain 1 : %d\n",
-         isolation->isolation_chain1
-        );
-    length += buf;
-    buf = scnprintf
-        (
-         (isolation_output + length), WE_MAX_STR_LEN - length,
-         "isolation chain 2 : %d\n",
-         isolation->isolation_chain2
-        );
-    length += buf;
-    buf = scnprintf
-        (
-         (isolation_output + length), WE_MAX_STR_LEN - length,
-         "isolation chain 3 : %d\n",
-         isolation->isolation_chain3
-        );
-    length += buf;
-
-    wrqu->data.length = length + 1;
-
-    /* notify the caller */
-    complete(&isolation_context->completion);
-
-    /* serialization is complete */
-    spin_unlock(&hdd_context_lock);
+	wrqu->data.length = length + 1;
 }
 
 static int wlan_hdd_get_isolation(hdd_adapter_t *adapter,
-        union iwreq_data *wrqu, char *extra)
+				  union iwreq_data *wrqu, char *extra)
 {
-    eHalStatus hstatus;
-    int ret;
-    struct statsContext context;
+	eHalStatus hstatus;
+	int ret;
+	void *cookie;
+	struct hdd_request *request;
+	struct isolation_info *priv;
+	static const struct hdd_request_params params = {
+		.priv_size = sizeof(*priv),
+		.timeout_ms = 8000,
+	};
 
-    if (NULL == adapter) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, "%s: pAdapter is NULL",
-                __func__);
-        return -EINVAL;
-    }
+	if (NULL == adapter) {
+		hddLog(VOS_TRACE_LEVEL_ERROR, "%s: pAdapter is NULL",
+		       __func__);
+		return -EINVAL;
+	}
 
-    init_completion(&context.completion);
-    context.magic = ISOLATION_CONTEXT_MAGIC;
-    context.extra = extra;
-    context.wrqu = wrqu;
+	request = hdd_request_alloc(&params);
+	if (!request) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,"%s: Request allocation failure",
+		       __func__);
+		return VOS_STATUS_E_NOMEM;
+	}
+	cookie = hdd_request_cookie(request);
 
-    hstatus = sme_get_isolation(WLAN_HDD_GET_HAL_CTX(adapter),
-            &context,
-            hdd_get_isolation_cb);
-    if (eHAL_STATUS_SUCCESS != hstatus) {
-        hddLog(VOS_TRACE_LEVEL_ERROR,
-                "%s: Unable to retrieve isolation",
-                __func__);
-        ret = -EFAULT;
-    } else {
-        if (!wait_for_completion_timeout(&context.completion,
-                    msecs_to_jiffies(8000))) {
-            hddLog(VOS_TRACE_LEVEL_ERROR,
-                    "%s: SME timed out while retrieving isolation",
-                    __func__);
-            ret = -ETIMEDOUT;
-        } else
-            ret = 0;
-    }
+	hstatus = sme_get_isolation(WLAN_HDD_GET_HAL_CTX(adapter),
+				    cookie,
+				    hdd_get_isolation_cb);
+	if (eHAL_STATUS_SUCCESS != hstatus) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+		       "%s: Unable to retrieve isolation",
+		        __func__);
+		ret = -EFAULT;
+	} else {
+		ret = hdd_request_wait_for_response(request);
+		if (ret) {
+			hddLog(VOS_TRACE_LEVEL_ERROR,
+			       "%s: SME timed out while retrieving isolation",
+			       __func__);
+			ret = -ETIMEDOUT;
+		} else {
+			priv = hdd_request_priv(request);
+			hdd_post_isolation(wrqu, extra, priv);
+			ret = 0;
+		}
+	}
 
-    spin_lock(&hdd_context_lock);
-    context.magic = 0;
-    spin_unlock(&hdd_context_lock);
-    return ret;
+	hdd_request_put(request);
+
+	return ret;
 }
 
 static int __iw_get_isolation(struct net_device *dev,
@@ -5861,111 +5773,101 @@ int wlan_hdd_update_phymode(struct net_device *net, tHalHandle hal,
     return 0;
 }
 
-void hdd_GetTemperatureCB(int temperature, void *pContext)
+struct temperature_info {
+	int temperature;
+};
+
+void hdd_GetTemperatureCB(int temperature, void *cookie)
 {
-    struct statsContext *pTempContext;
-    hdd_adapter_t *pAdapter;
+	struct hdd_request *request;
+	struct temperature_info *priv;
 
-    ENTER();
+	ENTER();
 
-    if (NULL == pContext) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, FL("pContext is NULL"));
-        return;
-    }
+	request = hdd_request_get(cookie);
+	if (!request) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+		       "%s: Obsolete request", __func__);
+		return;
+	}
+	priv = hdd_request_priv(request);
 
-    pTempContext = pContext;
-    pAdapter     = pTempContext->pAdapter;
+	priv->temperature = temperature;
 
-    /* there is a race condition that exists between this callback
-       function and the caller since the caller could time out either
-       before or while this code is executing.  we use a spinlock to
-       serialize these actions */
-    spin_lock(&hdd_context_lock);
+	hdd_request_complete(request);
+	hdd_request_put(request);
 
-    if ((NULL == pAdapter) ||
-            (TEMP_CONTEXT_MAGIC != pTempContext->magic))
-    {
-        /* the caller presumably timed out so there is nothing we can do */
-        spin_unlock(&hdd_context_lock);
-        hddLog(VOS_TRACE_LEVEL_WARN,
-                FL("Invalid context, pAdapter [%pK] magic [%08x]"),
-                pAdapter, pTempContext->magic);
-        return;
-    }
-
-    /* context is valid, update the temperature, ignore it if this was 0 */
-    if (temperature != 0) {
-        pAdapter->temperature = temperature;
-    }
-
-    /* notify the caller */
-    complete(&pTempContext->completion);
-
-    /* serialization is complete */
-    spin_unlock(&hdd_context_lock);
-
-    EXIT();
+	EXIT();
 }
 
-VOS_STATUS wlan_hdd_get_temperature(hdd_adapter_t *pAdapter,
-        union iwreq_data *wrqu, char *extra)
+VOS_STATUS wlan_hdd_get_temperature(hdd_adapter_t *adapter_ptr,
+				    union iwreq_data *wrqu,
+				    char *extra)
 {
-    eHalStatus hstatus;
-    struct statsContext tempContext;
-    unsigned long rc;
-    A_INT32 *pData = (A_INT32 *)extra;
+	eHalStatus hstatus;
+	int ret;
+	A_INT32 *data_ptr = (A_INT32 *)extra;
+	void *cookie;
+	struct hdd_request *request;
+	struct temperature_info *priv;
+	static const struct hdd_request_params params = {
+		.priv_size = sizeof(*priv),
+		.timeout_ms = WLAN_WAIT_TIME_STATS,
+	};
 
-    ENTER();
+	ENTER();
 
-    if (NULL == pAdapter)
-    {
-        hddLog(VOS_TRACE_LEVEL_ERROR, FL("pAdapter is NULL"));
-        return VOS_STATUS_E_FAULT;
-    }
+	if (NULL == adapter_ptr) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+		       FL("pAdapter is NULL"));
+		return VOS_STATUS_E_FAULT;
+	}
 
-    /* prepare callback context and magic pattern */
-    init_completion(&tempContext.completion);
-    tempContext.pAdapter = pAdapter;
-    tempContext.magic = TEMP_CONTEXT_MAGIC;
+	request = hdd_request_alloc(&params);
+	if (!request) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+		       "%s: Request allocation failure", __func__);
+		return VOS_STATUS_E_NOMEM;
+	}
+	cookie = hdd_request_cookie(request);
 
-    /* send get temperature request to sme */
-    hstatus = sme_GetTemperature(
-            WLAN_HDD_GET_HAL_CTX(pAdapter),
-            &tempContext,
-            hdd_GetTemperatureCB);
+	/* send get temperature request to sme */
+	hstatus =
+		sme_GetTemperature(WLAN_HDD_GET_HAL_CTX(adapter_ptr),
+				   cookie,
+				   hdd_GetTemperatureCB);
 
-    if (eHAL_STATUS_SUCCESS != hstatus) {
-        hddLog(VOS_TRACE_LEVEL_ERROR, FL("Unable to retrieve temperature"));
-    } else {
-        /* request was sent -- wait for the response */
-        rc = wait_for_completion_timeout(&tempContext.completion,
-                msecs_to_jiffies(WLAN_WAIT_TIME_STATS));
-        if (!rc) {
-            hddLog(VOS_TRACE_LEVEL_ERROR,
-                FL("SME timed out while retrieving temperature"));
-        }
-    }
+	if (eHAL_STATUS_SUCCESS != hstatus) {
+		hddLog(VOS_TRACE_LEVEL_ERROR,
+		       FL("Unable to retrieve temperature"));
+	} else {
+		/* request was sent -- wait for the response */
+		ret = hdd_request_wait_for_response(request);
+		if (ret) {
+			hddLog(VOS_TRACE_LEVEL_WARN,
+			       FL("timeout when get temperature"));
+			/* we'll returned a cached value below */
+		} else {
+			/* update the adapter with the fresh results */
+			priv = hdd_request_priv(request);
+			/* ignore it if this was 0 */
+			if (priv->temperature != 0)
+				adapter_ptr->temperature =
+						 priv->temperature;
+		}
+	}
+	/*
+	* either we never sent a request, we sent a request and
+	* received a response or we sent a request and timed out.
+	* regardless we are done with the request.
+	*/
+	hdd_request_put(request);
 
-    /* either we never sent a request, we sent a request and received a
-       response or we sent a request and timed out.  if we never sent a
-       request or if we sent a request and got a response, we want to
-       clear the magic out of paranoia.  if we timed out there is a
-       race condition such that the callback function could be
-       executing at the same time we are. of primary concern is if the
-       callback function had already verified the "magic" but had not
-       yet set the completion variable when a timeout occurred. we
-       serialize these activities by invalidating the magic while
-       holding a shared spinlock which will cause us to block if the
-       callback is currently executing */
-    spin_lock(&hdd_context_lock);
-    tempContext.magic = 0;
-    spin_unlock(&hdd_context_lock);
+	/* update temperature */
+	*data_ptr = adapter_ptr->temperature;
 
-    /* update temperature */
-    *pData = pAdapter->temperature;
-
-    EXIT();
-    return VOS_STATUS_SUCCESS;
+	EXIT();
+	return VOS_STATUS_SUCCESS;
 }
 
 /* set param sub-ioctls */

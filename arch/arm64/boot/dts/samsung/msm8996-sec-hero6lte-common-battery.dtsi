@@ -30,6 +30,14 @@
 		};
 	};
 
+	prevent_swelling_battery {
+		psb,trigger_time_after_full = <172800>;	/* 48h */
+		psb,release_discharging_time = <7200>; /* 2h */
+		psb,release_discharging_soc = <80>;
+		psb,release_discharging_voltage = <4150>;
+		psb,step_count_condition = <0 5 0 0 1>;
+	};
+
 	battery {
 		status = "okay";
 		compatible = "samsung,sec-battery";

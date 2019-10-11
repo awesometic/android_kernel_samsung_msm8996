@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2014, 2016 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2014, 2016, 2018 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -284,17 +284,17 @@ int apr_send_pkt(void *handle, uint32_t *buf)
 		return -EINVAL;
 	}
 	if (svc->need_reset) {
-		pr_err("apr: send_pkt service need reset\n");
+		pr_err_ratelimited("apr: send_pkt service need reset\n");
 		return -ENETRESET;
 	}
 
 	if ((svc->dest_id == APR_DEST_QDSP6) &&
 	    (apr_get_q6_state() != APR_SUBSYS_LOADED)) {
-		pr_err("%s: Still dsp is not Up\n", __func__);
+		pr_err_ratelimited("%s: Still dsp is not Up\n", __func__);
 		return -ENETRESET;
 	} else if ((svc->dest_id == APR_DEST_MODEM) &&
 		   (apr_get_modem_state() == APR_SUBSYS_DOWN)) {
-		pr_err("apr: Still Modem is not Up\n");
+		pr_err_ratelimited("apr: Still Modem is not Up\n");
 		return -ENETRESET;
 	}
 
@@ -304,7 +304,7 @@ int apr_send_pkt(void *handle, uint32_t *buf)
 	clnt = &client[dest_id][client_id];
 
 	if (!client[dest_id][client_id].handle) {
-		pr_err("APR: Still service is not yet opened\n");
+		pr_err_ratelimited("APR: Still service is not yet opened\n");
 		spin_unlock_irqrestore(&svc->w_lock, flags);
 		return -EINVAL;
 	}
@@ -398,14 +398,14 @@ struct apr_svc *apr_register(char *dest, char *svc_name, apr_fn svc_fn,
 
 	if (dest_id == APR_DEST_QDSP6) {
 		if (apr_get_q6_state() != APR_SUBSYS_LOADED) {
-			pr_err("%s: adsp not up\n", __func__);
+			pr_err_ratelimited("%s: adsp not up\n", __func__);
 			return NULL;
 		}
 		pr_debug("%s: adsp Up\n", __func__);
 	} else if (dest_id == APR_DEST_MODEM) {
 		if (apr_get_modem_state() == APR_SUBSYS_DOWN) {
 			if (is_modem_up) {
-				pr_err("%s: modem shutdown due to SSR, ret",
+				pr_err_ratelimited("%s: modem shutdown due to SSR, ret",
 					__func__);
 				return NULL;
 			}
@@ -420,7 +420,7 @@ struct apr_svc *apr_register(char *dest, char *svc_name, apr_fn svc_fn,
 	}
 
 	if (apr_get_svc(svc_name, domain_id, &client_id, &svc_idx, &svc_id)) {
-		pr_err("%s: apr_get_svc failed\n", __func__);
+		pr_err_ratelimited("%s: apr_get_svc failed\n", __func__);
 		goto done;
 	}
 
@@ -431,7 +431,7 @@ struct apr_svc *apr_register(char *dest, char *svc_name, apr_fn svc_fn,
 				APR_DL_SMD, apr_cb_func, NULL);
 		if (!clnt->handle) {
 			svc = NULL;
-			pr_err("APR: Unable to open handle\n");
+			pr_err_ratelimited("APR: Unable to open handle\n");
 			mutex_unlock(&clnt->m_lock);
 			goto done;
 		}
@@ -442,7 +442,7 @@ struct apr_svc *apr_register(char *dest, char *svc_name, apr_fn svc_fn,
 	clnt->id = client_id;
 	if (svc->need_reset) {
 		mutex_unlock(&svc->m_lock);
-		pr_err("APR: Service needs reset\n");
+		pr_err_ratelimited("APR: Service needs reset\n");
 		goto done;
 	}
 	svc->id = svc_id;
@@ -459,19 +459,19 @@ struct apr_svc *apr_register(char *dest, char *svc_name, apr_fn svc_fn,
 			mutex_unlock(&svc->m_lock);
 			return NULL;
 		}
-		if (!svc->port_cnt && !svc->svc_cnt)
+		if (!svc->svc_cnt)
 			clnt->svc_cnt++;
 		svc->port_cnt++;
 		svc->port_fn[temp_port] = svc_fn;
 		svc->port_priv[temp_port] = priv;
+		svc->svc_cnt++;
 	} else {
 		if (!svc->fn) {
-			if (!svc->port_cnt && !svc->svc_cnt)
+			if (!svc->svc_cnt)
 				clnt->svc_cnt++;
 			svc->fn = svc_fn;
-			if (svc->port_cnt)
-				svc->svc_cnt++;
 			svc->priv = priv;
+			svc->svc_cnt++;
 		}
 	}
 
@@ -679,24 +679,17 @@ int apr_deregister(void *handle)
 	client_id = svc->client_id;
 	clnt = &client[dest_id][client_id];
 
-	if (svc->port_cnt > 0 || svc->svc_cnt > 0) {
+	if (svc->svc_cnt > 0) {
 		if (svc->port_cnt)
 			svc->port_cnt--;
-		else if (svc->svc_cnt)
-			svc->svc_cnt--;
-		if (!svc->port_cnt && !svc->svc_cnt) {
+		svc->svc_cnt--;
+		if (!svc->svc_cnt) {
 			client[dest_id][client_id].svc_cnt--;
-			svc->need_reset = 0x0;
-		}
-	} else if (client[dest_id][client_id].svc_cnt > 0) {
-		client[dest_id][client_id].svc_cnt--;
-		if (!client[dest_id][client_id].svc_cnt) {
-			svc->need_reset = 0x0;
 			pr_debug("%s: service is reset %pK\n", __func__, svc);
 		}
 	}
 
-	if (!svc->port_cnt && !svc->svc_cnt) {
+	if (!svc->svc_cnt) {
 		svc->priv = NULL;
 		svc->id = 0;
 		svc->fn = NULL;

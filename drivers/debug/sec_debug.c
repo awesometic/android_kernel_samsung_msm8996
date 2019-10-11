@@ -182,6 +182,9 @@ char *klog_read_buf = NULL;
 char *klog_buf = NULL;
 uint32_t klog_size = 0;
 
+static DEFINE_MUTEX(klog_mutex);
+static DEFINE_MUTEX(summary_mutex);
+
 /* enable sec_debug feature */
 static unsigned enable = 1;
 static unsigned enable_user = 1;
@@ -1773,23 +1776,32 @@ static ssize_t sec_reset_summary_info_proc_read(struct file *file, char __user *
 	loff_t pos = *offset;
 	ssize_t count;
 
-	if (sec_reset_summary_info_init() < 0)
+	mutex_lock(&summary_mutex);
+	if (sec_reset_summary_info_init() < 0) {
+		mutex_unlock(&summary_mutex);
 		return -ENOENT;
+	}
 
-	if (pos >= SEC_PARAM_DUMP_SUMMARY_SIZE)
+	if (pos >= SEC_PARAM_DUMP_SUMMARY_SIZE) {
+		mutex_unlock(&summary_mutex);
 		return -ENOENT;
+	}
 
 	if (pos >= summary_info->summary_size) {
 		pr_info("%s : pos %lld, size %d\n", __func__, pos, summary_info->summary_size);
 		sec_reset_summary_completed();
+		mutex_unlock(&summary_mutex);
 		return 0;
 	}
 
 	count = min(len, (size_t)(summary_info->summary_size - pos));
-	if (copy_to_user(buf, summary_buf + pos, count))
+	if (copy_to_user(buf, summary_buf + pos, count)) {
+		mutex_unlock(&summary_mutex);
 		return -EFAULT;
+	}
 
 	*offset += count;
+	mutex_unlock(&summary_mutex);
 	return count;
 }
 
@@ -1866,20 +1878,27 @@ static ssize_t sec_reset_klog_proc_read(struct file *file, char __user *buf,
 	loff_t pos = *offset;
 	ssize_t count;
 
-	if (sec_reset_klog_init() < 0)
+	mutex_lock(&klog_mutex);
+	if (sec_reset_klog_init() < 0) {
+		mutex_unlock(&klog_mutex);
 		return -ENOENT;
+	}
 
 	if (pos >= klog_size) {
 		pr_info("%s : pos %lld, size %d\n", __func__, pos, klog_size);
 		sec_reset_klog_completed();
+		mutex_unlock(&klog_mutex);
 		return 0;
 	}
 
 	count = min(len, (size_t)(klog_size - pos));
-	if (copy_to_user(buf, klog_buf + pos, count))
+	if (copy_to_user(buf, klog_buf + pos, count)) {
+		mutex_unlock(&klog_mutex);
 		return -EFAULT;
+	}
 
 	*offset += count;
+	mutex_unlock(&klog_mutex);
 	return count;
 }
 

@@ -285,7 +285,11 @@ static int ion_secure_cma_allocate(struct ion_heap *heap,
 		pr_err("%s: Failed to get secure vmid\n", __func__);
 		return -EINVAL;
 	}
-	dest_perms = PERM_READ | PERM_WRITE;
+
+	if (dest_vm == VMID_CP_SEC_DISPLAY) 
+		dest_perms = PERM_READ; 
+	else 
+		dest_perms = PERM_READ | PERM_WRITE;
 
 	ret = ion_cma_allocate(heap, buffer, len, align, flags);
 	if (ret) {

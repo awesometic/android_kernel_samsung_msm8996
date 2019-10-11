@@ -14,6 +14,7 @@
 
 enum usblog_type {
 	NOTIFY_FUNCSTATE,
+	NOTIFY_ALTERNATEMODE,
 	NOTIFY_CCIC_EVENT,
 	NOTIFY_MANAGER,
 	NOTIFY_USBMODE,
@@ -68,6 +69,7 @@ enum ccic_id {
 	NOTIFY_ID_POWER_STATUS,
 	NOTIFY_ID_WATER,
 	NOTIFY_ID_VCONN,
+	NOTIFY_ID_ROLE_SWAP,
 };
 
 enum ccic_rid {
@@ -90,6 +92,12 @@ enum ccic_rprd {
 	NOTIFY_RD = 0,
 	NOTIFY_RP,
 };
+
+#define ALTERNATE_MODE_NOT_READY	(1 << 0)
+#define ALTERNATE_MODE_READY		(1 << 1)
+#define ALTERNATE_MODE_STOP		(1 << 2)
+#define ALTERNATE_MODE_START		(1 << 3)
+#define ALTERNATE_MODE_RESET		(1 << 4)
 
 #ifdef CONFIG_USB_NOTIFY_PROC_LOG
 extern void store_usblog_notify(int type, void *param1, void *parma2);

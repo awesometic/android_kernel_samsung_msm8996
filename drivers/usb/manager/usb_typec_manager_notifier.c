@@ -15,6 +15,7 @@
 #include <linux/vbus_notifier.h>
 #endif
 #include <linux/usb_notify.h>
+#include <linux/ccic/s2mm005_ext.h>
 
 #include <linux/time.h>
 #include <linux/ktime.h>
@@ -803,6 +804,8 @@ int manager_notifier_register(struct notifier_block *nb, notifier_fn_t notifier,
 		pr_info("usb: [M] %s USB: attach=%d, drp=%s \n", __func__,	m_noti.sub1,
 			CCIC_NOTI_USB_STATUS_Print[m_noti.sub2]);
 		nb->notifier_call(nb, m_noti.id, &(m_noti));
+		pr_info("usb: [M] %s USB driver is registered! Alternate mode Start!\n", __func__);
+		set_enable_alternate_mode(ALTERNATE_MODE_READY | ALTERNATE_MODE_START);
 	}
 
 	return ret;
@@ -870,6 +873,7 @@ int manager_notifier_init(void)
 	INIT_DELAYED_WORK(&typec_manager.rtctime_update_work,
 		water_det_rtc_time_update);
 
+	set_enable_alternate_mode(ALTERNATE_MODE_NOT_READY);
 #if defined(CONFIG_VBUS_NOTIFIER)
 	INIT_DELAYED_WORK(&typec_manager.vbus_noti_work,
 		muic_fake_event_work);

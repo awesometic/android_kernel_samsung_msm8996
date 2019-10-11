@@ -47,6 +47,7 @@ typedef enum {
 	CCIC_NOTIFY_ID_POWER_STATUS,
 	CCIC_NOTIFY_ID_WATER,
 	CCIC_NOTIFY_ID_VCONN,	
+	CCIC_NOTIFY_ID_ROLE_SWAP,
 } ccic_notifier_id_t;
 
 typedef struct
@@ -152,7 +153,7 @@ extern int ccic_notifier_register(struct notifier_block *nb,
 extern int ccic_notifier_unregister(struct notifier_block *nb);
 
 extern char CCIC_NOTI_DEST_Print[8][10];
-extern char CCIC_NOTI_ID_Print[7][20];
+extern char CCIC_NOTI_ID_Print[8][20];
 extern char CCIC_NOTI_RID_Print[8][15];
 extern char CCIC_NOTI_USB_STATUS_Print[5][20];
 

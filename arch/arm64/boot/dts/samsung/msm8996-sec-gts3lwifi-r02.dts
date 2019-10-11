@@ -17,6 +17,7 @@
 #include "../qcom/msm8996-mtp.dtsi"
 #include "msm8996-s2mpb02-hero.dtsi"
 #include "msm8996-sec-common.dtsi"
+#include "msm8996-sec-gts3lwifi-common.dtsi"
 #include "msm8996-sec-gts3lwifi-r02.dtsi"
 #include "msm8996-pogo-keyboard-gts3llte-common.dtsi"
 

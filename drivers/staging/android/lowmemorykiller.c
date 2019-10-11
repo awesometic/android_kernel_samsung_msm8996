@@ -35,6 +35,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
+#include <linux/cma.h>
 #include <linux/oom.h>
 #include <linux/sched.h>
 #include <linux/swap.h>
@@ -112,6 +113,7 @@ extern u64 zswap_pool_pages;
 extern atomic_t zswap_stored_pages;
 #endif
 
+#if defined(CONFIG_SEC_TIMEOUT_LOW_MEMORY_KILLER) || defined(CONFIG_SEC_DEBUG_LMK_MEMINFO)
 static void dump_tasks_info(void)
 {
 	struct task_struct *p;
@@ -171,6 +173,7 @@ static void dump_tasks_info(void)
 		task_unlock(task);
 	}
 }
+#endif
 
 static unsigned long lowmem_count(struct shrinker *s,
 				  struct shrink_control *sc)
@@ -305,6 +308,14 @@ void show_mem_call_notifiers_simple(struct seq_file *s);
 
 static void show_memory(void)
 {
+	unsigned long nr_rbin_free, nr_rbin_pool, nr_rbin_alloc, nr_rbin_file;
+
+	nr_rbin_free = global_page_state(NR_FREE_RBIN_PAGES);
+	nr_rbin_pool = atomic_read(&rbin_pool_pages);
+	nr_rbin_alloc = atomic_read(&rbin_allocated_pages);
+	nr_rbin_file = totalrbin_pages - nr_rbin_free - nr_rbin_pool
+					- nr_rbin_alloc;
+
 	show_mem_call_notifiers_simple(NULL);
 #define K(x) ((x) << (PAGE_SHIFT - 10))
 	printk("Mem-Info:"
@@ -326,6 +337,10 @@ static void show_memory(void)
 		" kernel_stack:%lukB"
 		" pagetables:%lukB"
 		" free_cma:%lukB"
+		" rbin_free:%lukB"
+		" rbin_pool:%lukB"
+		" rbin_alloc:%lukB"
+		" rbin_file:%lukB"
 		"\n",
 		K(totalram_pages),
 		K(global_page_state(NR_FREE_PAGES)),
@@ -344,7 +359,11 @@ static void show_memory(void)
 		K(global_page_state(NR_SLAB_UNRECLAIMABLE)),
 		global_page_state(NR_KERNEL_STACK) * THREAD_SIZE / 1024,
 		K(global_page_state(NR_PAGETABLE)),
-		K(global_page_state(NR_FREE_CMA_PAGES))
+		K(global_page_state(NR_FREE_CMA_PAGES)),
+		K(nr_rbin_free),
+		K(nr_rbin_pool),
+		K(nr_rbin_alloc),
+		K(nr_rbin_file)
 		);
 #undef K
 }
@@ -365,8 +384,6 @@ static int test_task_state(struct task_struct *p, int state)
 	return 0;
 }
 
-static DEFINE_MUTEX(scan_mutex);
-
 static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 {
 	struct task_struct *tsk;
@@ -384,15 +401,9 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	int other_file;
 	static DEFINE_RATELIMIT_STATE(lmk_rs, DEFAULT_RATELIMIT_INTERVAL/5, 1);
 	unsigned long nr_cma_free;
-
-	if (!mutex_trylock(&scan_mutex))
-		return 0;
-
+	unsigned long nr_rbin_free, nr_rbin_pool, nr_rbin_alloc, nr_rbin_file;
+   
 	other_free = global_page_state(NR_FREE_PAGES);
-	nr_cma_free = global_page_state(NR_FREE_CMA_PAGES);
-	if (!current_is_kswapd() || sc->priority <= 6)
-		other_free -= nr_cma_free;
-
 	if (global_page_state(NR_SHMEM) + total_swapcache_pages() <
 		global_page_state(NR_FILE_PAGES) + zcache_pages())
 		other_file = global_page_state(NR_FILE_PAGES) + zcache_pages() -
@@ -401,6 +412,18 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 						total_swapcache_pages();
 	else
 		other_file = 0;
+	nr_cma_free = global_page_state(NR_FREE_CMA_PAGES);
+	if (!current_is_kswapd() || sc->priority <= 6)
+		other_free -= nr_cma_free;
+	if ((sc->gfp_mask & __GFP_RBIN) != __GFP_RBIN) {
+		nr_rbin_free = global_page_state(NR_FREE_RBIN_PAGES);
+		nr_rbin_pool = atomic_read(&rbin_pool_pages);
+		nr_rbin_alloc = atomic_read(&rbin_allocated_pages);
+		nr_rbin_file = totalrbin_pages - nr_rbin_free - nr_rbin_pool
+						- nr_rbin_alloc;
+		other_free -= nr_rbin_free;
+		other_file -= nr_rbin_file;
+	}
 
 	if (lowmem_adj_size < array_size)
 		array_size = lowmem_adj_size;
@@ -424,8 +447,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		trace_almk_shrink(0, ret, other_free, other_file, 0);
 		lowmem_print(5, "lowmem_scan %lu, %x, return 0\n",
 			     sc->nr_to_scan, sc->gfp_mask);
-		mutex_unlock(&scan_mutex);
-		return 0;
+		return SHRINK_STOP;
 	}
 
 	selected_oom_score_adj = min_score_adj;
@@ -446,8 +468,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		if (time_before_eq(jiffies, lowmem_deathpending_timeout)) {
 			if (test_task_flag(tsk, TIF_MEMDIE)) {
 				rcu_read_unlock();
-				mutex_unlock(&scan_mutex);
-				return 0;
+				return SHRINK_STOP;
 			}
 		}
 
@@ -494,17 +515,16 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		long cache_limit = minfree * (long)(PAGE_SIZE / 1024);
 		long free = other_free * (long)(PAGE_SIZE / 1024);
 		trace_lowmemory_kill(selected, cache_size, cache_limit, free);
-		
+
 		if (test_task_flag(selected, TIF_MEMDIE) &&
 		    (test_task_state(selected, TASK_UNINTERRUPTIBLE))) {
 			lowmem_print(2, "'%s' (%d) is already killed\n",
 				     selected->comm,
 				     selected->pid);
 			rcu_read_unlock();
-			mutex_unlock(&scan_mutex);
-			return 0;
+			return SHRINK_STOP;
 		}
-		
+	    
 		lowmem_print(1, "Killing '%s' (%d), adj %hd,\n" \
 				"   to free %ldkB on behalf of '%s' (%d) because\n" \
 				"   cache %ldkB is below limit %ldkB for oom_score_adj %hd\n" \
@@ -571,7 +591,10 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 
 	lowmem_print(4, "lowmem_scan %lu, %x, return %lu\n",
 		     sc->nr_to_scan, sc->gfp_mask, rem);
-	mutex_unlock(&scan_mutex);
+    
+    if (!rem)
+		rem = SHRINK_STOP;
+
 	return rem;
 }
 

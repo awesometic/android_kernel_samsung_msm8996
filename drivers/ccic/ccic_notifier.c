@@ -34,7 +34,7 @@ char CCIC_NOTI_DEST_Print[8][10] =
     {"ALL"},
 };
 
-char CCIC_NOTI_ID_Print[7][20] =
+char CCIC_NOTI_ID_Print[8][20] =
 {
     {"ID_INITIAL"},
     {"ID_ATTACH"},
@@ -43,6 +43,7 @@ char CCIC_NOTI_ID_Print[7][20] =
     {"ID_POWER_STATUS"},
     {"ID_WATER"},
     {"ID_VCONN"},
+    {"ID_ROLE_SWAP"},
 };
 
 char CCIC_NOTI_RID_Print[8][15] =
@@ -187,6 +188,13 @@ int ccic_notifier_notify(CC_NOTI_TYPEDEF *p_noti, void *pd, int pdic_attach)
 		break;
 	case CCIC_NOTIFY_ID_VCONN:
 		ccic_uevent_work(CCIC_NOTIFY_ID_VCONN, 0);
+		break;
+	case CCIC_NOTIFY_ID_ROLE_SWAP:
+		pr_info("%s: src:%01x dest:%01x id:%02x sub1:%02x\n", __func__,
+			((CC_NOTI_ATTACH_TYPEDEF *)p_noti)->src,
+			((CC_NOTI_ATTACH_TYPEDEF *)p_noti)->dest,
+			((CC_NOTI_ATTACH_TYPEDEF *)p_noti)->id,
+			((CC_NOTI_ATTACH_TYPEDEF *)p_noti)->attach);
 		break;
 	default:
 		pr_info("%s: src:%01x dest:%01x id:%02x "

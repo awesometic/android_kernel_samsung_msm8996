@@ -703,6 +703,7 @@ enum {
 	CISD_DATA,
 
 	FG_DUMP,
+	BATT_CURRENT_EVENT,
 };
 
 enum {

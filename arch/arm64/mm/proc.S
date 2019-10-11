@@ -114,19 +114,10 @@ ENTRY(cpu_do_resume)
 	msr	contextidr_el1, x4
 	msr	mair_el1, x5
 	msr	cpacr_el1, x6
-#ifndef CONFIG_TIMA_RKP
+
 	msr	ttbr0_el1, x1
 	msr	ttbr1_el1, x7
-#else
-						/* ttbr0_el1 in x1 */
-	mov	x2, x7				/* ttbr1_el1 in x2 */
-	mov     x0, #0xc013			/* smc id 0x13 */
-	movk    x0, #0xc300, lsl #16
-back2:
-	smc	#0x0
-	cmp	x0, #0x1
-	b.eq	back2
-#endif
+
 	tcr_set_idmap_t0sz x8, x7
 	msr	tcr_el1, x8
 	msr	vbar_el1, x9
@@ -151,25 +142,17 @@ ENDPROC(cpu_do_resume)
  *	- pgd_phys - physical address of new TTB
  */
 ENTRY(cpu_do_switch_mm)
+	mrs	x2, ttbr1_el1
 	mmid	x1, x1				// get mm->context.id
-	bfi	x0, x1, #48, #16		// set the ASID
-#ifndef CONFIG_TIMA_RKP
-	msr	ttbr0_el1, x0			// set TTBR0
-#else
-	mov	x1, x0
-	mov     x0, #0xc010			/* smc id */
-	movk    x0, #0xc300, lsl #16
-back1:
-#ifdef CONFIG_RKP_CFP_FIX_SMC_BUG
-	_smc	#0x0
-#else
-	smc	#0x0
+#ifdef CONFIG_ARM64_SW_TTBR0_PAN
+	bfi	x0, x1, #48, #16		// set the ASID field in TTBR0
 #endif
-	cmp	x0, #0x1
-	b.eq	back1
-#endif
+	bfi	x2, x1, #48, #16		// set the ASID
+	msr	ttbr1_el1, x2			// in TTBR1 (since TCR.A1 is set)
 	isb
-	ret
+	msr	ttbr0_el1, x0			// now update TTBR0
+	isb
+	b	post_ttbr_update_workaround	// Back to C code...
 ENDPROC(cpu_do_switch_mm)
 
 	.section ".text.init", #alloc, #execinstr
@@ -221,10 +204,10 @@ ENTRY(__cpu_setup)
 	 */
 #ifndef CONFIG_TIMA_RKP
 	ldr	x10, =TCR_TxSZ(VA_BITS) | TCR_CACHE_FLAGS | TCR_SMP_FLAGS | \
-			TCR_TG_FLAGS | TCR_ASID16 | TCR_TBI0
+			TCR_TG_FLAGS | TCR_ASID16 | TCR_TBI0 | TCR_A1
 #else
 	ldr	x10, =TCR_TxSZ(VA_BITS) | TCR_FLAGS | \
-		      TCR_ASID16 | TCR_TBI0 | (1 << 31)
+		      TCR_ASID16 | TCR_TBI0 | TCR_A1 | (1 << 31)
 #endif
 	tcr_set_idmap_t0sz	x10, x9
 

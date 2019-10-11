@@ -967,6 +967,8 @@ void GetHTCSendPackets(HTC_TARGET        *target,
 
 }
 
+extern int hif_post_recv_buffers(HIF_DEVICE *hif_device);
+
 static HTC_SEND_QUEUE_RESULT HTCTrySend(HTC_TARGET       *target,
                                         HTC_ENDPOINT     *pEndpoint,
                                         HTC_PACKET_QUEUE *pCallersSendQueue)
@@ -1079,6 +1081,11 @@ static HTC_SEND_QUEUE_RESULT HTCTrySend(HTC_TARGET       *target,
     if (result != HTC_SEND_QUEUE_OK) {
         AR_DEBUG_PRINTF(ATH_DEBUG_SEND,("-HTCTrySend:  \n"));
         return result;
+    }
+
+    if (IS_TX_CREDIT_FLOW_ENABLED(pEndpoint) && 
+        HTC_PACKET_QUEUE_DEPTH(&pEndpoint->TxQueue) > 32) {
+    hif_post_recv_buffers(target->hif_dev);
     }
 
     if (!IS_TX_CREDIT_FLOW_ENABLED(pEndpoint)) {

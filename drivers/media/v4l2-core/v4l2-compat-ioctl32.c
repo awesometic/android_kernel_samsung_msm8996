@@ -681,6 +681,7 @@ static int get_v4l2_framebuffer32(struct v4l2_framebuffer __user *kp, struct v4l
 	compat_caddr_t tmp;
 
 	if (!access_ok(VERIFY_READ, up, sizeof(struct v4l2_framebuffer32)) ||
+ 		get_user(tmp, &up->base) ||
 		put_user((__force void *)compat_ptr(tmp), &kp->base) ||
 		convert_in_user(&up->capability, &kp->capability) ||
 		convert_in_user(&up->flags, &kp->flags) ||

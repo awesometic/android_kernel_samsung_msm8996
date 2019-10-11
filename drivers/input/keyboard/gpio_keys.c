@@ -634,7 +634,6 @@ static void flip_cover_work(struct work_struct *work)
 
 	if (comp_val[0] == comp_val[1]) {
 		ddata->flip_cover = !gpio_get_value(ddata->gpio_flip_cover);
-
 		printk(KERN_DEBUG "[keys] %s : %d\n",
 			__func__, ddata->flip_cover);
 

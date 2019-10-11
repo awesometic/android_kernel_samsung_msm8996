@@ -37,6 +37,14 @@
 		};
 	};
 
+	prevent_swelling_battery {
+		psb,trigger_time_after_full = <172800>;	/* 48h */
+		psb,release_discharging_time = <7200>; /* 2h */
+		psb,release_discharging_soc = <80>;
+		psb,release_discharging_voltage = <4150>;
+		psb,step_count_condition = <0 5 0 0 1>;
+	};
+
 	battery {
 		status = "okay";
 		compatible = "samsung,sec-battery";
@@ -84,7 +92,7 @@
 		battery,input_current_limit = <1800 500 500 1800 500 900 1000 500 1000 500 900 1900 1800 500 500 400 700 1300 300 1000 1500 500 1667 1000 1667 80 1800 1667 1400 1000 1000 500 660 900 600 900 900 660 1800 1667 1800>;
 		battery,fast_charging_current = <2100 450 450 2100 700 1200 1000 500 1200 450 1440 1600 2100 450 450 400 700 1300 300 1000 1500 450 2600 1000 2600 80 1800 1000 1400 450 1000 500 1440 1440 1440 1440 1440 1440 2600 2600 2600>;
 		battery,full_check_current_1st = <350 0 0 350 350 350 350 350 350 0 350 350 350 0 0 350 350 350 350 350 350 0 350 350 350 0 350 350 350 0 350 0 350 350 350 350 350 350 350 350 350>;
-		battery,full_check_current_2nd = <150 0 0 150 150 150 150 150 150 0 150 150 150 0 0 150 150 150 150 150 150 0 150 150 150 0 150 150 150 0 150 0 150 150 150 150 150 150 150 150 150>;
+		battery,full_check_current_2nd = <200 0 0 200 200 200 200 200 200 0 200 200 200 0 0 200 200 200 200 200 200 0 200 200 200 0 200 200 200 0 200 0 200 200 200 200 200 200 200 200 200>;
 
 		battery,wireless_cc_cv = <85>;
 		/* Hero2 5V */
@@ -236,11 +244,11 @@
 		battery,recharging_expired_time = <5400>;
 
 		/* cycle, chg_float_voltage, recharge_condition_vcell, full_condition_vcell, full_condition_soc */
-		battery,age_data = <0 43500 4300 4250 93
-			200 43250 4275 4225 92
-			250 43125 4262 4212 91
-			300 42875 4237 4187 90
-			1000 42375 4187 4137 89>;
+		battery,age_data = <0 43500 4280 4250 93
+			200 43250 4255 4225 92
+			250 43125 4242 4212 91
+			300 42875 4217 4187 90
+			1000 42375 4167 4137 89>;
 
 		battery,enable_coil_temp = <1>;
 	};
@@ -265,11 +273,11 @@
 		fuelgauge,qrtable20 = <0x0903>;
 		fuelgauge,qrtable30 = <0x0901>;
 		fuelgauge,fg_resistor = <1>;
-		fuelgauge,rcomp0 = <0x80>;
-		fuelgauge,rcomp_charging = <0x80>;
+		fuelgauge,rcomp0 = <0x90>;
+		fuelgauge,rcomp_charging = <0x90>;
 		fuelgauge,is_using_model_data;
 		fuelgauge,type_str = "SDI";
-		fuelgauge,capacity = <0x1B59>;
+		fuelgauge,capacity = <0x1B5A>;
 		/*fuelgauge,auto_discharge_en;*/
 		fuelgauge,discharge_temp_threshold = <600>;
 		fuelgauge,discharge_volt_threshold = <4200>;

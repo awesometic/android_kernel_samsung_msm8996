@@ -145,6 +145,13 @@ enum VDM_MSG_IRQ_State {
 	VDM_EXIT_MODE 		=	(1 << 4),
 };
 
+
+#define ALTERNATE_MODE_NOT_READY	(1 << 0)
+#define ALTERNATE_MODE_READY		(1 << 1)
+#define ALTERNATE_MODE_STOP		(1 << 2)
+#define ALTERNATE_MODE_START		(1 << 3)
+#define ALTERNATE_MODE_RESET		(1 << 4)
+
 // VMD Message Register I2C address by S.LSI
 #define REG_VDM_MSG_REQ					0x02C0
 
@@ -170,10 +177,12 @@ void send_alternate_message(void * data, int cmd);
 void receive_alternate_message(void * data, VDM_MSG_IRQ_STATUS_Type *VDM_MSG_IRQ_State);
 int ccic_register_switch_device(int mode);
 void acc_detach_check(struct work_struct *work);
+void set_enable_alternate_mode(int mode);
 #else
 inline void send_alternate_message(void * data, int cmd) {}
 inline void receive_alternate_message(void * data, VDM_MSG_IRQ_STATUS_Type *VDM_MSG_IRQ_State) {}
 inline int ccic_register_switch_device(int mode) {}
 inline void acc_detach_check(struct work_struct *work) {}
+inline void set_enable_alternate_mode(int mode) {}
 #endif
 #endif

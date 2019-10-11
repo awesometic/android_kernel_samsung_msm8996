@@ -186,6 +186,8 @@ static const char *ccic_id_string(enum ccic_id id)
 		return "ID_WATER";
 	case NOTIFY_ID_VCONN:
 		return "ID_VCONN";
+	case NOTIFY_ID_ROLE_SWAP:
+		return "ID_ROLE_SWAP";
 	default:
 		return "UNDEFINED";
 	}
@@ -239,6 +241,24 @@ static const char *ccic_rprd_string(enum ccic_rprd rprd)
 	}
 }
 
+static const char *ccic_alternatemode_string(uint64_t id)
+{
+	if ((id & ALTERNATE_MODE_READY) && (id & ALTERNATE_MODE_START))
+		return "READY & START";
+	else if ((id & ALTERNATE_MODE_READY) && (id & ALTERNATE_MODE_STOP))
+		return "READY & STOP";
+	else if (id & ALTERNATE_MODE_READY)
+		return "MODE READY";
+	else if (id & ALTERNATE_MODE_START)
+		return "START";
+	else if (id & ALTERNATE_MODE_STOP)
+		return "STOP";
+	else if (id & ALTERNATE_MODE_RESET)
+		return "RESET";
+	else
+		return "UNDEFINED";
+}
+
 static void print_ccic_event(struct seq_file *m, unsigned long long ts,
 		unsigned long rem_nsec, int cc_type, uint64_t *noti)
 {
@@ -249,6 +269,11 @@ static void print_ccic_event(struct seq_file *m, unsigned long long ts,
 	case NOTIFY_FUNCSTATE:
 		seq_printf(m, "[%5lu.%06lu] function state = %llu\n",
 			(unsigned long)ts, rem_nsec / 1000, *noti);
+		break;
+	case NOTIFY_ALTERNATEMODE:
+		seq_printf(m, "[%5lu.%06lu] ccic alternate mode is %s 0x%04llx\n",
+			(unsigned long)ts, rem_nsec / 1000,
+			ccic_alternatemode_string(*noti), *noti);
 		break;
 	case NOTIFY_CCIC_EVENT:
 		if (type.id == NOTIFY_ID_ATTACH)
@@ -294,6 +319,14 @@ static void print_ccic_event(struct seq_file *m, unsigned long long ts,
 			ccic_id_string(type.id),
 			ccic_dev_string(type.src),
 			ccic_dev_string(type.dest));
+		else if (type.id  == NOTIFY_ID_ROLE_SWAP)
+			seq_printf(m, "[%5lu.%06lu] ccic notify:	id=%s src=%s dest=%s syb1=%d sub2=%d\n",
+			(unsigned long)ts, rem_nsec / 1000,
+			ccic_id_string(type.id),
+			ccic_dev_string(type.src),
+			ccic_dev_string(type.dest),
+			type.sub1,
+			type.sub2);
 		else
 			seq_printf(m, "[%5lu.%06lu] ccic notify:    id=%s src=%s dest=%s rprd=%s %s\n",
 			(unsigned long)ts, rem_nsec / 1000,
@@ -347,6 +380,14 @@ static void print_ccic_event(struct seq_file *m, unsigned long long ts,
 			ccic_id_string(type.id),
 			ccic_dev_string(type.src),
 			ccic_dev_string(type.dest));
+		else if (type.id  == NOTIFY_ID_ROLE_SWAP)
+			seq_printf(m, "[%5lu.%06lu] manager notify:	id=%s src=%s dest=%s syb1=%d sub2=%d\n",
+			(unsigned long)ts, rem_nsec / 1000,
+			ccic_id_string(type.id),
+			ccic_dev_string(type.src),
+			ccic_dev_string(type.dest),
+			type.sub1,
+			type.sub2);
 		else
 			seq_printf(m, "[%5lu.%06lu] manager notify: id=%s src=%s dest=%s rprd=%s %s\n",
 			(unsigned long)ts, rem_nsec / 1000,
@@ -731,7 +772,7 @@ void store_usblog_notify(int type, void *param1, void *param2)
 		return;
 	}
 
-	if (type == NOTIFY_FUNCSTATE) {
+	if (type == NOTIFY_FUNCSTATE || type == NOTIFY_ALTERNATEMODE) {
 		temp = *(int *)param1;
 		ccic_store_usblog_notify(type, &temp);
 	} else if (type == NOTIFY_CCIC_EVENT

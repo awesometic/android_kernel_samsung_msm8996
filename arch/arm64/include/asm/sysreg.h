@@ -108,6 +108,7 @@
 #define ID_AA64ISAR0_AES_SHIFT		4
 
 /* id_aa64pfr0 */
+#define ID_AA64PFR0_CSV2_SHIFT		56
 #define ID_AA64PFR0_GIC_SHIFT		24
 #define ID_AA64PFR0_ASIMD_SHIFT		20
 #define ID_AA64PFR0_FP_SHIFT		16
@@ -226,11 +227,7 @@ static inline void config_sctlr_el1(u32 clear, u32 set)
 	asm volatile("mrs %0, sctlr_el1" : "=r" (val));
 	val &= ~clear;
 	val |= set;
-#ifdef CONFIG_TIMA_RKP
-	rkp_call(RKP_EMULT_SCTLR, (unsigned long)val, 0, 0, 0, 0);
-#else
 	asm volatile("msr sctlr_el1, %0" : : "r" (val));
-#endif
 }
 
 /*

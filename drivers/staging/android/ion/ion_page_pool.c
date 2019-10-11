@@ -71,7 +71,7 @@ static int ion_page_pool_add(struct ion_page_pool *pool, struct page *page,
 	return 0;
 }
 
-static struct page *ion_page_pool_remove(struct ion_page_pool *pool, bool high,
+struct page *ion_page_pool_remove(struct ion_page_pool *pool, bool high,
 					bool prefetch)
 {
 	struct page *page;
@@ -94,6 +94,26 @@ static struct page *ion_page_pool_remove(struct ion_page_pool *pool, bool high,
 						pool->nr_unreserved);
 
 	list_del(&page->lru);
+	return page;
+}
+
+void *ion_page_pool_only_alloc(struct ion_page_pool *pool)
+{
+	struct page *page = NULL;
+
+	BUG_ON(!pool);
+
+	if (!pool->high_count && !pool->low_count)
+		goto done;
+
+	if (mutex_trylock(&pool->mutex)) {
+		if (pool->high_count)
+			page = ion_page_pool_remove(pool, true, false);
+		else if (pool->low_count)
+			page = ion_page_pool_remove(pool, false, false);
+		mutex_unlock(&pool->mutex);
+	}
+done:
 	return page;
 }
 
@@ -165,7 +185,12 @@ void ion_page_pool_free(struct ion_page_pool *pool, struct page *page,
 {
 	int ret;
 
-	BUG_ON(pool->order != compound_order(page));
+	/*
+	 * ION RBIN heap can utilize ion_page_pool_free() for pages which are
+	 * not compound pages. Thus, comment out the below line.
+	 *
+	 * BUG_ON(pool->order != compound_order(page));
+	 */
 
 	ret = ion_page_pool_add(pool, page, prefetch);
 	/* FIXME? For a secure page, not hyp unassigned in this err path */

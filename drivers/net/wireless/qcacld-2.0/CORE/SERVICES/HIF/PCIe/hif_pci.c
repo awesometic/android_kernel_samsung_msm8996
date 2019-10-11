@@ -247,7 +247,7 @@ static struct CE_pipe_config target_CE_config_wlan_epping[] = {
 };
 
 int hif_completion_thread(struct HIF_CE_state *hif_state);
-static int hif_post_recv_buffers(HIF_DEVICE *hif_device);
+int hif_post_recv_buffers(HIF_DEVICE *hif_device);
 
 void
 WAR_PCI_WRITE32(char *addr, u32 offset, u32 value)
@@ -1623,7 +1623,7 @@ hif_post_recv_buffers_for_pipe(struct HIF_CE_pipe_info *pipe_info)
  * non-zero if were were unable to completely
  * replenish receive buffers.
  */
-static int
+int
 hif_post_recv_buffers(HIF_DEVICE *hif_device)
 {
     struct HIF_CE_state *hif_state = (struct HIF_CE_state *)hif_device;
@@ -1632,7 +1632,7 @@ hif_post_recv_buffers(HIF_DEVICE *hif_device)
     int pipe_num, rv=0;
 
     A_TARGET_ACCESS_LIKELY(targid);
-    for (pipe_num=0; pipe_num < sc->ce_count; pipe_num++) {
+    for (pipe_num = sc->ce_count - 1; pipe_num >= 0; pipe_num--) {
         struct HIF_CE_pipe_info *pipe_info;
 
         pipe_info = &hif_state->pipe_info[pipe_num];

@@ -39,6 +39,8 @@
 #endif
 #if defined(CONFIG_DUAL_ROLE_USB_INTF)
 #include <linux/usb/class-dual-role.h>
+#elif defined(CONFIG_TYPEC)
+#include <linux/usb/typec.h>
 #endif
 
 #define AVAILABLE_VOLTAGE 12000
@@ -314,6 +316,26 @@ typedef union
     }BITS;
 } VDM_MSG_IRQ_STATUS_Type;
 
+typedef union
+{
+    uint32_t DATA;
+    uint8_t  BYTES[4];
+    struct {
+	uint32_t	AP_Req_Get:2,                   // b0-b1
+			UPSM_By_I2C:1,                  // b2
+			Reserved:1,                     // b3
+			Is_HardReset:1,                 // b4
+			FAC_Abnormal_Repeat_State:1,    // b5
+			FAC_Abnormal_Repeat_RID:1,      // b6
+			FAC_Abnormal_RID0:1,            // b7
+			SBU1_CNT:8,                     // b8 - b15
+			SBU2_CNT:8,                     // b16 - b23
+			SBU_LOW_CNT:4,                  // b24 - b27
+			Alt_Mode_By_I2C:2,              // b28 - b29
+			DPM_START_ON:1,                 // b30
+			Func_Abnormal_State:1;          // b31
+  } BITS;
+} AP_REQ_GET_STATUS_Type;
 
 typedef union
 {
@@ -690,7 +712,7 @@ typedef enum {
 	State_PE_PRS_SRC_SNK_Transition_to_off		= 52,
 	State_PE_PRS_SNK_SRC_Source_on		= 64,
 } function_status_t;
-#if defined(CONFIG_DUAL_ROLE_USB_INTF)
+
 typedef enum
 {
 	TYPE_C_DETACH = 0,
@@ -700,7 +722,7 @@ typedef enum
 } CCIC_OTP_MODE;
 
 #define DUAL_ROLE_SET_MODE_WAIT_MS 1500
-#endif
+
 typedef enum
 {
 	CLIENT_OFF = 0,
@@ -791,6 +813,16 @@ struct s2mm005_data {
 	int power_role;
 	int try_state_change;
 	struct delayed_work role_swap_work;
+#elif defined(CONFIG_TYPEC)
+	struct typec_port *port;
+	struct typec_partner *partner;
+	struct usb_pd_identity partner_identity;
+	struct typec_capability typec_cap;
+	struct completion role_reverse_completion;
+	int typec_power_role;
+	int typec_data_role;
+	int typec_try_state_change;
+	struct delayed_work typec_role_swap_work;
 #endif
 
 #if defined(CONFIG_SEC_FACTORY)

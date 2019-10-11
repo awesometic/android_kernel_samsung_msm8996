@@ -201,9 +201,13 @@ void process_pd(void *data, u8 plug_attach_done, u8 *pdic_attach, MSG_IRQ_STATUS
 	uint16_t REG_ADD;
 	uint8_t rp_currentlvl, is_src;
 	REQUEST_FIXED_SUPPLY_STRUCT_Typedef *request_power_number;
+#if defined (CONFIG_TYPEC)
+	enum typec_pwr_opmode mode = TYPEC_PWR_MODE_USB;
+#endif
 
 	printk("%s\n",__func__);
-	rp_currentlvl = (usbpd_data->func_state >> 3) & 0x3;
+
+	rp_currentlvl = ((usbpd_data->func_state >> 27) & 0x3);
 	is_src = (usbpd_data->func_state & (0x1 << 25) ? 1 : 0);
 	dev_info(&i2c->dev, "rp_currentlvl:0x%02X, is_source:0x%02X\n", rp_currentlvl, is_src);
 
@@ -211,9 +215,42 @@ void process_pd(void *data, u8 plug_attach_done, u8 *pdic_attach, MSG_IRQ_STATUS
 	{
 		usbpd_data->is_pr_swap++;
 		dev_info(&i2c->dev, "PR_Swap requested to %s\n", is_src ? "SOURCE" : "SINK");
-		vbus_turn_on_ctrl(is_src);
+#if defined(CONFIG_DUAL_ROLE_USB_INTF)		
+		if (is_src && (usbpd_data->power_role == DUAL_ROLE_PROP_PR_SNK)) {
+			ccic_event_work(usbpd_data, CCIC_NOTIFY_DEV_BATTERY, CCIC_NOTIFY_ID_ATTACH, 0, 0, 0);
+		}
+#elif defined (CONFIG_TYPEC)
+		if (is_src && (usbpd_data->typec_power_role == TYPEC_SINK)) {
+			ccic_event_work(usbpd_data, CCIC_NOTIFY_DEV_BATTERY, CCIC_NOTIFY_ID_ATTACH, 0, 0, 0);
+		}
+#endif
+
 #if defined(CONFIG_DUAL_ROLE_USB_INTF)
-		usbpd_data->power_role = is_src ? DUAL_ROLE_PROP_PR_SRC : DUAL_ROLE_PROP_PR_SNK; 
+		usbpd_data->power_role = is_src ? DUAL_ROLE_PROP_PR_SRC : DUAL_ROLE_PROP_PR_SNK;
+		if (usbpd_data->power_role == DUAL_ROLE_PROP_PR_SRC) {
+			ccic_event_work(usbpd_data,
+				CCIC_NOTIFY_DEV_MUIC, CCIC_NOTIFY_ID_ATTACH, 1/*attach*/, 1/*rprd*/, 0);
+			vbus_turn_on_ctrl(is_src);
+		} else if (usbpd_data->power_role == DUAL_ROLE_PROP_PR_SNK) {
+			vbus_turn_on_ctrl(is_src);
+			ccic_event_work(usbpd_data,
+				CCIC_NOTIFY_DEV_MUIC, CCIC_NOTIFY_ID_ATTACH, 1/*attach*/, 1/*rprd*/, 0);
+		}
+		ccic_event_work(usbpd_data, CCIC_NOTIFY_DEV_PDIC, CCIC_NOTIFY_ID_ROLE_SWAP, 0, 0, 0);
+#elif defined (CONFIG_TYPEC)
+		usbpd_data->typec_power_role = is_src ? TYPEC_SOURCE : TYPEC_SINK;
+		if (usbpd_data->typec_power_role == TYPEC_SOURCE) {
+			ccic_event_work(usbpd_data,
+				CCIC_NOTIFY_DEV_MUIC, CCIC_NOTIFY_ID_ATTACH, 1/*attach*/, 1/*rprd*/, 0);
+			vbus_turn_on_ctrl(is_src);
+		} else if (usbpd_data->typec_power_role == TYPEC_SINK) {
+			vbus_turn_on_ctrl(is_src);
+			ccic_event_work(usbpd_data,
+				CCIC_NOTIFY_DEV_MUIC, CCIC_NOTIFY_ID_ATTACH, 1/*attach*/, 1/*rprd*/, 0);
+		}
+		typec_set_pwr_role(usbpd_data->port, usbpd_data->typec_power_role);
+		mode = s2mm005_get_pd_support(usbpd_data);
+		typec_set_pwr_opmode(usbpd_data->port, mode);
 #endif
 	}
 
@@ -259,11 +296,28 @@ void process_pd(void *data, u8 plug_attach_done, u8 *pdic_attach, MSG_IRQ_STATUS
 		if (*pdic_attach) {
 			ccic_event_work(usbpd_data,CCIC_NOTIFY_DEV_BATTERY, CCIC_NOTIFY_ID_POWER_STATUS, *pdic_attach/*attach*/, PDIC_NOTIFY_EVENT_PD_SINK/*rprd*/, 0);
 		}
-		else
+		else {
 			pd_noti.event = PDIC_NOTIFY_EVENT_CCIC_ATTACH;
+
+			if (!is_src && (usbpd_data->pd_state == State_PE_SNK_Wait_for_Capabilities ||
+			usbpd_data->pd_state == State_ErrorRecovery) &&
+			rp_currentlvl != pd_noti.sink_status.rp_currentlvl &&
+			rp_currentlvl >= RP_CURRENT_LEVEL_DEFAULT) {
+
+				if (rp_currentlvl == RP_CURRENT_LEVEL3) /* 5V/3A RP charger is detected by CCIC */
+					pd_noti.sink_status.rp_currentlvl = RP_CURRENT_LEVEL3;
+				else if (rp_currentlvl == RP_CURRENT_LEVEL2) /* 5V/1.5A RP charger is detected by CCIC */
+					pd_noti.sink_status.rp_currentlvl = RP_CURRENT_LEVEL2;
+				else if (rp_currentlvl == RP_CURRENT_LEVEL_DEFAULT) /* 5V/0.5A RP charger is detected by CCIC */
+					pd_noti.sink_status.rp_currentlvl = RP_CURRENT_LEVEL_DEFAULT;
+
+				pr_info(" %s : rp_currentlvl(%d)\n", __func__, pd_noti.sink_status.rp_currentlvl);
+			}			
+		}
 	} else {
 		pd_noti.sink_status.selected_pdo_num = 0;
 		pd_noti.event = PDIC_NOTIFY_EVENT_DETACH;
+		pd_noti.sink_status.rp_currentlvl = RP_CURRENT_LEVEL_NONE;
 	}
 #else
 	if(plug_attach_done)

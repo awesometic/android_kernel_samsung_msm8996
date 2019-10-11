@@ -152,6 +152,7 @@
 				250  4260 4190 4160 91
 				300  4240 4170 4140 90
 				1000 4190 4120 4090 89>;
+		battery,battery_full_capacity = <6000>;
 	};
 
 	sm5705-charger {
@@ -174,14 +175,14 @@
 		battery0,battery_table0 = <0x1400 0x1B56 0x1CB5 0x1D7A 0x1D8C 0x1DF8 0x1E4A 0x1EB0 0x1EFF 0x1FA4 0x1FFC 0x208E 0x20A5 0x211B 0x21F7 0x2399>;
 		battery0,battery_table1 = <0x00 0x68 0x15E 0x291 0x62B 0x9C4 0xFC4 0x16F7 0x1A91 0x1E2B 0x21C4 0x242B 0x255E 0x283F 0x2D0C 0x2D2E>;
 		battery0,rce_value = <0x04E1 0x03E6 0x01D7>;
-		battery0,rs_value = <0x0051 0x147 0x47a 0x3800 0x00a4>; /*rs p_mix_factor n_mix_factor max min*/
+		battery0,rs_value = <0x0051 0x147 0x47a 0x3800 0x7a>; /*rs p_mix_factor n_mix_factor max min*/
 		battery0,misc = <0x0060>;
 		battery0,topoff_soc = <0 3 350>; /*enable soc current*/
 		battery0,vit_period = <0x3506>;
 		battery0,dtcd_value = <0x1>;
 		battery0,volt_cal = <0x8000>;
 		battery0,curr_offset = <1 0x0000>; /*en_auto offset*/
-		battery0,p_curr_cal = <0x0090>;
+		battery0,p_curr_cal = <0x009A>;
 		battery0,n_curr_cal = <0x00A7>;
 		battery0,mix_value = <0x0503 0x0004>; /*mix_rate init_blank*/
 		battery0,temp_std = <25>;
@@ -196,6 +197,6 @@
 		battery0,v_alarm = <3000>;
 		battery0,v_max_table = <0x21F7 0x21D4 0x21B0 0x218D 0x2135>;
 		battery0,q_max_table = <0x2D0C 0x2C8E 0x2C0F 0x2B91 0x2A56>;
-		battery0,data_ver = <0x07>;
+		battery0,data_ver = <0x08>;
 	};
 };

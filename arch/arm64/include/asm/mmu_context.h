@@ -55,18 +55,19 @@ static inline void contextidr_thread_switch(struct task_struct *next)
 static inline void cpu_set_reserved_ttbr0(void)
 {
 	unsigned long ttbr = virt_to_phys(empty_zero_page);
-#ifndef CONFIG_TIMA_RKP
+
 	asm(
 	"	msr	ttbr0_el1, %0			// set TTBR0\n"
 	"	isb"
 	:
 	: "r" (ttbr));
-#else
-	rkp_call(RKP_EMULT_TTBR0, (unsigned long)ttbr, 0, 0, 0, 0);
-	asm(
-	"	isb"
-	::);
-#endif
+}
+
+static inline void cpu_switch_mm(pgd_t *pgd, struct mm_struct *mm)
+{
+	BUG_ON(pgd == swapper_pg_dir);
+	cpu_set_reserved_ttbr0();
+	cpu_do_switch_mm(virt_to_phys(pgd),mm);
 }
 
 /*
@@ -129,7 +130,7 @@ static inline void update_saved_ttbr0(struct task_struct *tsk,
 	else 
 		ttbr = virt_to_phys(mm->pgd) | ASID(mm) << 48; 
 
-	task_thread_info(tsk)->ttbr0 = ttbr;
+	WRITE_ONCE(task_thread_info(tsk)->ttbr0, ttbr);
 }
 #else
 static inline void update_saved_ttbr0(struct task_struct *tsk,
@@ -182,5 +183,7 @@ switch_mm(struct mm_struct *prev, struct mm_struct *next,
 
 #define deactivate_mm(tsk,mm)	do { } while (0)
 #define activate_mm(prev,next)	switch_mm(prev, next, current)
+
+void post_ttbr_update_workaround(void);
 
 #endif

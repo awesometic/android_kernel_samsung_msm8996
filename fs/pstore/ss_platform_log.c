@@ -41,7 +41,7 @@
 #define SS_LOGGER_LEVEL_MAX		(4)
 #define SS_LOGGER_SKIP_COUNT		(4)
 #define SS_LOGGER_STRING_PAD		(1)
-#define SS_LOGGER_HEADER_SIZE		(68)
+#define SS_LOGGER_HEADER_SIZE		(80)
 
 #define SS_LOG_ID_MAIN 		(0)
 #define SS_LOG_ID_RADIO		(1)
@@ -746,7 +746,7 @@ static int ss_plog_probe(struct platform_device *pdev)
 	logger.buffer = vmalloc(PAGE_SIZE * 3);
 
 	if (logger.buffer)
-		pr_info("logger buffer alloc address: 0x%p\n", logger.buffer);
+		pr_info("logger buffer alloc address: 0x%pK\n", logger.buffer);
 
 	return 0;
 
