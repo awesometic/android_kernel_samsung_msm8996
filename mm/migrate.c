@@ -994,7 +994,7 @@ out:
 		put_new_page(newpage, private);
 	} else if (unlikely(__is_movable_balloon_page(newpage))) {
 		/* drop our reference, page already in the balloon */
-		put_page(newpage);
+		putback_active_hugepage(newpage);
 	} else
 		putback_lru_page(newpage);
 
