@@ -1424,21 +1424,27 @@ static struct dma_buf_ops dma_buf_ops = {
 	.kunmap = ion_dma_buf_kunmap,
 };
 
-static struct dma_buf *ion_share_dma_buf_nolock(struct ion_client *client,
-						struct ion_handle *handle)
+static struct dma_buf *__ion_share_dma_buf(struct ion_client *client,
+					   struct ion_handle *handle,
+					   bool lock_client)
 {
 	struct ion_buffer *buffer;
 	struct dma_buf *dmabuf;
 	bool valid_handle;
 
+	if (lock_client)
+		mutex_lock(&client->lock);
 	valid_handle = ion_handle_validate(client, handle);
 	if (!valid_handle) {
 		WARN(1, "%s: invalid handle passed to share.\n", __func__);
-		mutex_unlock(&client->lock);
+		if (lock_client)
+			mutex_unlock(&client->lock);
 		return ERR_PTR(-EINVAL);
 	}
 	buffer = handle->buffer;
 	ion_buffer_get(buffer);
+	if (lock_client)
+		mutex_unlock(&client->lock);
 
 	dmabuf = dma_buf_export(buffer, &dma_buf_ops, buffer->size, O_RDWR,
 				NULL);
@@ -1449,43 +1455,42 @@ static struct dma_buf *ion_share_dma_buf_nolock(struct ion_client *client,
 
 	return dmabuf;
 }
+
 struct dma_buf *ion_share_dma_buf(struct ion_client *client,
-						struct ion_handle *handle)
+				  struct ion_handle *handle)
 {
-	struct dma_buf *dmabuf;
-	mutex_lock(&client->lock);
-	dmabuf = ion_share_dma_buf_nolock(client, handle);
-	mutex_unlock(&client->lock);
-	return dmabuf;
+	return __ion_share_dma_buf(client, handle, true);
 }
 EXPORT_SYMBOL(ion_share_dma_buf);
 
-static int ion_share_dma_buf_fd_nolock(struct ion_client *client, struct ion_handle *handle)
+static int __ion_share_dma_buf_fd(struct ion_client *client,
+				  struct ion_handle *handle, bool lock_client)
 {
 	struct dma_buf *dmabuf;
 	int fd;
 
-	dmabuf = ion_share_dma_buf_nolock(client, handle);
+	dmabuf = __ion_share_dma_buf(client, handle, lock_client);
 	if (IS_ERR(dmabuf))
 		return PTR_ERR(dmabuf);
 
 	fd = dma_buf_fd(dmabuf, O_CLOEXEC);
 	if (fd < 0)
 		dma_buf_put(dmabuf);
+
 	return fd;
 }
 
 int ion_share_dma_buf_fd(struct ion_client *client, struct ion_handle *handle)
 {
-	int fd;
-
-	mutex_lock(&client->lock);
-	fd = ion_share_dma_buf_fd_nolock(client, handle);
-	mutex_lock(&client->lock);
-
-	return fd;
+	return __ion_share_dma_buf_fd(client, handle, true);
 }
 EXPORT_SYMBOL(ion_share_dma_buf_fd);
+
+static int ion_share_dma_buf_fd_nolock(struct ion_client *client,
+				       struct ion_handle *handle)
+{
+	return __ion_share_dma_buf_fd(client, handle, false);
+}
 
 struct ion_handle *ion_import_dma_buf(struct ion_client *client, int fd)
 {
