@@ -32,8 +32,8 @@
 #define MSM_FB_MAX_DEV_LIST 32
 
 #define MSM_FB_ENABLE_DBGFS
-#define WAIT_FENCE_FIRST_TIMEOUT (3 * MSEC_PER_SEC)
-#define WAIT_FENCE_FINAL_TIMEOUT (7 * MSEC_PER_SEC)
+#define WAIT_FENCE_FIRST_TIMEOUT (10 * MSEC_PER_SEC)
+#define WAIT_FENCE_FINAL_TIMEOUT (15 * MSEC_PER_SEC)
 #define WAIT_MAX_FENCE_TIMEOUT (WAIT_FENCE_FIRST_TIMEOUT + \
 					WAIT_FENCE_FINAL_TIMEOUT)
 #define WAIT_MIN_FENCE_TIMEOUT  (1)
@@ -369,6 +369,7 @@ struct msm_fb_data_type {
 	bool pending_switch;
 	struct mutex switch_lock;
 	struct input_handler *input_handler;
+	bool force_revalidate;
 };
 
 static inline void mdss_fb_update_notify_update(struct msm_fb_data_type *mfd)

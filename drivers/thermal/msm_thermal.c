@@ -123,6 +123,10 @@
 
 static struct msm_thermal_data msm_thermal_info;
 static struct delayed_work check_temp_work, retry_hotplug_work;
+#if CONFIG_SEC_PM_DEBUG
+static struct delayed_work ts_print_work;
+static int ts_print[] = {4, 6, 9, 11, 15};
+#endif
 static bool core_control_enabled;
 static uint32_t cpus_offlined;
 static cpumask_var_t cpus_previously_online;
@@ -2318,12 +2322,6 @@ static int zone_id_to_tsen_id(int zone_id, int *tsens_id)
 	int i = 0;
 	int ret = 0;
 
-	if (!zone_id_tsens_map) {
-		pr_debug("zone_id_tsens_map is not initialized.\n");
-		*tsens_id = zone_id;
-		return ret;
-	}
-
 	for (i = 0; i < max_tsens_num; i++) {
 		if (zone_id == zone_id_tsens_map[i]) {
 			*tsens_id = tsens_id_map[i];
@@ -2712,6 +2710,9 @@ static void msm_thermal_bite(int zone_id, long temp)
 	int tsens_id = 0;
 	int ret = 0;
 
+
+	sec_debug_set_thermal_upload();
+
 	ret = zone_id_to_tsen_id(zone_id, &tsens_id);
 	if (ret < 0) {
 		pr_err("Zone:%d reached temperature:%ld. Err = %d System reset\n",
@@ -2729,6 +2730,13 @@ static void msm_thermal_bite(int zone_id, long temp)
 				 THERM_SECURE_BITE_CMD), &desc);
 	}
 }
+#ifdef CONFIG_USER_RESET_DEBUG_TEST
+void force_thermal_reset(void)
+{
+	msm_thermal_bite(0, msm_thermal_info.therm_reset_temp_degC);
+}
+EXPORT_SYMBOL(force_thermal_reset);
+#endif
 
 static int do_therm_reset(void)
 {
@@ -3513,6 +3521,29 @@ reschedule:
 		schedule_delayed_work(&check_temp_work,
 				msecs_to_jiffies(msm_thermal_info.poll_ms));
 }
+
+#if CONFIG_SEC_PM_DEBUG
+static void __ref msm_ts_print(struct work_struct *work)
+{
+	struct tsens_device tsens_dev;
+	long temp = 0;
+	int i = 0, added = 0, ret = 0;
+	char buffer[500] = { 0, };
+
+	ret = sprintf(buffer + added, "tsens");
+	added += ret;
+	for (i = 0; i < (sizeof(ts_print) / sizeof(int)); i++) {
+		tsens_dev.sensor_num = ts_print[i];
+		tsens_get_temp(&tsens_dev, &temp);
+		ret = sprintf(buffer + added, "[%d:%ld]", ts_print[i], temp);
+		added += ret;
+	}
+	pr_info("%s\n", buffer);
+
+	/* For every 5s log the temperature values of all the msm tsens */
+	schedule_delayed_work(&ts_print_work, HZ * 5);
+}
+#endif
 
 static int __ref msm_thermal_cpu_callback(struct notifier_block *nfb,
 		unsigned long action, void *hcpu)
@@ -5101,6 +5132,9 @@ int msm_thermal_pre_init(struct device *dev)
 		goto pre_init_exit;
 	}
 
+	if (!tsens_temp_at_panic)
+		msm_thermal_panic_notifier_init(dev);
+
 	if (!thresh) {
 		thresh = kzalloc(
 				sizeof(struct threshold_info) * MSM_LIST_MAX_NR,
@@ -5258,7 +5292,6 @@ int msm_thermal_init(struct msm_thermal_data *pdata)
 		cpus_previously_online_update();
 		register_cpu_notifier(&msm_thermal_cpu_notifier);
 	}
-	msm_thermal_panic_notifier_init(&pdata->pdev->dev);
 
 	return ret;
 }
@@ -7365,14 +7398,19 @@ static int msm_thermal_dev_exit(struct platform_device *inp_dev)
 	int i = 0;
 	uint32_t _cluster = 0;
 	struct cluster_info *cluster_ptr = NULL;
-	struct uio_info *info = dev_get_drvdata(&inp_dev->dev);
 	struct rail *r = NULL;
+	struct uio_info *info = dev_get_drvdata(&inp_dev->dev);
 
 	uio_unregister_device(info);
+
 	unregister_reboot_notifier(&msm_thermal_reboot_notifier);
 	if (msm_therm_debugfs && msm_therm_debugfs->parent)
 		debugfs_remove_recursive(msm_therm_debugfs->parent);
 	msm_thermal_ioctl_cleanup();
+#if CONFIG_SEC_PM_DEBUG
+	cancel_delayed_work_sync(&ts_print_work);
+#endif
+
 	if (thresh) {
 		if (vdd_rstr_enabled) {
 			sensor_mgr_remove_threshold(
@@ -7471,6 +7509,11 @@ static struct platform_driver msm_thermal_device_driver = {
 
 int __init msm_thermal_device_init(void)
 {
+#if CONFIG_SEC_PM_DEBUG
+	INIT_DELAYED_WORK(&ts_print_work, msm_ts_print);
+	schedule_delayed_work(&ts_print_work, (HZ * 2));
+#endif
+
 	return platform_driver_register(&msm_thermal_device_driver);
 }
 arch_initcall(msm_thermal_device_init);
@@ -7497,7 +7540,6 @@ int __init msm_thermal_late_init(void)
 	create_thermal_debugfs();
 	msm_thermal_add_bucket_info_nodes();
 	uio_init(msm_thermal_info.pdev);
-
 	return 0;
 }
 late_initcall(msm_thermal_late_init);

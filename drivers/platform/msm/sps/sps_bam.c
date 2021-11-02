@@ -1192,7 +1192,7 @@ static void pipe_set_irq(struct sps_bam *dev, u32 pipe_index,
 				"sps:BAM %pa pipe %d forced to use polling\n",
 				 BAM_ID(dev), pipe_index);
 	}
-	if ((pipe->state & BAM_STATE_MTI) == 0)
+	if ((pipe->state & BAM_STATE_MTI) == 0) 
 		bam_pipe_set_irq(&dev->base, pipe_index, irq_enable,
 					 pipe->irq_mask, dev->props.ee);
 	else

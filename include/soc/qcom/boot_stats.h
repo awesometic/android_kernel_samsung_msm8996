@@ -31,6 +31,15 @@ struct boot_stats {
 int boot_stats_init(void);
 int boot_stats_exit(void);
 unsigned long long int msm_timer_get_sclk_ticks(void);
+
+#ifdef CONFIG_SEC_BSP
+extern uint32_t bootloader_start;
+extern uint32_t bootloader_end;
+extern uint32_t bootloader_display;
+extern uint32_t bootloader_load_kernel;
+extern unsigned int get_boot_stat_time(void);
+#endif
+
 #else
 static inline int boot_stats_init(void) { return 0; }
 unsigned long long int msm_timer_get_sclk_ticks(void) { return 0; }

@@ -420,6 +420,43 @@ config MFD_MAX77693
 	  additional drivers must be enabled in order to use the functionality
 	  of the device.
 
+config MFD_MAX77854
+        bool "Maxim Semiconductor MAX77854 PMIC Support"
+        select MFD_CORE
+        help
+          Say yes here to support for Maxim Semiconductor MAX77854.
+          This is a Power Management IC with Charger, safe LDOs, Flash, Haptic
+          and MUIC controls on chip.
+          This driver provides common support for accessing the device;
+          additional drivers
+
+config MFD_SM5705
+        bool "Siliconmitus SM5705 IFPM Support"
+        depends on I2C=y
+        select MFD_CORE
+        help
+          Say yes here to support for Siliconmitus SM5705.
+          This is a Power Management IC with USBLDO, RGB(SVC led), Dual Flash, Charger 
+          controls on chip.
+          This driver provides common support for accessing the device;
+          additional drivers
+
+config MFD_SM5703
+        bool "Silicon Mitus semiconductor SM5703 IFPM support"
+        select MFD_CORE
+        help
+          Say yes here to support for Silicon Mitus semiconductor SM5703.
+          This is a Power Management IC with SW Charger, Fuel Gauge, RGBW, Haptic
+          and MUIC controls on chip.
+
+config MFD_SM5703_EN_MRSTB
+	bool "Enable MRSTB function"
+	depends on MFD_SM5703
+	default n
+	help
+	  If you enable this function, you need to connect MRSTB to AP's GPIO,
+	  and then assign GPIO number in DTSI or board file
+
 config MFD_MAX8907
 	tristate "Maxim Semiconductor MAX8907 PMIC Support"
 	select MFD_CORE
@@ -481,6 +518,18 @@ config MFD_MENF21BMC
 
 	  This driver can also be built as a module. If so the module
 	  will be called menf21bmc.
+
+config MFD_MAX77833
+	bool "Maxim Semiconductor MAX77833 PMIC Support"
+	select MFD_CORE
+	select REGMAP_I2C
+	help
+	  Say yes here to support for Maxim Semiconductor MAX77833.
+	  This is a companion Power Management IC with Flash, Haptic, Charger,
+	  and MUIC(Micro USB Interface Controller) controls on chip.
+	  This driver provides common support for accessing the device;
+	  additional drivers must be enabled in order to use the functionality
+	  of the device.
 
 config EZX_PCAP
 	bool "Motorola EZXPCAP Support"
@@ -1344,6 +1393,16 @@ config WCD9306_CODEC
 	  The WCD9306 codec support either I2C/I2S or Slimbus for
 	  control and data exchnage with master processor.
 
+config MFD_S2MPB02
+	bool "Samsung Semiconductor S2MPB02 PMIC Support"
+	depends on I2C=y
+	select MFD_CORE
+	help
+	  Say yes here to support for Samsung Semiconductor S2MPB02.
+	  This is a Power Management IC with Flash on chip.
+	  This driver provides common support for accessing the device
+	  additional drivers.
+
 config WCD9320_CODEC
 	tristate "WCD9320 Codec"
 	select SLIMBUS
@@ -1370,7 +1429,6 @@ config WCD9330_CODEC
 config WCD9335_CODEC
 	tristate "WCD9335 Codec"
 	depends on SLIMBUS
-	select SOUNDWIRE_WCD_CTRL
 	select MFD_CORE
 	select REGMAP_ALLOW_WRITE_DEBUGFS
 	help

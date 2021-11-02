@@ -488,6 +488,7 @@ static int raw_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	err = -EMSGSIZE;
 	if (len > 0xFFFF)
 		goto out;
+	
 
 	/* hdrincl should be READ_ONCE(inet->hdrincl)
 	 * but READ_ONCE() doesn't work with bit fields

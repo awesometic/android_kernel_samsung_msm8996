@@ -120,6 +120,7 @@ static int mode_string(char *buf, unsigned int offset,
 	if (mode->vmode & FB_VMODE_DOUBLE)
 		v = 'd';
 
+	pr_info("%c:%dx%d%c-%d\n", m, mode->xres, mode->yres, v, mode->refresh);
 	return snprintf(&buf[offset], PAGE_SIZE - offset, "%c:%dx%d%c-%d\n",
 	                m, mode->xres, mode->yres, v, mode->refresh);
 }
@@ -143,7 +144,7 @@ static ssize_t store_mode(struct device *device, struct device_attribute *attr,
 		mode = &modelist->mode;
 		i = mode_string(mstr, 0, mode);
 		if (strncmp(mstr, buf, max(count, i)) == 0) {
-
+			pr_info("store_mode %s\n", buf);
 			var = fb_info->var;
 			fb_videomode_to_var(&var, mode);
 			if ((err = activate(fb_info, &var)))

@@ -51,6 +51,10 @@
 #include <linux/bug.h>
 
 #include "workqueue_internal.h"
+#ifdef CONFIG_SEC_DEBUG
+#include <linux/qcom/sec_debug.h>
+#endif
+
 
 enum {
 	/*
@@ -282,7 +286,7 @@ static bool wq_power_efficient;
 module_param_named(power_efficient, wq_power_efficient, bool, 0444);
 
 static bool wq_numa_enabled;		/* unbound NUMA affinity enabled */
-
+static unsigned int need_rebind = 0; 
 /* buf for wq_update_unbound_numa_attrs(), protected by CPU hotplug exclusion */
 static struct workqueue_attrs *wq_update_unbound_numa_attrs_buf;
 
@@ -2040,6 +2044,14 @@ __acquires(&pool->lock)
 	lock_map_acquire_read(&pwq->wq->lockdep_map);
 	lock_map_acquire(&lockdep_map);
 	trace_workqueue_execute_start(work);
+#ifdef CONFIG_SEC_DEBUG
+	if ((unsigned long)worker->current_func > PAGE_OFFSET) {
+		secdbg_sched_msg("@%pS", worker->current_func);
+	} else {
+		secdbg_sched_msg("M:0x%lx", (unsigned long)worker->current_func);
+	}
+#endif
+
 	worker->current_func(work);
 	/*
 	 * While we must be careful to not use "work" after this, the trace
@@ -4670,6 +4682,9 @@ static int workqueue_cpu_up_callback(struct notifier_block *nfb,
 		break;
 
 	case CPU_DOWN_FAILED:
+		if (!(need_rebind&(1<<cpu))) 
+		return NOTIFY_OK; 
+		/* fall through */ 
 	case CPU_ONLINE:
 		mutex_lock(&wq_pool_mutex);
 
@@ -4691,6 +4706,7 @@ static int workqueue_cpu_up_callback(struct notifier_block *nfb,
 			wq_update_unbound_numa(wq, cpu, true);
 
 		mutex_unlock(&wq_pool_mutex);
+		need_rebind &= ~(1<<cpu); 
 		break;
 	}
 	return NOTIFY_OK;
@@ -4722,6 +4738,7 @@ static int workqueue_cpu_down_callback(struct notifier_block *nfb,
 
 		/* wait for per-cpu unbinding to finish */
 		flush_work(&unbind_work);
+		need_rebind |= 1<<cpu; 
 		destroy_work_on_stack(&unbind_work);
 		break;
 	}

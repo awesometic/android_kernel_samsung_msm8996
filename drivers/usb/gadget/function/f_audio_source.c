@@ -661,6 +661,7 @@ audio_bind(struct usb_configuration *c, struct usb_function *f)
 	struct usb_request *req;
 	struct audio_source_instance *fi_audio = to_fi_audio_source(f->fi);
 	struct audio_source_config *config = fi_audio->config;
+
 	int i;
 	int err;
 

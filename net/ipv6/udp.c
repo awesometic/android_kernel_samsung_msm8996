@@ -429,7 +429,8 @@ try_again:
 		err = skb_copy_datagram_iovec(skb, sizeof(struct udphdr),
 					      msg->msg_iov, copied);
 	else {
-		err = skb_copy_and_csum_datagram_iovec(skb, sizeof(struct udphdr), msg->msg_iov);
+		err = skb_copy_and_csum_datagram_iovec(skb, sizeof(struct udphdr),
+						       msg->msg_iov, copied);
 		if (err == -EINVAL)
 			goto csum_copy_err;
 	}
@@ -1138,8 +1139,13 @@ int udpv6_sendmsg(struct kiocb *iocb, struct sock *sk,
 			msg->msg_name = &sin;
 			msg->msg_namelen = sizeof(sin);
 do_udp_sendmsg:
-			if (__ipv6_only_sock(sk))
+			if (__ipv6_only_sock(sk)) {
+				printk(KERN_DEBUG "udpv6_sendmsg() ipv6_addr_v4mapped & __ipv6_only_sock\n");
+				printk(KERN_DEBUG "udpv6_sendmsg() s6_addr32 %08X %08X %08X %08X\n",
+				daddr->s6_addr32[0], daddr->s6_addr32[1],
+				daddr->s6_addr32[2], daddr->s6_addr32[3]);
 				return -ENETUNREACH;
+			}
 			return udp_sendmsg(iocb, sk, msg, len);
 		}
 	}

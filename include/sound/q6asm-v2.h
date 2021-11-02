@@ -639,4 +639,13 @@ int q6asm_send_mtmx_strtr_window(struct audio_client *ac,
 /* Retrieve the current DSP path delay */
 int q6asm_get_path_delay(struct audio_client *ac);
 
+#ifdef CONFIG_SEC_SND_SOLUTION
+int q6asm_set_sa(struct audio_client *ac, long *param);
+int q6asm_set_vsp(struct audio_client *ac, long *param);
+int q6asm_set_dha(struct audio_client *ac, long *param);
+int q6asm_set_lrsm(struct audio_client *ac, long *param);
+int q6asm_set_msp(struct audio_client *ac, long *param);
+int q6asm_set_sb(struct audio_client *ac, long *param);
+int q6asm_set_sb_rotation(struct audio_client *ac, long *param);
+#endif /* CONFIG_SEC_SND_SOLUTION */
 #endif /* __Q6_ASM_H__ */

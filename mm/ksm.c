@@ -255,6 +255,8 @@ static int ksm_show_mem_notifier(struct notifier_block *nb,
 				unsigned long action,
 				void *data)
 {
+	if (action)
+		return 0;
 	pr_info("ksm_pages_sharing: %lu\n", ksm_pages_sharing);
 	pr_info("ksm_pages_shared: %lu\n", ksm_pages_shared);
 

@@ -54,6 +54,13 @@ config ANDROID_BINDER_IPC_SELFTEST
           exhaustively with combinations of various buffer sizes and
           alignments.
 
+config SEC_TRACE_BINDERCNT
+	bool "Trace process binder count"
+	default n
+	---help---
+	  This feature can be used to monitor binder transactions count to
+	  a designated process.
+
 config ASHMEM
 	bool "Enable the Anonymous Shared Memory Subsystem"
 	default n
@@ -105,6 +112,37 @@ config ANDROID_LOW_MEMORY_KILLER_AUTODETECT_OOM_ADJ_VALUES
 	  Detect oom_adj values written to
 	  /sys/module/lowmemorykiller/parameters/adj and convert them
 	  to oom_score_adj values.
+
+config SEC_TIMEOUT_LOW_MEMORY_KILLER
+	bool "Android timeout Low Memory Killer"
+	default n
+	help
+	 This enables 'Android-Style oom-killer'
+	 The way to select victim by oom-killer provided by
+	 linux kernel is totally different from android policy.
+	 Hence, it makes more sense that we select the oom victim
+	 as android does when LMK is invoked.
+
+config SEC_DEBUG_LMK_MEMINFO
+	bool "Show Meminfo when lmk invoked"
+	default n
+	help
+	  Show memory information when lmk kills process
+
+config SEC_DEBUG_LMK_COUNT_INFO
+	bool "Record LMK execution count"
+	default n
+	help
+	  Show LMK execution count information when lmk invoked
+
+config ANDROID_INTF_ALARM_DEV
+	bool "Android alarm driver"
+	depends on RTC_CLASS
+	default n
+	---help---
+	  Provides non-wakeup and rtc backed wakeup alarms based on rtc or
+	  elapsed realtime, and a non-wakeup alarm on the monotonic clock.
+	  Also exports the alarm interface to user-space.
 
 config SYNC
 	bool "Synchronization framework"
@@ -159,7 +197,6 @@ config ANDROID_VSOC
 
 source "drivers/staging/android/ion/Kconfig"
 
-source "drivers/staging/android/fiq_debugger/Kconfig"
 
 endif # if ANDROID
 

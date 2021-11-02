@@ -130,6 +130,13 @@ void notify_proxy_vote(struct device *device);
 void notify_proxy_unvote(struct device *device);
 void complete_err_ready(struct subsys_device *subsys);
 extern int wait_for_shutdown_ack(struct subsys_desc *desc);
+extern int subsystem_crash(const char *name);
+extern void subsys_force_stop(const char *name, bool val);
+extern int subsys_shutdown_check(void);
+#ifdef CONFIG_SEC_NAD
+int subsystem_get_count_for_NAD(void *subsystem);
+struct subsys_device *find_subsys_for_NAD(const char *str);
+#endif
 #else
 
 static inline int subsys_get_restart_level(struct subsys_device *dev)
@@ -184,6 +191,12 @@ static inline void notify_proxy_unvote(struct device *device) { }
 static inline int wait_for_shutdown_ack(struct subsys_desc *desc)
 {
 	return -ENOSYS;
+}
+static inline subsystem_crash(const char *name) { }
+static inline void subsys_force_stop(const char *name, bool val) { }
+static inline int subsys_shutdown_check(void)
+{ 
+	return false;
 }
 #endif /* CONFIG_MSM_SUBSYSTEM_RESTART */
 

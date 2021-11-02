@@ -22,6 +22,7 @@
 #include <linux/msm-bus.h>
 #include <linux/msm-bus-board.h>
 #include "mdss_mdp_pp_cache_config.h"
+#include "mdss_debug.h" 
 
 struct mdp_csc_cfg mdp_csc_8bit_convert[MDSS_MDP_MAX_CSC] = {
 	[MDSS_MDP_CSC_YUV2RGB_601L] = {
@@ -62,14 +63,14 @@ struct mdp_csc_cfg mdp_csc_8bit_convert[MDSS_MDP_MAX_CSC] = {
 	},
 	[MDSS_MDP_CSC_YUV2RGB_2020L] = {
 		0,
-		{
-			0x0256, 0x0000, 0x035e,
-			0x0256, 0xffa0, 0xfeb2,
-			0x0256, 0x044c, 0x0000,
+		{				
+			0x0256, 0x0000, 0x035e,								
+			0x0256, 0xffa0, 0xfeb2,								
+			0x0256, 0x044c, 0x0000,				
 		},
-		{ 0xfff0, 0xff80, 0xff80,},
-		{ 0x0, 0x0, 0x0,},
-		{ 0x10, 0xeb, 0x10, 0xf0, 0x10, 0xf0,},
+		{ 0xfff0, 0xff80, 0xff80,},			
+		{ 0x0, 0x0, 0x0,},			
+		{ 0x10, 0xeb, 0x10, 0xf0, 0x10, 0xf0,},			
 		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
 	},
 	[MDSS_MDP_CSC_YUV2RGB_2020FR] = {
@@ -84,6 +85,30 @@ struct mdp_csc_cfg mdp_csc_8bit_convert[MDSS_MDP_MAX_CSC] = {
 		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
 		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
 	},
+	[MDSS_MDP_CSC_YUV2RGB_P3L] = {
+		0,
+		{
+			0x0254, 0x0000, 0x03ae,						
+			0x0254, 0xff96, 0xfeee,
+			0x0254, 0x0456, 0x0000,
+		},
+		{ 0xfff0, 0xff80, 0xff80,},
+		{ 0x0, 0x0, 0x0,},
+		{ 0x10, 0xeb, 0x10, 0xf0, 0x10, 0xf0,},
+		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
+	},
+	[MDSS_MDP_CSC_YUV2RGB_P3FR] = {
+		0,
+		{
+			0x0200, 0x0000, 0x0329,
+			0x0200, 0xffa5, 0xff15,
+			0x0200, 0x03b9, 0x0000,
+		},
+		{ 0x0000, 0xff80, 0xff80,},
+		{ 0x0, 0x0, 0x0,},
+		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
+		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
+	},	
 	[MDSS_MDP_CSC_RGB2YUV_601L] = {
 		0,
 		{
@@ -143,7 +168,7 @@ struct mdp_csc_cfg mdp_csc_8bit_convert[MDSS_MDP_MAX_CSC] = {
 		{ 0x0, 0x0080, 0x0080,},
 		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
 		{ 0x0, 0xff, 0x0, 0xff, 0x0, 0xff,},
-	},
+	},	
 	[MDSS_MDP_CSC_YUV2YUV] = {
 		0,
 		{
@@ -214,17 +239,44 @@ struct mdp_csc_cfg mdp_csc_10bit_convert[MDSS_MDP_MAX_CSC] = {
 			0x0256, 0xffa0, 0xfeb2,
 			0x0256, 0x044c, 0x0000,
 		},
+		
+		{ 0xffc0, 0xfe00, 0xfe00,},
+		{ 0x0, 0x0, 0x0,},
+		{ 0x40, 0x3ac, 0x40, 0x3c0, 0x40, 0x3c0,},
+		{ 0x40, 0x3ac, 0x40, 0x3c0, 0x40, 0x3c0,},
+	},
+	[MDSS_MDP_CSC_YUV2RGB_2020FR] = {
+		0,
+		{
+			0x0200, 0x0000, 0x02f3,			
+			0x0200, 0xffac, 0xfedb,
+			0x0200, 0x03c3, 0x0000,		
+		},
+		
+		{ 0x0000, 0xfe00, 0xfe00,},
+		{ 0x0, 0x0, 0x0,},
+		{ 0x0, 0x3ff, 0x0, 0x3ff, 0x0, 0x3ff,},
+		{ 0x0, 0x3ff, 0x0, 0x3ff, 0x0, 0x3ff,},
+		
+	},
+	[MDSS_MDP_CSC_YUV2RGB_P3L] = {
+		0,
+		{
+			0x0254, 0x0000, 0x03ae,			
+			0x0254, 0xff96, 0xfeee,			
+			0x0254, 0x0456, 0x0000,			
+		},
 		{ 0xffc0, 0xfe00, 0xfe00,},
 		{ 0x0, 0x0, 0x0,},
 		{ 0x40, 0x3ac, 0x40, 0x3c0, 0x40, 0x3c0,},
 		{ 0x0, 0x3ff, 0x0, 0x3ff, 0x0, 0x3ff,},
 	},
-	[MDSS_MDP_CSC_YUV2RGB_2020FR] = {
+	[MDSS_MDP_CSC_YUV2RGB_P3FR] = {
 		0,
 		{
-			0x0200, 0x0000, 0x02f3,
-			0x0200, 0xffac, 0xfedb,
-			0x0200, 0x03c3, 0x0000,
+			0x0200, 0x0000, 0x0329,
+			0x0200, 0xffa5, 0xff15,
+			0x0200, 0x03b9, 0x0000,
 		},
 		{ 0x0000, 0xfe00, 0xfe00,},
 		{ 0x0, 0x0, 0x0,},
@@ -1576,9 +1628,9 @@ int mdss_mdp_scaler_lut_cfg(struct mdp_scale_data_v2 *scaler,
 	};
 
 	mdata = mdss_mdp_get_mdata();
-
+	
 	mutex_lock(&mdata->scaler_off->scaler_lock);
-
+	
 	lut_tbl = &mdata->scaler_off->lut_tbl;
 	if ((!lut_tbl) || (!lut_tbl->valid)) {
 		mutex_unlock(&mdata->scaler_off->scaler_lock);
@@ -2131,6 +2183,8 @@ static int pp_hist_setup(u32 *op, u32 block, struct mdss_mdp_mixer *mix,
 
 	if (!mdata)
 		return -EPERM;
+
+	MDSS_XLOG(mix->num, block, op); /* Temp log for case 02160908 */
 
 	intr_mask = 1;
 	if (mix && (PP_LOCAT(block) == MDSS_PP_DSPP_CFG)) {
@@ -5083,6 +5137,8 @@ int mdss_mdp_hist_intr_setup(struct mdss_intr *intr, int type)
 	init_state = intr->state;
 	init_curr = intr->curr;
 
+	MDSS_XLOG(init_state, init_curr, intr->req, type); /* Temp log for case 02160908 */
+
 	if (type == MDSS_IRQ_RESUME) {
 		/* resume intrs */
 		if (intr->state == MDSS_INTR_STATE_ACTIVE) {
@@ -5503,6 +5559,8 @@ void mdss_mdp_hist_intr_done(u32 isr)
 
 	if (pp_driver_ops.get_hist_isr_info)
 		pp_driver_ops.get_hist_isr_info(&isr_mask);
+
+	MDSS_XLOG(isr, 0x1111); /* Temp log for case 02160908 */
 
 	isr &= isr_mask;
 	while (isr != 0) {
@@ -6857,19 +6915,19 @@ static int is_valid_calib_addr(void *addr, u32 operation)
 				goto valid_addr;
 		}
 		if (mdss_res->vig_pipes &&
-		  ptr >= mdss_res->vig_pipes->base) {
+				ptr >= mdss_res->vig_pipes->base) {
 			ret = is_valid_calib_vig_addr(ptr);
 			if (ret)
 				goto valid_addr;
 		}
 		if (mdss_res->rgb_pipes &&
-		  ptr >= mdss_res->rgb_pipes->base) {
+				ptr >= mdss_res->rgb_pipes->base) {
 			ret = is_valid_calib_rgb_addr(ptr);
 			if (ret)
 				goto valid_addr;
 		}
 		if (mdss_res->dma_pipes &&
-		  ptr >= mdss_res->dma_pipes->base) {
+				ptr >= mdss_res->dma_pipes->base) {
 			ret = is_valid_calib_dma_addr(ptr);
 			if (ret)
 				goto valid_addr;
@@ -7219,6 +7277,9 @@ static void mdss_mdp_hist_irq_set_mask(u32 irq)
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	spin_lock(&mdata->hist_intr.lock);
 	mask = readl_relaxed(mdata->mdp_base + MDSS_MDP_REG_HIST_INTR_EN);
+
+	MDSS_XLOG(irq, mask, 0x1111); /* Temp log for case 02160908 */
+
 	mask |= irq;
 	pr_debug("interrupt mask being set %x irq updated %x\n", mask, irq);
 	writel_relaxed(mask, mdata->mdp_base + MDSS_MDP_REG_HIST_INTR_EN);
@@ -7231,6 +7292,9 @@ static void mdss_mdp_hist_irq_clear_mask(u32 irq)
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	spin_lock(&mdata->hist_intr.lock);
 	mask = readl_relaxed(mdata->mdp_base + MDSS_MDP_REG_HIST_INTR_EN);
+
+	MDSS_XLOG(irq, mask, 0x1111); /* Temp log for case 02160908 */
+
 	mask = mask & ~irq;
 	pr_debug("interrupt mask being cleared %x irq cleared %x\n", mask, irq);
 	writel_relaxed(mask, mdata->mdp_base + MDSS_MDP_REG_HIST_INTR_EN);

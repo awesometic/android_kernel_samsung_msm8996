@@ -443,6 +443,10 @@ Optional properties:
 - qcom,mdss-dsi-post-mode-switch-on-command:		Multiple dcs packets used for turning on DSI panel
 					after panel has switch modes.
 					Refer to "qcom,mdss-dsi-on-command" section for adding commands.
+- qcom,send-pps-before-switch:		Boolean propety to indicate when PPS commands should be sent,
+					either before or after switch commands during dynamic resolution
+					switch in DSC panels. If the property is not present, the default
+					behavior is to send PPS commands after the switch commands.
 - qcom,video-to-cmd-mode-switch-commands:	List of commands that need to be sent
 					to panel in order to switch from video mode to command mode dynamically.
 					Refer to "qcom,mdss-dsi-on-command" section for adding commands.

@@ -45,6 +45,12 @@ static int __init rtc_hctosys(void)
 
 	}
 
+	/*
+	 * Force update rtc year time to 2017
+	 * (The release year of device)
+	 */
+	tm.tm_year = 117;
+	
 	err = rtc_valid_tm(&tm);
 	if (err) {
 		dev_err(rtc->dev.parent,

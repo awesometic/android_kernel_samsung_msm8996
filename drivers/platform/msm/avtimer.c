@@ -332,6 +332,7 @@ static long avtimer_ioctl(struct file *file, unsigned int ioctl_num,
 	case IOCTL_GET_AVTIMER_TICK:
 	{
 		uint64_t avtimer_tick = 0;
+
 		int rc;
 
 		rc = avcs_core_query_timer(&avtimer_tick);

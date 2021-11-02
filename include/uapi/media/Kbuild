@@ -20,3 +20,5 @@ header-y += msmb_ispif.h
 header-y += msmb_pproc.h
 header-y += radio-iris.h
 header-y += radio-iris-commands.h
+header-y += companion3_reg_map.h
+header-y += companion3_reg_map_grace.h

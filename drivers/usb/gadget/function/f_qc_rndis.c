@@ -190,6 +190,40 @@ static struct usb_cdc_acm_descriptor rndis_qc_acm_descriptor = {
 	.bmCapabilities =	0x00,
 };
 
+#if defined(CONFIG_USB_RNDIS_VZW_REQ)
+/* In VZW Models size of MTU is fixed using Devguru AVD Descriptor */
+
+struct usb_qc_rndis_mtu_avd_descriptor {
+	__u8	bLength;
+	__u8    bDescriptorType;
+	__u8    bDescriptorSubType;
+
+	__u16   bDAU1_Type;
+	__u16   bDAU1_Length;
+	__u32   bDAU1_Value;
+
+	__u16   bDAU2_Type;
+	__u16   bDAU2_Length;
+	__u8    bDAU2_Value;
+} __attribute__ ((packed));
+
+static struct usb_qc_rndis_mtu_avd_descriptor rndis_qc_avd_descriptor = {
+	.bLength            =   0x10,
+	.bDescriptorType    =   0x24,
+	.bDescriptorSubType =   0x80,
+
+	/* First DAU = MTU Size */
+	.bDAU1_Type         =   0x000A,
+	.bDAU1_Length       =   0x0004,
+	.bDAU1_Value        =   0x00000594,     /* 1428Byte */
+
+	/* Second DAU = Rndis version */
+	.bDAU2_Type         =   0x000B,
+	.bDAU2_Length       =   0x0001,
+	.bDAU2_Value        =   0x01,           /* Rndis5.1 */
+};
+#endif
+
 static struct usb_cdc_union_desc rndis_qc_union_desc = {
 	.bLength =		sizeof(rndis_qc_union_desc),
 	.bDescriptorType =	USB_DT_CS_INTERFACE,
@@ -266,6 +300,9 @@ static struct usb_descriptor_header *eth_qc_fs_function[] = {
 	(struct usb_descriptor_header *) &rndis_qc_data_intf,
 	(struct usb_descriptor_header *) &rndis_qc_fs_in_desc,
 	(struct usb_descriptor_header *) &rndis_qc_fs_out_desc,
+#if defined(CONFIG_USB_RNDIS_VZW_REQ)
+	(struct usb_descriptor_header *) &rndis_qc_avd_descriptor,
+#endif
 	NULL,
 };
 
@@ -311,6 +348,9 @@ static struct usb_descriptor_header *eth_qc_hs_function[] = {
 	(struct usb_descriptor_header *) &rndis_qc_data_intf,
 	(struct usb_descriptor_header *) &rndis_qc_hs_in_desc,
 	(struct usb_descriptor_header *) &rndis_qc_hs_out_desc,
+#if defined(CONFIG_USB_RNDIS_VZW_REQ)
+	(struct usb_descriptor_header *) &rndis_qc_avd_descriptor,
+#endif
 	NULL,
 };
 
@@ -381,6 +421,9 @@ static struct usb_descriptor_header *eth_qc_ss_function[] = {
 	(struct usb_descriptor_header *) &rndis_qc_ss_bulk_comp_desc,
 	(struct usb_descriptor_header *) &rndis_qc_ss_out_desc,
 	(struct usb_descriptor_header *) &rndis_qc_ss_bulk_comp_desc,
+#if defined(CONFIG_USB_RNDIS_VZW_REQ)
+	(struct usb_descriptor_header *) &rndis_qc_avd_descriptor,
+#endif
 	NULL,
 };
 
@@ -1244,8 +1287,13 @@ rndis_qc_bind_config_vendor(struct usb_configuration *c, u8 ethaddr[ETH_ALEN],
 			rndis_ipa_params.host_ethaddr,
 			rndis_ipa_params.device_ethaddr);
 		rndis_ipa_supported = true;
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+		memcpy(rndis->ethaddr, ethaddr, ETH_ALEN);
+		printk(KERN_DEBUG "usb: set unique host mac\n");
+#else
 		memcpy(rndis->ethaddr, &rndis_ipa_params.host_ethaddr,
 			ETH_ALEN);
+#endif
 		rndis_ipa_params.device_ready_notify = rndis_net_ready_notify;
 	} else
 		memcpy(rndis->ethaddr, ethaddr, ETH_ALEN);
@@ -1429,6 +1477,7 @@ static long rndis_qc_ioctl(struct file *fp, unsigned cmd, unsigned long arg)
 		ret = -ENODEV;
 		goto fail;
 	}
+
 	rndis_qc_unlock(&_rndis_qc->ioctl_excl);
 
 fail:

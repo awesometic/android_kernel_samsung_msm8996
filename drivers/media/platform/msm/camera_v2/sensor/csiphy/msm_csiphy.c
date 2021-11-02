@@ -24,7 +24,6 @@
 #include "include/msm_csiphy_3_1_hwreg.h"
 #include "include/msm_csiphy_3_2_hwreg.h"
 #include "include/msm_csiphy_3_4_2_hwreg.h"
-#include "include/msm_csiphy_3_4_2_1_hwreg.h"
 #include "include/msm_csiphy_3_5_hwreg.h"
 #include "cam_hw_ops.h"
 
@@ -39,7 +38,6 @@
 #define CSIPHY_VERSION_V31                        0x31
 #define CSIPHY_VERSION_V32                        0x32
 #define CSIPHY_VERSION_V342                       0x342
-#define CSIPHY_VERSION_V342_1                     0x3421
 #define CSIPHY_VERSION_V35                        0x35
 #define MSM_CSIPHY_DRV_NAME                      "msm_csiphy"
 #define CLK_LANE_OFFSET                             1
@@ -295,11 +293,6 @@ static int msm_csiphy_2phase_lane_config(
 
 	csiphybase = csiphy_dev->base;
 	lane_mask = csiphy_params->lane_mask & 0x1f;
-
-	lane_enable = msm_camera_io_r(csiphybase +
-		csiphy_dev->ctrl_reg->csiphy_3ph_reg.
-		mipi_csiphy_3ph_cmn_ctrl5.addr);
-
 	for (i = 0; i < MAX_LANES; i++) {
 		if (mask == 0x2) {
 			if (lane_mask & mask)
@@ -337,11 +330,7 @@ static int msm_csiphy_2phase_lane_config(
 			clk_lane = 0;
 		}
 
-		/* In combo mode setting the 4th lane
-		 * as clk_lane for 1 lane sensor, checking
-		 * the lane_mask == 0x18 for one lane sensor
-		 */
-		if ((csiphy_params->combo_mode == 1) && (lane_mask == 0x18)) {
+		if (csiphy_params->combo_mode == 1) {
 			val |= 0xA;
 			if (mask == csiphy_dev->ctrl_reg->
 				csiphy_reg.combo_clk_mask) {
@@ -387,12 +376,6 @@ static int msm_csiphy_2phase_lane_config(
 				mipi_csiphy_2ph_lnn_cfg4.data, csiphybase +
 				csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 				mipi_csiphy_2ph_lnn_cfg4.addr + offset);
-			if (lane_mask == 0x18)
-				msm_camera_io_w(0x80,
-					csiphybase +
-					csiphy_dev->ctrl_reg->csiphy_3ph_reg.
-					mipi_csiphy_2ph_lnn_cfg1.addr + offset);
-
 		} else {
 			msm_camera_io_w(csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 				mipi_csiphy_2ph_lnn_cfg1.data,
@@ -400,8 +383,7 @@ static int msm_csiphy_2phase_lane_config(
 				csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 				mipi_csiphy_2ph_lnn_cfg1.addr + offset);
 		}
-		if ((csiphy_dev->hw_version == CSIPHY_VERSION_V342 ||
-		    csiphy_dev->hw_version == CSIPHY_VERSION_V342_1) &&
+		if (csiphy_dev->hw_version == CSIPHY_VERSION_V342 &&
 			csiphy_params->combo_mode == 1) {
 			msm_camera_io_w(0x52,
 				csiphybase +
@@ -414,9 +396,8 @@ static int msm_csiphy_2phase_lane_config(
 				csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 				mipi_csiphy_2ph_lnn_cfg5.addr + offset);
 		}
-		if (clk_lane == 1 && lane_mask != 0x18 &&
-			(csiphy_dev->hw_version == CSIPHY_VERSION_V342 ||
-			csiphy_dev->hw_version == CSIPHY_VERSION_V342_1)) {
+		if (clk_lane == 1 &&
+			csiphy_dev->hw_version == CSIPHY_VERSION_V342) {
 			msm_camera_io_w(0x1f,
 				csiphybase +
 				csiphy_dev->ctrl_reg->csiphy_3ph_reg.
@@ -432,8 +413,7 @@ static int msm_csiphy_2phase_lane_config(
 			mipi_csiphy_2ph_lnn_test_imp.data,
 			csiphybase + csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 			mipi_csiphy_2ph_lnn_test_imp.addr + offset);
-		if ((csiphy_dev->hw_version == CSIPHY_VERSION_V342 ||
-			csiphy_dev->hw_version == CSIPHY_VERSION_V342_1)) {
+		if (csiphy_dev->hw_version == CSIPHY_VERSION_V342) {
 			msm_camera_io_w(csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 				mipi_csiphy_2ph_lnn_ctrl5.data,
 				csiphybase +
@@ -442,8 +422,7 @@ static int msm_csiphy_2phase_lane_config(
 		}
 		mask <<= 1;
 	}
-	if ((csiphy_dev->hw_version == CSIPHY_VERSION_V342 ||
-		csiphy_dev->hw_version == CSIPHY_VERSION_V342_1) &&
+	if (csiphy_dev->hw_version == CSIPHY_VERSION_V342 &&
 		csiphy_params->combo_mode != 1) {
 		msm_camera_io_w(csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 			mipi_csiphy_3ph_cmn_ctrl0.data,
@@ -483,7 +462,7 @@ static int msm_csiphy_lane_config(struct csiphy_device *csiphy_dev,
 		return rc;
 	}
 
-	clk_rate = ((int)csiphy_params->csiphy_clk > 0)
+	clk_rate = (csiphy_params->csiphy_clk > 0)
 			? csiphy_params->csiphy_clk :
 			csiphy_dev->csiphy_max_clk;
 	clk_rate = msm_camera_clk_set_rate(&csiphy_dev->pdev->dev,
@@ -757,17 +736,17 @@ static int msm_csiphy_init(struct csiphy_device *csiphy_dev)
 	}
 
 	CDBG("%s:%d called\n", __func__, __LINE__);
-	if (csiphy_dev->ref_count++) {
-		CDBG("%s csiphy refcount = %d\n", __func__,
-			csiphy_dev->ref_count);
-		return rc;
-	}
-	CDBG("%s:%d called\n", __func__, __LINE__);
-
 	if (csiphy_dev->csiphy_state == CSIPHY_POWER_UP) {
 		pr_err("%s: csiphy invalid state %d\n", __func__,
 			csiphy_dev->csiphy_state);
 		rc = -EINVAL;
+		return rc;
+	}
+	CDBG("%s:%d called\n", __func__, __LINE__);
+
+	if (csiphy_dev->ref_count++) {
+		CDBG("%s csiphy refcount = %d\n", __func__,
+			csiphy_dev->ref_count);
 		return rc;
 	}
 	CDBG("%s:%d called\n", __func__, __LINE__);
@@ -864,12 +843,6 @@ static int msm_csiphy_init(struct csiphy_device *csiphy_dev)
 	}
 	csiphy_dev->csiphy_sof_debug_count = 0;
 	CDBG("%s:%d called\n", __func__, __LINE__);
-	if (csiphy_dev->ref_count++) {
-		CDBG("%s csiphy refcount = %d\n", __func__,
-			csiphy_dev->ref_count);
-		return rc;
-	}
-	CDBG("%s:%d called\n", __func__, __LINE__);
 	if (csiphy_dev->csiphy_state == CSIPHY_POWER_UP) {
 		pr_err("%s: csiphy invalid state %d\n", __func__,
 			csiphy_dev->csiphy_state);
@@ -878,6 +851,12 @@ static int msm_csiphy_init(struct csiphy_device *csiphy_dev)
 	}
 	CDBG("%s:%d called\n", __func__, __LINE__);
 
+	if (csiphy_dev->ref_count++) {
+		CDBG("%s csiphy refcount = %d\n", __func__,
+			csiphy_dev->ref_count);
+		return rc;
+	}
+	CDBG("%s:%d called\n", __func__, __LINE__);
 	rc = cam_config_ahb_clk(NULL, 0, CAM_AHB_CLIENT_CSIPHY,
 			CAM_AHB_SVS_VOTE);
 	if (rc < 0) {
@@ -1209,7 +1188,6 @@ static int32_t msm_csiphy_cmd(struct csiphy_device *csiphy_dev, void *arg)
 			break;
 		}
 		csiphy_dev->csiphy_sof_debug = SOF_DEBUG_DISABLE;
-		csiphy_dev->is_combo_mode = csiphy_params.combo_mode;
 		rc = msm_csiphy_lane_config(csiphy_dev, &csiphy_params);
 		break;
 	case CSIPHY_RELEASE:
@@ -1220,14 +1198,7 @@ static int32_t msm_csiphy_cmd(struct csiphy_device *csiphy_dev, void *arg)
 			rc = -EFAULT;
 			break;
 		}
-		if ((csiphy_dev->is_combo_mode == 1) &&
-			(csiphy_dev->ref_count == 2)) {
-			/*CSIPHY is running in Combo mode do
-			not power down core*/
-			csiphy_dev->ref_count--;
-		} else {
-			rc = msm_csiphy_release(csiphy_dev, &csi_lane_params);
-		}
+		rc = msm_csiphy_release(csiphy_dev, &csi_lane_params);
 		break;
 	default:
 		pr_err("%s: %d failed\n", __func__, __LINE__);
@@ -1337,7 +1308,7 @@ static const struct v4l2_subdev_ops msm_csiphy_subdev_ops = {
 static int msm_csiphy_get_clk_info(struct csiphy_device *csiphy_dev,
 	struct platform_device *pdev)
 {
-	int i, rc = 0;
+	int i, rc;
 	char *csi_3p_clk_name = "csi_phy_3p_clk";
 	char *csi_3p_clk_src_name = "csiphy_3p_clk_src";
 	uint32_t clk_cnt = 0;
@@ -1353,7 +1324,6 @@ static int msm_csiphy_get_clk_info(struct csiphy_device *csiphy_dev,
 	if (csiphy_dev->num_all_clk > CSIPHY_NUM_CLK_MAX) {
 		pr_err("%s: invalid count=%zu, max is %d\n", __func__,
 			csiphy_dev->num_all_clk, CSIPHY_NUM_CLK_MAX);
-		rc = -EINVAL;
 		goto MAX_CLK_ERROR;
 	}
 
@@ -1397,14 +1367,13 @@ static int msm_csiphy_get_clk_info(struct csiphy_device *csiphy_dev,
 	}
 
 	csiphy_dev->num_clk = clk_cnt;
-	return rc;
 MAX_CLK_ERROR:
 	msm_camera_put_clk_info(csiphy_dev->pdev,
 		&csiphy_dev->csiphy_all_clk_info,
 		&csiphy_dev->csiphy_all_clk,
 		csiphy_dev->num_all_clk);
 
-	return rc;
+	return 0;
 }
 
 static int csiphy_probe(struct platform_device *pdev)
@@ -1481,12 +1450,6 @@ static int csiphy_probe(struct platform_device *pdev)
 		new_csiphy_dev->ctrl_reg->csiphy_3ph_reg = csiphy_v3_4_2_3ph;
 		new_csiphy_dev->ctrl_reg->csiphy_reg = csiphy_v3_4_2;
 		new_csiphy_dev->hw_dts_version = CSIPHY_VERSION_V342;
-		new_csiphy_dev->csiphy_3phase = CSI_3PHASE_HW;
-	} else if (of_device_is_compatible(new_csiphy_dev->pdev->dev.of_node,
-		"qcom,csiphy-v3.4.2.1")) {
-		new_csiphy_dev->ctrl_reg->csiphy_3ph_reg = csiphy_v3_4_2_1_3ph;
-		new_csiphy_dev->ctrl_reg->csiphy_reg = csiphy_v3_4_2_1;
-		new_csiphy_dev->hw_dts_version = CSIPHY_VERSION_V342_1;
 		new_csiphy_dev->csiphy_3phase = CSI_3PHASE_HW;
 	} else if (of_device_is_compatible(new_csiphy_dev->pdev->dev.of_node,
 		"qcom,csiphy-v3.5")) {

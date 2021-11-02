@@ -1406,6 +1406,46 @@ static void __init populate_soc_sysfs_files(struct device *msm_soc_device)
 	return;
 }
 
+#if 0
+#define HMSS_DBG_APC1_CPU0_DBG_MIDR_EL1		(0x03A10D00)
+#define QFPROM_RAW_PTE_ROW3_MSB				(0x0007014C)
+/*
+ * get_soc_version_minor_sub(void)
+ */
+static uint32_t get_soc_version_minor_sub(void)
+{
+	uint32_t soc_version_minor_sub, pte_row3_msb;
+	void * reg_base_addr;
+
+	reg_base_addr = ioremap_nocache(HMSS_DBG_APC1_CPU0_DBG_MIDR_EL1, SZ_4K);
+	if (!reg_base_addr)
+	{
+		pr_err("%s: Failed to ioremap\n", __func__);
+		return 0;
+	}
+	soc_version_minor_sub = (readl_relaxed(reg_base_addr) & 0x0f);
+	iounmap(reg_base_addr);
+
+	/* for 3.1.2/3.1.3 */
+	if (soc_version_minor_sub == 0x2)
+	{
+		reg_base_addr = ioremap_nocache(QFPROM_RAW_PTE_ROW3_MSB, SZ_4K);
+		if (!reg_base_addr)
+		{
+			pr_err("%s: Failed to ioremap\n", __func__);
+			return 0;
+		}
+		pte_row3_msb = (readl_relaxed(reg_base_addr) & 0x20000000) >> 29;
+		iounmap(reg_base_addr);
+
+		if (pte_row3_msb == 0x1)
+			soc_version_minor_sub = 0x3;
+	}
+
+	return soc_version_minor_sub;
+}
+#endif
+
 static void  __init soc_info_populate(struct soc_device_attribute *soc_dev_attr)
 {
 	uint32_t soc_version = socinfo_get_version();
@@ -1413,9 +1453,16 @@ static void  __init soc_info_populate(struct soc_device_attribute *soc_dev_attr)
 	soc_dev_attr->soc_id   = kasprintf(GFP_KERNEL, "%d", socinfo_get_id());
 	soc_dev_attr->family  =  "Snapdragon";
 	soc_dev_attr->machine  = socinfo_get_id_string();
+#if 0
+	soc_dev_attr->revision = kasprintf(GFP_KERNEL, "%u.%u.%u",
+			SOCINFO_VERSION_MAJOR(soc_version),
+			SOCINFO_VERSION_MINOR(soc_version),
+			get_soc_version_minor_sub());
+#else
 	soc_dev_attr->revision = kasprintf(GFP_KERNEL, "%u.%u",
 			SOCINFO_VERSION_MAJOR(soc_version),
 			SOCINFO_VERSION_MINOR(soc_version));
+#endif
 	return;
 
 }
@@ -1452,6 +1499,7 @@ static int __init socinfo_init_sysfs(void)
 
 late_initcall(socinfo_init_sysfs);
 
+#ifndef CONFIG_SAMSUNG_PRODUCT_SHIP
 static void socinfo_print(void)
 {
 	uint32_t f_maj = SOCINFO_VERSION_MAJOR(socinfo_format);
@@ -1580,6 +1628,7 @@ static void socinfo_print(void)
 		break;
 	}
 }
+#endif
 
 static void socinfo_select_format(void)
 {
@@ -1627,7 +1676,9 @@ int __init socinfo_init(void)
 		cur_cpu = cpu_of_id[socinfo->v0_1.id].generic_soc_type;
 
 	boot_stats_init();
+#ifndef CONFIG_SAMSUNG_PRODUCT_SHIP
 	socinfo_print();
+#endif
 	arch_read_hardware_id = msm_read_hardware_id;
 	socinfo_init_done = true;
 

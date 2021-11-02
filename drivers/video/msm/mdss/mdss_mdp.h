@@ -57,7 +57,11 @@
 #define C0_G_Y		0	/* G/luma */
 
 /* wait for at most 2 vsync for lowest refresh rate (24hz) */
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+#define KOFF_TIMEOUT_MS 1000
+#else
 #define KOFF_TIMEOUT_MS 84
+#endif
 #define KOFF_TIMEOUT msecs_to_jiffies(KOFF_TIMEOUT_MS)
 
 #define OVERFETCH_DISABLE_TOP		BIT(0)
@@ -199,6 +203,8 @@ enum mdss_mdp_csc_type {
 	MDSS_MDP_CSC_YUV2RGB_709L,
 	MDSS_MDP_CSC_YUV2RGB_2020L,
 	MDSS_MDP_CSC_YUV2RGB_2020FR,
+	MDSS_MDP_CSC_YUV2RGB_P3L,
+	MDSS_MDP_CSC_YUV2RGB_P3FR,
 	MDSS_MDP_CSC_RGB2YUV_601L,
 	MDSS_MDP_CSC_RGB2YUV_601FR,
 	MDSS_MDP_CSC_RGB2YUV_709L,
@@ -350,6 +356,10 @@ struct mdss_mdp_ctl_intfs_ops {
 
 	/* to update lineptr, [1..yres] - enable, 0 - disable */
 	int (*update_lineptr)(struct mdss_mdp_ctl *ctl, bool enable);
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	int (*wait_video_pingpong) (struct mdss_mdp_ctl *ctl, void *arg);
+#endif
 };
 
 /* FRC info used for Deterministic Frame Rate Control */
@@ -556,6 +566,7 @@ struct mdss_mdp_ctl {
 	u32 vsync_cnt;
 	u32 underrun_cnt;
 
+	void *cpu_pm_hdl;
 	struct work_struct cpu_pm_work;
 	int autorefresh_frame_cnt;
 
@@ -636,6 +647,7 @@ struct mdss_mdp_ctl {
 
 	u64 last_input_time;
 	int pending_mode_switch;
+	int	mixer_cfg_changed;
 	u16 frame_rate;
 
 	/* dynamic resolution switch during cont-splash handoff */
@@ -964,6 +976,7 @@ struct mdss_mdp_writeback_arg {
 struct mdss_mdp_wfd;
 
 struct mdss_overlay_private {
+	bool vsync_en;
 	ktime_t vsync_time;
 	ktime_t lineptr_time;
 	struct kernfs_node *vsync_event_sd;
@@ -1016,7 +1029,6 @@ struct mdss_overlay_private {
 	u32 ad_bl_events;
 
 	bool allow_kickoff;
-
 	/* video frame info used by deterministic frame rate control */
 	struct mdss_mdp_frc_fsm *frc_fsm;
 	u8 sd_transition_state;
@@ -1469,12 +1481,15 @@ static inline uint8_t pp_vig_csc_pipe_val(struct mdss_mdp_pipe *pipe)
 		return MDSS_MDP_CSC_YUV2RGB_2020L;
 	case MDP_CSC_ITU_R_2020_FR:
 		return MDSS_MDP_CSC_YUV2RGB_2020FR;
+	case MDP_CSC_ITU_R_P3:
+		return MDSS_MDP_CSC_YUV2RGB_P3L;
+	case MDP_CSC_ITU_R_P3_FR:
+		return MDSS_MDP_CSC_YUV2RGB_P3FR;
 	case MDP_CSC_ITU_R_709:
 	default:
 		return  MDSS_MDP_CSC_YUV2RGB_709L;
 	}
 }
-
 /*
  * when split_lm topology is used without 3D_Mux, either DSC_MERGE or
  * split_panel is used during full frame updates. Now when we go from
@@ -1950,11 +1965,19 @@ void mdss_mdp_disable_hw_irq(struct mdss_data_type *mdata);
 
 void mdss_mdp_set_supported_formats(struct mdss_data_type *mdata);
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+void samsung_timing_engine_control(int enable);
+#endif
+
 void mdss_mdp_frc_fsm_init_state(struct mdss_mdp_frc_fsm *frc_fsm);
 void mdss_mdp_frc_fsm_change_state(struct mdss_mdp_frc_fsm *frc_fsm,
 	enum mdss_mdp_frc_state_type state,
 	void (*cb)(struct mdss_mdp_frc_fsm *frc_fsm));
 void mdss_mdp_frc_fsm_update_state(struct mdss_mdp_frc_fsm *frc_fsm);
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+void samsung_timing_engine_control(int enable);
+#endif
 
 #ifdef CONFIG_FB_MSM_MDP_NONE
 struct mdss_data_type *mdss_mdp_get_mdata(void)
@@ -1970,6 +1993,5 @@ int mdss_mdp_copy_layer_pp_info(struct mdp_input_layer *layer)
 void mdss_mdp_free_layer_pp_info(struct mdp_input_layer *layer)
 {
 }
-
 #endif /* CONFIG_FB_MSM_MDP_NONE */
 #endif /* MDSS_MDP_H */

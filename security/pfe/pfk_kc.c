@@ -37,7 +37,11 @@
 
 
 /** the first available index in ice engine */
+#ifdef CONFIG_CRYPTO_FDE_KEY_UPDATE
+#define PFK_KC_STARTING_INDEX 3
+#else
 #define PFK_KC_STARTING_INDEX 2
+#endif
 
 /** currently the only supported key and salt sizes */
 #define PFK_KC_KEY_SIZE 32

@@ -95,15 +95,26 @@ config MSM_EEPROM
           and also provides support for writing data in case of FLASH ROM.
 	  Currently supports I2C, CCI and SPI protocol
 
-config MSM_ISP_V1
-        bool "QTI MSM Image Signal Processing interface support"
+config MSM_REAR_ROM_TYPE_EEPROM
+        bool "Qualcomm MSM Camera ROM Interface for Calibration support"
         depends on MSMB_CAMERA
         ---help---
-          Enable support for Image Signal Processing interface module.
-          This module acts as a crossbar between CSID and VFE. Output
-          of any CID of CSID can be routed to of of pixel or raw
-          data interface in VFE.
+          Gives information whether calibration data is in FROM or EEPROM
 
+config REAR_MODULE_ID_SUPPORT
+        bool "Support for rear camera module id"
+        depends on MSMB_CAMERA
+        ---help---
+          Gives information about rear camera EEPROM
+
+config MSM_OTP
+        bool "Qualcomm MSM Camera ROM Interface for Calibration support"
+        depends on MSMB_CAMERA
+        ---help---
+          Enable support for ROM Interface for Calibration
+          Provides interface for reading the Claibration data.
+          and also provides support for writing data
+	  
 config MSM_ISPIF
         bool "QTI MSM Image Signal Processing interface support"
         depends on MSMB_CAMERA
@@ -229,6 +240,19 @@ config MSMB_JPEG
 	  This module serves as the common driver
 	  for the JPEG 1.0 encoder and decoder.
 
+
+config MSM_SEC_CCI_TA_NAME
+       string "Name of TA to handle Secure CCI transactions"
+       depends on MSM_CCI
+       default "sec_iris"
+
+config MSM_SEC_CCI_DEBUG
+       bool "Qualcomm MSM Secure CCI Relay Debug"
+       depends on MSM_CCI
+       ---help---
+         Enables simulation of secure camera for Secure CCI Realy
+         debugging.
+
 config MSM_GEMINI
 	tristate "QTI MSM Gemini JPEG engine support"
 	depends on MSMB_CAMERA && (ARCH_MSM7X30 || ARCH_MSM8X60 || ARCH_MSM8960)
@@ -244,6 +268,49 @@ config MSM_FD
 	 ---help---
 	    Enables support for the MSM FD face detection engine.
 
+config COMPANION2
+        tristate "External companion support"
+        depends on MSMB_CAMERA
+        default n
+        ---help---
+          Enables support for external companion chip for 8992.
+
+config COMPANION3
+        tristate "External companion support"
+        depends on MSMB_CAMERA
+        default n
+        ---help---
+          Enables support for external companion chip for 8992.
+
+config SAMSUNG_OIS
+        tristate "External ois support"
+	depends on MSMB_CAMERA
+	default n
+	---help---
+	Enables support for external ois module.
+
+config SENSOR_RETENTION
+        tristate "Sensor retention mode support"
+	depends on MSMB_CAMERA
+	default n
+	---help---
+	Enables support for sensor retention mode.
+
+config CAMERA_SYSFS_V2
+	bool "CAMERA SYS"
+	depends on MSMB_CAMERA
+	---help---
+		CAMERA SYS.
+
+config MSM_FRONT_EEPROM
+        bool "Qualcomm MSM Camera ROM Interface for Calibration support"
+        depends on MSMB_CAMERA
+        ---help---
+        Enable support for ROM Interface for Calibration
+        Provides interface for reading the Claibration data.
+        and also provides support for writing data in case of FLASH ROM.
+        Currently supports I2C, CCI and SPI protocol
+
 config MSM_JPEGDMA
 	tristate "QTI MSM Jpeg dma"
         depends on MSMB_CAMERA
@@ -251,14 +318,22 @@ config MSM_JPEGDMA
 	---help---
 	  Enable support for Jpeg dma engine.
 
-config MSM_SEC_CCI_TA_NAME
-	string "Name of TA to handle Secure CCI transactions"
-	depends on MSM_CCI
-	default "seccamdemo64"
-
-config MSM_SEC_CCI_DEBUG
-	bool "QTI MSM Secure CCI Relay Debug"
-	depends on MSM_CCI
+config FLASH_CURRENT_JAPAN
+        tristate "Flash current for Japan project"
+	depends on MSMB_CAMERA
+	default n
 	---help---
-	  Enables simulation of secure camera for Secure CCI Realy
-	  debugging.
+	Enables support for Japan flash current
+
+config SAMSUNG_SECURE_CAMERA
+        tristate "Flash for Secure camera"
+        depends on MSMB_CAMERA
+        default n
+        ---help---
+        Enables support for flash for secure camera
+
+config S5K5E3YX
+	bool "Sensor S5K5E3YX (BAYER 5MP)"
+	depends on MSMB_CAMERA
+	---help---
+	Samsung 5 MP Bayer Sensor.

@@ -44,6 +44,7 @@
 struct cma cma_areas[MAX_CMA_AREAS];
 unsigned cma_area_count;
 static DEFINE_MUTEX(cma_mutex);
+static DEFINE_MUTEX(rbin_mutex);
 
 phys_addr_t cma_get_base(const struct cma *cma)
 {
@@ -99,6 +100,11 @@ static int __init cma_activate_area(struct cma *cma)
 	unsigned long base_pfn = cma->base_pfn, pfn = base_pfn;
 	unsigned i = cma->count >> pageblock_order;
 	struct zone *zone;
+#ifdef CONFIG_RBIN
+	bool is_rbin = cma->is_rbin;
+#else
+	bool is_rbin = false;
+#endif
 
 	cma->bitmap = kzalloc(bitmap_size, GFP_KERNEL);
 
@@ -123,7 +129,7 @@ static int __init cma_activate_area(struct cma *cma)
 			if (page_zone(pfn_to_page(pfn)) != zone)
 				goto err;
 		}
-		init_cma_reserved_pageblock(pfn_to_page(base_pfn));
+		init_cma_reserved_pageblock(pfn_to_page(base_pfn), is_rbin);
 	} while (--i);
 
 	mutex_init(&cma->lock);
@@ -210,6 +216,13 @@ int __init cma_init_reserved_mem(phys_addr_t base, phys_addr_t size,
 
 	return 0;
 }
+
+#ifdef CONFIG_RBIN
+void cma_set_rbin(struct cma *cma)
+{
+	cma->is_rbin = true;
+}
+#endif
 
 /**
  * cma_declare_contiguous() - reserve custom contiguous area
@@ -354,6 +367,20 @@ err:
 	return ret;
 }
 
+enum dma_cont_reason {
+	DMA_CONT_SUCCESS,
+	DMA_CONT_EBUSY,
+	DMA_CONT_ENOMEM,
+	DMA_CONT_EOTHER,
+};
+
+static const char *dma_cont_reason_str[] = {
+	"Success",
+	"EBUSY",
+	"ENOMEM",
+	"Other Error",
+};
+
 /**
  * cma_alloc() - allocate pages from contiguous area
  * @cma:   Contiguous memory region for which the allocation is performed.
@@ -369,7 +396,15 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 	unsigned long bitmap_maxno, bitmap_no, bitmap_count;
 	struct page *page = NULL;
 	int ret;
+#ifdef CONFIG_RBIN
+	bool is_rbin = cma ? cma->is_rbin : false;
+	bool need_mutex = (align < (MAX_ORDER - 1)) ? true : false;
+#else
+	bool is_rbin = false;
+#endif
 	int retry_after_sleep = 0;
+	enum dma_cont_reason fail_reason = DMA_CONT_SUCCESS;
+	unsigned int nr, nr_total = 0;
 
 	if (!cma || !cma->count)
 		return NULL;
@@ -396,7 +431,7 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 				bitmap_maxno, start, bitmap_count, mask,
 				offset);
 		if (bitmap_no >= bitmap_maxno) {
-			if (retry_after_sleep < 2) {
+			if (!is_rbin && retry_after_sleep < 2) {
 				start = 0;
 				/*
 				* Page may be momentarily pinned by some other
@@ -410,8 +445,18 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 				msleep(100);
 				retry_after_sleep++;
 				continue;
+			} else if (start != 0 && retry_after_sleep < 6) {
+				start = 0;
+				mutex_unlock(&cma->lock);
+				msleep(500);
+				retry_after_sleep++;
+				continue;
 			} else {
 				mutex_unlock(&cma->lock);
+				if (start == 0)
+					fail_reason = DMA_CONT_ENOMEM;
+				else
+					fail_reason = DMA_CONT_EBUSY;
 				break;
 			}
 		}
@@ -424,17 +469,32 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 		mutex_unlock(&cma->lock);
 
 		pfn = cma->base_pfn + (bitmap_no << cma->order_per_bit);
-		mutex_lock(&cma_mutex);
-		ret = alloc_contig_range(pfn, pfn + count, MIGRATE_CMA);
-		mutex_unlock(&cma_mutex);
+		if (!is_rbin) {
+			mutex_lock(&cma_mutex);
+			ret = alloc_contig_range(pfn, pfn + count, MIGRATE_CMA);
+			mutex_unlock(&cma_mutex);
+		}
+#ifdef CONFIG_RBIN
+		else {
+			if (need_mutex)
+				mutex_lock(&rbin_mutex);
+			ret = alloc_contig_range(pfn, pfn + count,
+							MIGRATE_RBIN);
+			if (need_mutex)
+				mutex_unlock(&rbin_mutex);
+		}
+#endif
 		if (ret == 0) {
+			fail_reason = DMA_CONT_SUCCESS;
 			page = pfn_to_page(pfn);
 			break;
 		}
 
 		cma_clear_bitmap(cma, pfn, count);
-		if (ret != -EBUSY)
+		if (ret != -EBUSY) {
+			fail_reason = DMA_CONT_EOTHER;
 			break;
+		}
 
 		pr_debug("%s(): memory range at %p is busy, retrying\n",
 			 __func__, pfn_to_page(pfn));
@@ -447,6 +507,30 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 	trace_cma_alloc(page ? pfn : -1UL, page, count, align);
 
 	pr_debug("%s(): returned %p\n", __func__, page);
+	if (fail_reason != DMA_CONT_SUCCESS && !is_rbin)
+		pr_info("%s: alloc failed, req-size: %zu pages, reason %s (%d)\n",
+			__func__, count,
+			dma_cont_reason_str[fail_reason], fail_reason);
+	if (fail_reason == DMA_CONT_ENOMEM && !is_rbin) {
+		mutex_lock(&cma->lock);
+		printk("number of available pages: ");
+		start = 0;
+		for (;;) {
+			bitmap_no = bitmap_find_next_zero_area_and_size(cma->bitmap,
+						cma->count, start, &nr);
+			if (bitmap_no >= cma->count)
+				break;
+			if (nr_total == 0)
+				printk("%u", nr);
+			else
+				printk("+%u", nr);
+			nr_total += nr;
+			start = bitmap_no + nr;
+		}
+		printk("=>%u pages, total: %lu pages\n", nr_total, cma->count);
+		mutex_unlock(&cma->lock);
+	}
+
 	return page;
 }
 

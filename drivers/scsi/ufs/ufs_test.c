@@ -690,12 +690,12 @@ static void scenario_free_end_io_fn(struct request *rq, int err)
 	spin_unlock_irqrestore(&test_iosched->lock, flags);
 
 	test_iosched_free_test_req_data_buffer(test_rq);
-	kfree(test_rq);
 
 	if (err)
 		pr_err("%s: request %d completed, err=%d", __func__,
 			test_rq->req_id, err);
 
+	kfree(test_rq);
 	check_test_completion(test_iosched);
 }
 
@@ -955,14 +955,22 @@ static int ufs_test_run_lun_depth_test(struct test_iosched *test_iosched)
 static void long_test_free_end_io_fn(struct request *rq, int err)
 {
 	struct test_request *test_rq;
-	struct test_iosched *test_iosched = rq->q->elevator->elevator_data;
-	struct ufs_test_data *utd = test_iosched->blk_dev_test_data;
+	struct test_iosched *test_iosched;
+	struct ufs_test_data *utd;
 	unsigned long flags;
 
 	if (!rq) {
 		pr_err("%s: error: NULL request", __func__);
 		return;
 	}
+
+	test_iosched = rq->q->elevator->elevator_data;
+	if (!test_iosched) {
+		pr_err("%s: error: NULL iosched", __func__);
+		return;
+	}
+
+	utd = test_iosched->blk_dev_test_data;
 
 	test_rq = (struct test_request *)rq->elv.priv[0];
 
@@ -985,13 +993,13 @@ static void long_test_free_end_io_fn(struct request *rq, int err)
 	}
 
 	test_iosched_free_test_req_data_buffer(test_rq);
-	kfree(test_rq);
 	utd->completed_req_count++;
 
 	if (err)
 		pr_err("%s: request %d completed, err=%d", __func__,
 			test_rq->req_id, err);
 
+	kfree(test_rq);
 	check_test_completion(test_iosched);
 }
 
@@ -1007,7 +1015,7 @@ static void long_test_free_end_io_fn(struct request *rq, int err)
 static int run_long_test(struct test_iosched *test_iosched)
 {
 	int ret = 0;
-	int direction, num_bios_per_request;
+	int direction = READ, num_bios_per_request = 0;
 	static unsigned int inserted_requests;
 	u32 sector, seed, num_bios, seq_sector_delta;
 	struct ufs_test_data *utd = test_iosched->blk_dev_test_data;
@@ -1455,13 +1463,13 @@ static int ufs_test_debugfs_init(struct ufs_test_data *utd)
 	ret = add_test(utd, long_sequential_mixed, LONG_SEQUENTIAL_MIXED);
 	if (ret)
 		goto exit_err;
-	add_test(utd, multi_query, MULTI_QUERY);
+	ret = add_test(utd, multi_query, MULTI_QUERY);
 	if (ret)
 		goto exit_err;
-	add_test(utd, parallel_read_and_write, PARALLEL_READ_AND_WRITE);
+	ret = add_test(utd, parallel_read_and_write, PARALLEL_READ_AND_WRITE);
 	if (ret)
 		goto exit_err;
-	add_test(utd, lun_depth, LUN_DEPTH);
+	ret = add_test(utd, lun_depth, LUN_DEPTH);
 	if (ret)
 		goto exit_err;
 

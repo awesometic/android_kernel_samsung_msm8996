@@ -48,6 +48,9 @@ int main(void)
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
   DEFINE(TSK_TI_TTBR0,		offsetof(struct thread_info, ttbr0));
 #endif
+#ifdef CONFIG_RKP_CFP_ROPP
+  DEFINE(TI_RRK,		offsetof(struct thread_info, rrk));
+#endif
   BLANK();
   DEFINE(THREAD_CPU_CONTEXT,	offsetof(struct task_struct, thread.cpu_context));
   BLANK();

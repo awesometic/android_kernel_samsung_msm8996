@@ -62,6 +62,14 @@ enum usb_otg_state {
 	OTG_STATE_A_VBUS_ERR,
 };
 
+#ifdef CONFIG_USB_HOST_NOTIFY
+enum usb_otg_mode {
+	OTG_MODE_NONE = 0,
+	OTG_MODE_HOST,
+	OTG_MODE_DEVICE,
+};
+#endif
+
 struct usb_phy;
 struct usb_otg;
 
@@ -81,6 +89,10 @@ struct usb_phy {
 	enum usb_phy_type	type;
 	enum usb_otg_state	state;
 	enum usb_phy_events	last_event;
+
+#ifdef CONFIG_USB_HOST_NOTIFY
+	enum usb_otg_mode	otg_mode;
+#endif
 
 	struct usb_otg		*otg;
 
@@ -136,6 +148,11 @@ struct usb_phy {
 	int	(*change_dpdm)(struct usb_phy *x, int dpdm);
 	/* return linestate with Idp_src (used for DCD with USB2 PHY) */
 	int	(*dpdm_with_idp_src)(struct usb_phy *x);
+#ifdef CONFIG_USB_HOST_NOTIFY
+	/* notify phy connect status change */
+	int	(*set_mode)(struct usb_phy *x,
+			enum usb_otg_mode mode);
+#endif
 };
 
 /**
@@ -343,6 +360,16 @@ usb_phy_dpdm_with_idp_src(struct usb_phy *x)
 		return x->dpdm_with_idp_src(x);
 	return 0;
 }
+#ifdef CONFIG_USB_HOST_NOTIFY
+static inline int
+usb_phy_set_mode(struct usb_phy *x, enum usb_otg_mode mode)
+{
+	if (x && x->set_mode)
+		return x->set_mode(x, mode);
+	else
+		return 0;
+}
+#endif
 
 /* notifiers */
 static inline int

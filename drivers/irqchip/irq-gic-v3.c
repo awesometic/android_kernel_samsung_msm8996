@@ -60,6 +60,7 @@ struct gic_chip_data {
 };
 
 static struct gic_chip_data gic_data __read_mostly;
+static DEFINE_RAW_SPINLOCK(irq_controller_lock);
 
 #define gic_data_rdist()		(this_cpu_ptr(gic_data.rdists.rdist))
 #define gic_data_rdist_rd_base()	(gic_data_rdist()->rd_base)
@@ -122,6 +123,7 @@ static u64 __maybe_unused gic_read_iar(void)
 	u64 irqstat;
 
 	asm volatile("mrs_s %0, " __stringify(ICC_IAR1_EL1) : "=r" (irqstat));
+	isb();
 	/* As per the architecture specification */
 	mb();
 	return irqstat;
@@ -130,6 +132,7 @@ static u64 __maybe_unused gic_read_iar(void)
 static void __maybe_unused gic_write_pmr(u64 val)
 {
 	asm volatile("msr_s " __stringify(ICC_PMR_EL1) ", %0" : : "r" (val));
+	isb();
 	/* As per the architecture specification */
 	isb();
 	mb();
@@ -150,6 +153,7 @@ static void __maybe_unused gic_write_grpen1(u64 val)
 static void __maybe_unused gic_write_sgi1r(u64 val)
 {
 	asm volatile("msr_s " __stringify(ICC_SGI1R_EL1) ", %0" : : "r" (val));
+	isb(); 
 	/* As per the architecture specification */
 	isb();
 	mb();
@@ -357,26 +361,43 @@ static int gic_suspend(void)
 	return 0;
 }
 
+extern int msm_show_resume_irq_mask;
+#ifdef CONFIG_SEC_PM
+extern char last_resume_kernel_reason[];
+extern int last_resume_kernel_reason_len;
+#endif
+
 static void gic_show_resume_irq(struct gic_chip_data *gic)
 {
 	unsigned int i;
 	u32 enabled;
 	u32 pending[32];
-	void __iomem *base = gic_data_dist_base(gic);
+	void __iomem *base;
 
 	if (!msm_show_resume_irq_mask)
 		return;
 
-	for (i = 0; i * 32 < gic->irq_nr; i++) {
+	raw_spin_lock(&irq_controller_lock);
+
+	base = gic_data_rdist_sgi_base();
+	enabled = readl_relaxed(base + GICD_ICENABLER);
+	pending[0] = readl_relaxed(base + GICD_ISPENDR);
+	pending[0] &= enabled;
+
+	base = gic_data_dist_base(gic);
+	for (i = 1; i * 32 < gic->irq_nr; i++) {
 		enabled = readl_relaxed(base + GICD_ICENABLER + i * 4);
 		pending[i] = readl_relaxed(base + GICD_ISPENDR + i * 4);
 		pending[i] &= enabled;
 	}
 
+	raw_spin_unlock(&irq_controller_lock);
+
 	for (i = find_first_bit((unsigned long *)pending, gic->irq_nr);
-	     i < gic->irq_nr;
-	     i = find_next_bit((unsigned long *)pending, gic->irq_nr, i+1)) {
-		unsigned int irq = irq_find_mapping(gic->domain, i);
+		i < gic->irq_nr;
+		i = find_next_bit((unsigned long *)pending, gic->irq_nr, i+1)) {
+
+		int irq = irq_find_mapping(gic_data.domain, i);
 		struct irq_desc *desc = irq_to_desc(irq);
 		const char *name = "null";
 
@@ -385,7 +406,13 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 		else if (desc->action && desc->action->name)
 			name = desc->action->name;
 
-		pr_warn("%s: %d triggered %s\n", __func__, irq, name);
+		pr_warn("Resume caused by HWIRQ %d(irq %d), %s\n",
+								i, irq, name);
+#ifdef CONFIG_SEC_PM
+		last_resume_kernel_reason_len += 
+			sprintf(last_resume_kernel_reason + last_resume_kernel_reason_len,
+			"HWIRQ %d(irq %d), %s|", i, irq, name);
+#endif
 	}
 }
 

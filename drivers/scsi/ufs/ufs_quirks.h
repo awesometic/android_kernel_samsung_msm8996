@@ -30,6 +30,11 @@
 #define UFS_MODEL_TOSHIBA_32GB "THGLF2G8D4KBADR"
 #define UFS_MODEL_TOSHIBA_64GB "THGLF2G9D8KBADG"
 
+/*uniqueu number*/
+#define	UFS_UN_16_DIGITS 16
+#define UFS_UN_18_DIGITS 18
+#define UFS_UN_MAX_DIGITS 19 //current max digit + 1
+
 /**
  * ufs_card_info - ufs device details
  * @wmanufacturerid: card details
@@ -37,6 +42,7 @@
  */
 struct ufs_card_info {
 	u16 wmanufacturerid;
+	u8 lifetime;
 	char *model;
 };
 

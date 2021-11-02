@@ -133,10 +133,12 @@ static void _kgsl_cmdbatch_timer(unsigned long data)
 			spin_lock_irqsave(&event->handle_lock, flags);
 
 			if (event->handle != NULL) {
-				dev_err(device->dev, "       [%d] FENCE %s\n",
-				i, event->handle->fence ?
-					event->handle->fence->name : "NULL");
-				kgsl_sync_fence_log(event->handle->fence);
+				if (event->handle->fence) {
+					dev_err(device->dev, "       [%d] FENCE %s\n",
+							i, event->handle->fence ?
+							event->handle->fence->name : "NULL");
+					kgsl_sync_fence_log(event->handle->fence);
+				}
 			}
 
 			spin_unlock_irqrestore(&event->handle_lock, flags);

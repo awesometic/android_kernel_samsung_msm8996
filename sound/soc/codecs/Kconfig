@@ -68,6 +68,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_MAX98088 if I2C
 	select SND_SOC_MAX98090 if I2C
 	select SND_SOC_MAX98095 if I2C
+	select SND_SOC_MAX98506 if I2C
 	select SND_SOC_MAX9850 if I2C
 	select SND_SOC_MAX9768 if I2C
 	select SND_SOC_MAX9877 if I2C
@@ -164,6 +165,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_WM9705 if SND_SOC_AC97_BUS
 	select SND_SOC_WM9712 if SND_SOC_AC97_BUS
 	select SND_SOC_WM9713 if SND_SOC_AC97_BUS
+	select SND_SOC_RT5508 if I2C
         help
           Normally ASoC codec drivers are only built if a machine driver which
           uses them is also built since they are only usable with a machine
@@ -440,6 +442,25 @@ config SND_SOC_MAX98090
 config SND_SOC_MAX98095
        tristate
 
+config SND_SOC_MAX98506
+	bool "Support MAX98506"
+	depends on I2C
+	help
+	MAX98506 driver
+
+config SND_SOC_MAXIM_DSM
+	bool "Support MAXIM DSM"
+	depends on SND_SOC_MAX98504 || SND_SOC_MAX98505 || SND_SOC_MAX98506
+	help
+	MAXIM DSM driver
+
+config SND_SOC_MAXIM_DSM_CAL
+	tristate "Support MAXIM DSM Calibration"
+	default y if SND_SOC_MAX98506=y
+	default m if SND_SOC_MAX98506=m
+	help
+	MAX9850x Calibration Driver
+
 config SND_SOC_MAX9850
 	tristate
 
@@ -667,7 +688,6 @@ config SND_SOC_WCD9XXX_V2
 
 config SND_SOC_WCD_CPE
 	tristate
-	default y if SND_SOC_WCD9330=y || SND_SOC_WCD9335=y
 
 config AUDIO_EXT_CLK
 	tristate
@@ -846,6 +866,9 @@ config SND_SOC_WM9712
 config SND_SOC_WM9713
 	tristate
 
+# DBMDx
+source "sound/soc/codecs/dbmdx/Kconfig"
+
 # Amp
 config SND_SOC_LM4857
 	tristate
@@ -876,7 +899,26 @@ config SND_SOC_MSM_HDMI_CODEC_RX
 	HDMI audio drivers should be built only if the platform
         supports hdmi panel.
 
+config SND_SOC_WCD_MBHC_ADC
+	tristate "earphone recongnition using the adc level"
+	default n
+	help
+		To support for earphone recongnition using the adc level
+
+config SND_SOC_WCD_MBHC_SLOW_DET
+	tristate "detect slow insertion"
+	default n
+	help
+		Support detection earjack slow insertion
+
 config SND_SOC_MSM_HDMI_DBA_CODEC_RX
 	bool "HDMI DBA Audio Playback"
 	depends on MSM_DBA
+
+config SND_SOC_RT5508
+	bool "Support RT5508"
+	depends on I2C
+	select RT_REGMAP
+	help
+	  RT5508 driver
 endmenu

@@ -20,7 +20,20 @@
 #include <linux/delay.h>
 #include <linux/export.h>
 #include <trace/events/asoc.h>
+#include <linux/switch.h>
 
+#define SEC_JACK_NO_DEVICE		0
+#define SEC_HEADSET_4POLE		1
+#define SEC_HEADSET_3POLE		2
+
+#define WCD_JACK_MASK (SND_JACK_HEADSET | SND_JACK_OC_HPHL | \
+			   SND_JACK_OC_HPHR | SND_JACK_LINEOUT | \
+			   SND_JACK_UNSUPPORTED)
+
+/* Android jack detection */
+struct switch_dev android_switch = {
+	.name = "h2w",
+};
 /**
  * snd_soc_jack_new - Create a new jack
  * @codec: ASoC codec
@@ -42,7 +55,9 @@ int snd_soc_jack_new(struct snd_soc_codec *codec, const char *id, int type,
 	INIT_LIST_HEAD(&jack->pins);
 	INIT_LIST_HEAD(&jack->jack_zones);
 	BLOCKING_INIT_NOTIFIER_HEAD(&jack->notifier);
-
+	if(!strcmp(id, "Headset Jack")) {
+		switch_dev_register(&android_switch);
+	}
 	return snd_jack_new(codec->component.card->snd_card, id, type, &jack->jack);
 }
 EXPORT_SYMBOL_GPL(snd_soc_jack_new);
@@ -82,6 +97,17 @@ void snd_soc_jack_report(struct snd_soc_jack *jack, int status, int mask)
 	jack->status &= ~mask;
 	jack->status |= status & mask;
 
+	dev_err(jack->codec->dev,
+		"ASoC: mask = 0x%x status = 0x%x\n", mask, status);
+
+	if (mask & WCD_JACK_MASK) {
+		if (status == SEC_JACK_NO_DEVICE)
+			switch_set_state(&android_switch, SEC_JACK_NO_DEVICE);
+		else if (status == SND_JACK_HEADPHONE)
+			switch_set_state(&android_switch, SEC_HEADSET_3POLE);
+		else if (status == SND_JACK_HEADSET)
+			switch_set_state(&android_switch, SEC_HEADSET_4POLE);
+	}
 	trace_snd_soc_jack_notify(jack, status);
 
 	list_for_each_entry(pin, &jack->pins, list) {

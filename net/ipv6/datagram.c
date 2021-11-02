@@ -96,6 +96,10 @@ static int __ip6_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int a
 
 		if (__ipv6_only_sock(sk)) {
 			err = -ENETUNREACH;
+			printk(KERN_DEBUG "ip6_datagram_connect() addr_type is IPV6_ADDR_MAPPED & __ipv6_only_sock\n");
+			printk(KERN_DEBUG "ip6_datagram_connect() s6_addr32 %08X %08X %08X %08X\n",
+			usin->sin6_addr.s6_addr32[0], usin->sin6_addr.s6_addr32[1],
+			usin->sin6_addr.s6_addr32[2], usin->sin6_addr.s6_addr32[3]);
 			goto out;
 		}
 		sin.sin_family = AF_INET;

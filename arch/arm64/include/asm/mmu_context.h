@@ -120,15 +120,15 @@ void check_and_switch_context(struct mm_struct *mm, unsigned int cpu);
 static inline void update_saved_ttbr0(struct task_struct *tsk,
 				      struct mm_struct *mm)
 {
-	u64 ttbr;
+	u64 ttbr; 
 
-	if (!system_uses_ttbr0_pan())
-		return;
-
-	if (mm == &init_mm)
-		ttbr = __pa_symbol(empty_zero_page);
-	else
-		ttbr = virt_to_phys(mm->pgd) | ASID(mm) << 48;
+	if (!system_uses_ttbr0_pan()) 
+		return; 
+ 
+	if (mm == &init_mm) 
+		ttbr = __pa_symbol(empty_zero_page); 
+	else 
+		ttbr = virt_to_phys(mm->pgd) | ASID(mm) << 48; 
 
 	WRITE_ONCE(task_thread_info(tsk)->ttbr0, ttbr);
 }
@@ -139,14 +139,14 @@ static inline void update_saved_ttbr0(struct task_struct *tsk,
 }
 #endif
 
-static inline void
-enter_lazy_tlb(struct mm_struct *mm, struct task_struct *tsk)
+static inline void 
+enter_lazy_tlb(struct mm_struct *mm, struct task_struct *tsk) 
 {
-	/*
-	 * We don't actually care about the ttbr0 mapping, so point it at the
-	 * zero page.
-	 */
-	update_saved_ttbr0(tsk, &init_mm);
+	/* 
+	* We don't actually care about the ttbr0 mapping, so point it at the 
+	* zero page. 
+	*/ 
+	update_saved_ttbr0(tsk, &init_mm); 
 }
 
 static inline void __switch_mm(struct mm_struct *next)

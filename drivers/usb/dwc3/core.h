@@ -34,6 +34,9 @@
 #include <linux/usb/otg.h>
 
 #include <linux/phy/phy.h>
+#ifdef CONFIG_USB_CHARGING_EVENT
+#include "../../battery_v2/include/sec_charging_common.h"
+#endif
 
 #define DWC3_MSG_MAX	500
 
@@ -191,6 +194,7 @@
 /* Host waits for DTCT value before timeout. Recommended to be POR value */
 #define DWC3_GUCTL_DTCT(n) ((n) << 9)
 #define DWC3_GUCTL_DTCT_MASK (2 << 9)
+#define DWC3_GUCTL_SPRSCRTLTRANSEN (1 << 17)
 
 /* Global Debug LTSSM Register */
 #define DWC3_GDBGLTSSM_LINKSTATE_MASK	(0xF << 22)
@@ -212,6 +216,8 @@
 #define DWC3_GUSB3PIPECTL_ELASTIC_BUF_MODE	(1 << 0)
 
 /* Global TX Fifo Size Register */
+#define DWC31_GTXFIFOSIZ_TXFRAMNUM	BIT(15)		/* DWC_usb31 only */
+#define DWC31_GTXFIFOSIZ_TXFDEF(n)	((n) & 0x7fff)	/* DWC_usb31 only */
 #define DWC3_GTXFIFOSIZ_TXFDEF(n)	((n) & 0xffff)
 #define DWC3_GTXFIFOSIZ_TXFSTADDR(n)	((n) & 0xffff0000)
 
@@ -996,6 +1002,10 @@ struct dwc3 {
 
 	wait_queue_head_t	wait_linkstate;
 	void			*dwc_ipc_log_ctxt;
+#if IS_ENABLED(CONFIG_USB_CHARGING_EVENT)
+	struct work_struct      set_vbus_current_work;
+	int			vbus_current; /* 0 : 100mA, 1 : 500mA, 2: 900mA */
+#endif
 	int			last_fifo_depth;
 };
 

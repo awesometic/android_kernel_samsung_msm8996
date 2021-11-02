@@ -120,10 +120,13 @@ static void rmnet_map_send_ack(struct sk_buff *skb,
 {
 	struct rmnet_map_control_command_s *cmd;
 	int xmit_status;
+	struct net_device *dev;
 	int rc;
 
-	if (unlikely(!skb))
+	if (unlikely(!skb) || unlikely(!skb->dev))
 		BUG();
+
+	dev = skb->dev;
 
 	skb->protocol = htons(ETH_P_MAP);
 
@@ -144,9 +147,9 @@ static void rmnet_map_send_ack(struct sk_buff *skb,
 	cmd = RMNET_MAP_GET_CMD_START(skb);
 	cmd->cmd_type = type & 0x03;
 
-	netif_tx_lock(skb->dev);
-	xmit_status = skb->dev->netdev_ops->ndo_start_xmit(skb, skb->dev);
-	netif_tx_unlock(skb->dev);
+	netif_tx_lock(dev);
+	xmit_status = dev->netdev_ops->ndo_start_xmit(skb, dev);
+	netif_tx_unlock(dev);
 
 	LOGD("MAP command ACK=%hhu sent with rc: %d", type & 0x03, xmit_status);
 

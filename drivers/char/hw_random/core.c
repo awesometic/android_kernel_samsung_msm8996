@@ -410,10 +410,12 @@ int hwrng_register(struct hwrng *rng)
 
 	old_rng = current_rng;
 	if (!old_rng) {
-		err = hwrng_init(rng);
-		if (err)
-			goto out_unlock;
 		current_rng = rng;
+		err = hwrng_init(rng);
+		if (err) {
+			current_rng = NULL;
+			goto out_unlock;
+		} 
 	}
 	err = 0;
 	if (!old_rng) {

@@ -599,6 +599,88 @@ static ssize_t show_scaling_cur_freq(
 static int cpufreq_set_policy(struct cpufreq_policy *policy,
 				struct cpufreq_policy *new_policy);
 
+#ifdef CONFIG_SEC_BSP
+extern cpufreq_boot_limit_t cpufreq_boot_limit;
+
+void cpufreq_boot_limit_update(int period)
+{
+	int ret, cpu;
+	static int finished = 0;
+	struct cpufreq_policy *policy, new_policy;
+
+	if (finished) {
+		pr_info("%s(%d) : already finished.\n", __func__, __LINE__);
+		return;
+	}
+
+	if (cpufreq_boot_limit.num_period <= period) {
+		finished = 1; 
+		del_timer_sync(&cpufreq_boot_limit.timer);
+		cpufreq_boot_limit.on = 0;
+	}
+
+	get_online_cpus();
+
+	for_each_online_cpu(cpu) {
+		policy = per_cpu(cpufreq_cpu_data, cpu);
+		ret = cpufreq_get_policy(&new_policy, cpu);
+		if (ret) {
+			pr_err("%s(%d) :cpu%d cpufreq_get_policy fail\n",
+				__func__, __LINE__, cpu);
+			continue;
+		}
+
+		new_policy.min = new_policy.user_policy.min;
+
+		if (finished) {
+			if (policy->cpu < 2) {
+				if(cpufreq_boot_limit.stored_freq[0])
+					new_policy.max = cpufreq_boot_limit.stored_freq[0];
+				else
+					new_policy.max = new_policy.cpuinfo.max_freq;
+			} else {
+				if(cpufreq_boot_limit.stored_freq[1])
+					new_policy.max = cpufreq_boot_limit.stored_freq[1];
+				else
+					new_policy.max = new_policy.cpuinfo.max_freq;
+			}
+		} else {
+			if (policy->cpu < 2) {
+				new_policy.max = cpufreq_boot_limit.freq[period][0];
+			} else {
+				new_policy.max = cpufreq_boot_limit.freq[period][1];
+			}
+		}
+
+		cpufreq_verify_within_cpu_limits(&new_policy);
+		if (new_policy.min > new_policy.user_policy.max
+		    || new_policy.max < new_policy.user_policy.min) {
+			pr_err("%s(%d) : cpu%d min, max range invalid\n",
+				__func__, __LINE__, cpu);
+			continue;
+		}
+
+		policy->user_policy.max = new_policy.max;
+
+		ret = cpufreq_set_policy(policy, &new_policy);
+		if (ret) {
+			pr_err("%s(%d) : cpu%d cpufreq_set_policy fail\n",
+				__func__, __LINE__, cpu);
+		}
+	}
+
+	put_online_cpus();
+
+	if (finished) {
+		pr_info("%s(%d) : cpufreq boot limit finished!!\n", __func__, __LINE__);
+	} else {
+		pr_info("%s(%d) : period %d\n", __func__, __LINE__, period);
+	}
+
+}
+EXPORT_SYMBOL(cpufreq_boot_limit_update);
+#endif
+
 /**
  * cpufreq_per_cpu_attr_write() / store_##file_name() - sysfs write access
  */
@@ -1571,7 +1653,8 @@ static int __cpufreq_remove_dev_finish(struct device *dev,
 		if (!cpufreq_suspended) {
 			flush_work(&policy->update);
 			cpufreq_policy_free(policy);
-		}
+			per_cpu(cpufreq_cpu_data_fallback, cpu) = NULL;
+		}	
 	} else if (has_target()) {
 		ret = __cpufreq_governor(policy, CPUFREQ_GOV_START);
 		if (!ret)
@@ -2443,6 +2526,8 @@ static int cpufreq_cpu_callback(struct notifier_block *nfb,
 		switch (action & ~CPU_TASKS_FROZEN) {
 		case CPU_ONLINE:
 			__cpufreq_add_dev(dev, NULL);
+			//update permission of cpufreq policy
+			kobject_uevent(&dev->kobj, KOBJ_ADD);
 			break;
 
 		case CPU_DOWN_PREPARE:

@@ -3953,6 +3953,8 @@ done:
 	if (update_task_count)
 		put_online_cpus();
 	mutex_unlock(&policy_mutex);
+	if (update_task_count)
+		put_online_cpus();
 	return ret;
 }
 

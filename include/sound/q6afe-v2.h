@@ -96,6 +96,8 @@ enum {
 	IDX_AFE_PORT_ID_PRIMARY_MI2S_TX,
 	IDX_AFE_PORT_ID_SECONDARY_PCM_RX,
 	IDX_AFE_PORT_ID_SECONDARY_PCM_TX,
+	IDX_AFE_PORT_ID_TERTIARY_PCM_RX,
+	IDX_AFE_PORT_ID_TERTIARY_PCM_TX,
 	IDX_VOICE2_PLAYBACK_TX,
 	/* IDX 45->49 */
 	IDX_SLIMBUS_6_RX,
@@ -329,6 +331,10 @@ int afe_port_group_enable(u16 group_id,
 	union afe_port_group_config *afe_group_config, u16 enable);
 int afe_unmap_rtac_block(uint32_t *mem_map_handle);
 int afe_map_rtac_block(struct rtac_cal_block_data *cal_block);
+
+#ifdef CONFIG_SND_SOC_MAXIM_DSM
+int32_t dsm_open(void *data);
+#endif /* CONFIG_SND_SOC_MAXIM_DSM */
 int afe_send_slot_mapping_cfg(
 	struct afe_param_id_slot_mapping_cfg *slot_mapping_cfg,
 	u16 port_id);

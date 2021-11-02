@@ -2708,6 +2708,17 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 	const char *ond_prop_name = "qcom,cdc-on-demand-supplies";
 	const char *cp_supplies_name = "qcom,cdc-cp-supplies";
 	const char *cdc_name;
+	struct of_phandle_args imp_list;
+	int i = 0;
+	struct wcd9xxx_gain_table default_table[MAX_IMPEDANCE_TALBE] = {
+		{    0,      13, 0},
+		{   14,      42, 4},
+		{   43,     100, 5},
+		{  101,     200, 7},
+		{  201,     450, 8},
+		{  451,    1000, 8},
+		{ 1001, INT_MAX, 5},
+	};
 
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata) {
@@ -2883,6 +2894,24 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 	}
 	pdata->wcd9xxx_mic_tristate = of_property_read_bool(dev->of_node,
 						 "qcom,wcd9xxx-mic-tristate");
+
+	for (i = 0; i < ARRAY_SIZE(pdata->imp_table); i++) {
+		ret = of_parse_phandle_with_args(dev->of_node,
+			"imp-table", "#list-imp-cells", i, &imp_list);
+		if (ret < 0) {
+			pdata->imp_table[i].min = default_table[i].min;
+			pdata->imp_table[i].max = default_table[i].max;
+			pdata->imp_table[i].gain= default_table[i].gain;
+		} else {
+			pdata->imp_table[i].min = imp_list.args[0];
+			pdata->imp_table[i].max = imp_list.args[1];
+			pdata->imp_table[i].gain= imp_list.args[2];
+		}
+		dev_dbg(dev, "impedance gain table %d, %d, %d\n",
+			pdata->imp_table[i].min,
+			pdata->imp_table[i].max,
+			pdata->imp_table[i].gain);
+	}
 
 	return pdata;
 err:

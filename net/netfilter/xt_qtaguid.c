@@ -1226,6 +1226,12 @@ static void iface_stat_update_from_skb(const struct sk_buff *skb,
 		 par->hooknum, __func__, el_dev->name, el_dev->type,
 		 par->family, proto, direction);
 
+	if (skb->dev && el_dev != skb->dev) {
+		MT_DEBUG("qtaguid[%d]: skb->dev=%p %s vs "
+			"par->(in/out)=%p %s\n",
+			par->hooknum, skb->dev, skb->dev->name, el_dev,
+			el_dev->name);
+	}
 	spin_lock_bh(&iface_stat_list_lock);
 	entry = get_iface_entry(el_dev->name);
 	if (entry == NULL) {
@@ -1633,6 +1639,13 @@ static void account_for_uid(const struct sk_buff *skb,
 	MT_DEBUG("qtaguid[%d]: dev name=%s type=%d fam=%d proto=%d dir=%d\n",
 		 par->hooknum, el_dev->name, el_dev->type,
 		 par->family, proto, direction);
+
+	if (skb->dev && el_dev != skb->dev) {
+		MT_DEBUG("qtaguid[%d]: skb->dev=%p %s vs "
+			"par->(in/out)=%p %s\n",
+			par->hooknum, skb->dev, skb->dev->name, el_dev,
+			el_dev->name);
+	}
 
 	if_tag_stat_update(el_dev->name, uid,
 			   skb->sk ? skb->sk : alternate_sk,

@@ -35,7 +35,7 @@
 		pci-domain0 = &pcie0;
 		pci-domain1 = &pcie1;
 		pci-domain2 = &pcie2;
-		i2c6 = &i2c_6;
+		//i2c6 = &i2c_6;
 		i2c7 = &i2c_7;
 		i2c8 = &i2c_8;
 		i2c12 = &i2c_12;
@@ -168,9 +168,17 @@
 					dev = "/dev/block/platform/soc/7464900.sdhci/by-name/vendor";
 					type = "ext4";
 					mnt_flags = "ro,barrier=1,discard";
+					fsmgr_flags = "wait";
+					status = "disabled";
+				 };
+				 system {
+					compatible = "android,system";
+					dev = "/dev/block/platform/soc/7464900.sdhci/by-name/system";
+					type = "ext4";
+					mnt_flags = "ro,errors=panic,noload";
 					fsmgr_flags = "wait,verify";
 					status = "ok";
-				 };
+				};
 			};
 		};
 	};
@@ -230,11 +238,6 @@
 		cont_splash_mem: cont_splash_mem@83401000 {
 			reg = <0 0x83401000 0 0x23FF000>;
 			label = "cont_splash_mem";
-		};
-
-		cont_splash_mem_hdmi: cont_splash_mem_hdmi@b1c00000 {
-			reg = <0 0xb1c00000 0 0x23ff000>;
-			label = "cont_splash_mem_hdmi";
 		};
 	};
 };
@@ -519,7 +522,7 @@
 			<  5195 /*  681 MHz */ >,
 			<  5859 /*  768 MHz */ >,
 			<  7759 /* 1017 MHz */ >,
-			<  9887 /* 1296 MHz */ >,
+			< 10322 /* 1353 MHz */ >,
 			< 11863 /* 1555 MHz */ >,
 			< 13763 /* 1804 MHz */ >;
 	};
@@ -548,7 +551,7 @@
 			<  5195 /*  681 MHz */ >,
 			<  5859 /*  768 MHz */ >,
 			<  7759 /* 1017 MHz */ >,
-			<  9887 /* 1296 MHz */ >,
+			< 10322 /* 1353 MHz */ >,
 			< 11863 /* 1555 MHz */ >,
 			< 13763 /* 1804 MHz */ >;
 	};
@@ -1356,6 +1359,8 @@
 		qcom,l1-supported;
 		qcom,l1ss-supported;
 		qcom,aux-clk-sync;
+		qcom,common-clk-en;
+		qcom,clk-power-manage-en;
 
 		qcom,ep-latency = <10>;
 
@@ -1823,7 +1828,7 @@
 		reg = <0x9830000 0x1000>;
 		reg-names = "wdt-base";
 		interrupts = <0 28 0>, <0 29 0>;
-		qcom,bark-time = <11000>;
+		qcom,bark-time = <15000>;
 		qcom,pet-time = <10000>;
 		qcom,ipi-ping;
 		qcom,wakeup-enable;
@@ -1852,9 +1857,9 @@
 			reg = <0x10 8>;
 		};
 
-		dload_type@18 {
+		dload_type@1c {
 			compatible = "qcom,msm-imem-dload-type";
-			reg = <0x18 4>;
+			reg = <0x1c 4>;
 		};
 
 		restart_reason@65c {
@@ -1963,7 +1968,6 @@
 		interrupt-names = "hs_phy_irq", "ss_phy_irq", "pwr_event_irq";
 
 		USB3_GDSC-supply = <&gdsc_usb30>;
-		vbus_dwc3-supply = <&smbcharger_charger_otg>;
 		qcom,usb-dbm = <&dbm_1p5>;
 		qcom,msm-bus,name = "usb3";
 		qcom,msm-bus,num-cases = <3>;
@@ -2139,9 +2143,9 @@
 		qcom,tune2-efuse-bit-pos = <21>;
 		qcom,tune2-efuse-num-bits = <4>;
 		qcom,enable-dpdm-pulsing;
-		qcom,qusb-phy-init-seq = <0xF8 0x80
-					0xB3 0x84
-					0x83 0x88
+		qcom,qusb-phy-init-seq = <0xD0 0x80
+					0x43 0x84
+					0x81 0x88
 					0xC0 0x8C
 					0x30 0x08
 					0x79 0x0C
@@ -2172,9 +2176,9 @@
 		qcom,vdd-voltage-level = <1 4 7>;
 		qcom,tune2-efuse-bit-pos = <25>;
 		qcom,tune2-efuse-num-bits = <4>;
-		qcom,qusb-phy-init-seq = <0xF8 0x80
-					0xB3 0x84
-					0x83 0x88
+		qcom,qusb-phy-init-seq = <0xD0 0x80
+					0x43 0x84
+					0x81 0x88
 					0xC0 0x8C
 					0x30 0x08
 					0x79 0x0C
@@ -2590,7 +2594,7 @@
 			 <&clock_gcc clk_gcc_ce1_ahb_m_clk>,
 			 <&clock_gcc clk_gcc_ce1_axi_m_clk>;
 		qcom,ce-opp-freq = <171430000>;
-		qcom,qsee-reentrancy-support = <2>;
+		qcom,qsee-reentrancy-support = <0>;
 	};
 
 	qcom,qbt1000 {
@@ -2828,11 +2832,11 @@
 		qcom,poll-ms = <100>;
 		qcom,limit-temp = <60>;
 		qcom,temp-hysteresis = <10>;
-		qcom,therm-reset-temp = <115>;
+		qcom,therm-reset-temp = <105>;
 		qcom,freq-step = <4>;
 		qcom,core-limit-temp = <70>;
 		qcom,core-temp-hysteresis = <10>;
-		qcom,hotplug-temp = <105>;
+		qcom,hotplug-temp = <95>;
 		qcom,hotplug-temp-hysteresis = <40>;
 		qcom,freq-mitigation-temp = <90>;
 		qcom,freq-mitigation-temp-hysteresis = <40>;
@@ -2868,6 +2872,7 @@
 	};
 
 	qcom,bcl {
+		status = "disabled";
 		compatible = "qcom,bcl";
 		qcom,bcl-enable;
 		qcom,bcl-framework-interface;

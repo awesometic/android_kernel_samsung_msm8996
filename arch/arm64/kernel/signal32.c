@@ -556,6 +556,17 @@ int compat_setup_rt_frame(int usig, struct ksignal *ksig,
 
 	if (!frame)
 		return 1;
+		
+	/* To avoid kernel panic due to "chrome" user fault by invalid sp register. 
+	 */
+	if (usig == SIGSEGV) { 
+		if (!strcmp(current->comm, ".android.chrome")){ 
+			if (!find_vma(current->mm, (unsigned long)frame)) { 
+				pr_info("compat_setup_rt_frame: SIGSEGV process name= %s\n",current->comm); 
+				return 1; 
+			} 
+		} 
+	} 
 
 	err |= copy_siginfo_to_user32(&frame->info, &ksig->info);
 

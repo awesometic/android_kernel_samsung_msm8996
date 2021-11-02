@@ -1054,10 +1054,6 @@ static int msm_core_dev_probe(struct platform_device *pdev)
 	key = "qcom,throttling-temp";
 	ret = of_property_read_u32(node, key, &max_throttling_temp);
 
-	ret = uio_init(pdev);
-	if (ret)
-		return ret;
-
 	ret = msm_core_freq_init();
 	if (ret)
 		goto failed;
@@ -1083,6 +1079,10 @@ static int msm_core_dev_probe(struct platform_device *pdev)
 	schedule_delayed_work(&sampling_work, msecs_to_jiffies(0));
 	cpufreq_register_notifier(&cpu_policy, CPUFREQ_POLICY_NOTIFIER);
 	pm_notifier(system_suspend_handler, 0);
+
+	ret = uio_init(pdev);
+	if (ret)
+		return ret;
 	return 0;
 failed:
 	info = dev_get_drvdata(&pdev->dev);

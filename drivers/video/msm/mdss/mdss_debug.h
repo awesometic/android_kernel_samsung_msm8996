@@ -87,7 +87,7 @@ struct vbif_debug_bus {
 
 #if defined(CONFIG_DEBUG_FS) && defined(CONFIG_FB_MSM_MDSS)
 
-#define MDSS_DEBUG_BASE_MAX 10
+#define MDSS_DEBUG_BASE_MAX 15
 
 struct mdss_debug_base {
 	struct list_head head; /* head of this node */
@@ -104,12 +104,20 @@ struct mdss_debug_base {
 	u32 *reg_dump; /* address for the mem dump if no ranges used */
 };
 
+struct debug_log {
+	struct dentry *xlog;
+	u32 xlog_enable;
+	u32 panic_on_err;
+	u32 enable_reg_dump;
+};
+
 struct mdss_debug_data {
 	struct dentry *root;
 	struct dentry *perf;
 	struct dentry *bordercolor;
 	struct dentry *postproc;
 	struct list_head base_list;
+	struct debug_log logd;
 };
 
 struct dump_offset {

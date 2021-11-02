@@ -155,15 +155,8 @@ config SND_SOC_MSM8996
 	select MSM_QDSP6V2_CODECS
 	select SND_SOC_WCD9330
 	select SND_SOC_WCD9335
-	select SND_SOC_WSA881X
 	select SND_SOC_MSM_HDMI_CODEC_RX
-	select DTS_SRS_TM
 	select QTI_PP
-	select SND_SOC_CPE
-	select MSM_ULTRASOUND
-	select DOLBY_DS2
-	select SND_HWDEP
-        select DTS_EAGLE
 	help
 	 To add support for SoC audio on MSM8996.
 	 This will enable sound soc drivers which
@@ -302,4 +295,57 @@ config SND_SOC_MDM9640
 	 the machine drivers and the corresponding
 	 DAI-links.
 
+config SEC_SND_SOLUTION
+	tristate "Samsung sound solution"
+	default n
+	help
+		To add support for Samsung sound solution
+
+config SEC_VOC_SOLUTION
+	tristate "Samsung voice solution"
+	default n
+	help
+		To add support for Samsung voice solution
+
+config SND_SOC_JACK_AUDIO
+	tristate "Samsung Jack Audio"
+	default n
+	help
+		To add support for Samsung Jack Audio
+
+config MAINMIC_LDO
+	tristate "Samsung external mainmic ldo"
+	default n
+	help
+		To add support for Samsung external mainmic ldo
+
+config SND_SOC_PRIMARY_MI2S
+	tristate "Primary MI2S feature"
+	default n
+	help
+		To add support for Primary MI2S port
+
+config SND_SOC_QUAT_MI2S
+	tristate "Quaternary MI2S feature"
+	default n
+	help
+		To add support for Quaternary MI2S port
+
+config SND_SOC_TERTIARY_AUXPCM
+	tristate "Tertiary AUXPCM feature"
+	default n
+	help
+		To add support for Tertiary AUXPCM port
+
+config SND_SOC_ALWAYS_ON_MIC
+	tristate "Always MIC on feature"
+	default n
+	help
+		To add support for Always MIC on
+
+config SND_SOC_MI2S_TDM
+	tristate "TDM I/F feature"
+	default n
+	help
+		To add support for TDM I/F
 endmenu

@@ -67,7 +67,7 @@
 #define SLIM_MSG_ASM_FIRST_WORD(l, mt, mc, dt, ad) \
 		((l) | ((mt) << 5) | ((mc) << 8) | ((dt) << 15) | ((ad) << 16))
 
-#define INIT_MX_RETRIES 3
+#define INIT_MX_RETRIES 10
 #define DEF_RETRY_MS	10
 #define MSM_CONCUR_MSG	8
 #define SAT_CONCUR_MSG	8
@@ -96,7 +96,7 @@
 #define SLIMBUS_QMI_INS_ID 0
 
 /* QMI response timeout of 500ms */
-#define SLIM_QMI_RESP_TOUT 1000
+#define SLIM_QMI_RESP_TOUT 3000
 
 #define PGD_THIS_EE(r, v) ((v) ? PGD_THIS_EE_V2(r) : PGD_THIS_EE_V1(r))
 #define PGD_PORT(r, p, v) ((v) ? PGD_PORT_V2(r, p) : PGD_PORT_V1(r, p))

@@ -122,6 +122,10 @@ max8925-objs			:= max8925-core.o max8925-i2c.o
 obj-$(CONFIG_MFD_MAX8925)	+= max8925.o
 obj-$(CONFIG_MFD_MAX8997)	+= max8997.o max8997-irq.o
 obj-$(CONFIG_MFD_MAX8998)	+= max8998.o max8998-irq.o
+obj-$(CONFIG_MFD_MAX77833)      += max77833.o max77833-irq.o
+obj-$(CONFIG_MFD_MAX77854)	+= max77854.o max77854-irq.o
+obj-$(CONFIG_MFD_SM5703)	+= sm5703.o sm5703-irq.o sm5703_core.o sm5703_irq.o
+obj-$(CONFIG_MFD_SM5705)        += sm5705.o sm5705-irq.o sm5705_muic.o sm5705_muic-irq.o
 
 pcf50633-objs			:= pcf50633-core.o pcf50633-irq.o
 obj-$(CONFIG_MFD_PCF50633)	+= pcf50633.o
@@ -183,6 +187,10 @@ obj-$(CONFIG_WCD9306_CODEC)	+= wcd9xxx-core.o wcd9xxx-irq.o wcd9xxx-slimslave.o\
 					wcd-gpio-ctrl.o
 obj-$(CONFIG_WCD9320_CODEC)	+= wcd9xxx-core.o wcd9xxx-irq.o wcd9xxx-slimslave.o\
 						wcd9xxx-core-resource.o
+
+obj-$(CONFIG_MFD_S2MPB02)       += s2mpb02-core.o s2mpb02-irq.o
+obj-$(CONFIG_MFD_S2MPB01)       += s2mpb01-core.o s2mpb01-irq.o
+
 obj-$(CONFIG_WCD9330_CODEC)	+= wcd9xxx-core.o wcd9xxx-irq.o wcd9xxx-slimslave.o\
 					wcd9xxx-core-resource.o wcd9330-regmap.o\
 					wcd-gpio-ctrl.o

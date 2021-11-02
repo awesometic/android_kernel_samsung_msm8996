@@ -51,7 +51,7 @@ static pgprot_t __get_dma_pgprot(struct dma_attrs *attrs, pgprot_t prot,
 
 static struct gen_pool *atomic_pool;
 #define NO_KERNEL_MAPPING_DUMMY 0x2222
-#define DEFAULT_DMA_COHERENT_POOL_SIZE  SZ_256K
+#define DEFAULT_DMA_COHERENT_POOL_SIZE  SZ_2M
 static size_t atomic_pool_size __initdata = DEFAULT_DMA_COHERENT_POOL_SIZE;
 
 static int __init early_coherent_pool(char *p)
@@ -174,6 +174,7 @@ static void *__dma_alloc_coherent(struct device *dev, size_t size,
 
 		return addr;
 	} else {
+		pr_err("%s : call swiotlb\n", __func__); // YJ Do
 		return swiotlb_alloc_coherent(dev, size, dma_handle, flags);
 	}
 }
@@ -235,8 +236,10 @@ static void *__dma_alloc_noncoherent(struct device *dev, size_t size,
 	}
 
 	ptr = __dma_alloc_coherent(dev, size, dma_handle, flags, attrs);
-	if (!ptr)
+	if (!ptr) {
+		pr_err("%s : can't get coherent memory\n", __func__);  //YJ Do
 		goto no_mem;
+	}
 
 	if (dma_get_attr(DMA_ATTR_NO_KERNEL_MAPPING, attrs)) {
 		coherent_ptr = (void *)NO_KERNEL_MAPPING_DUMMY;

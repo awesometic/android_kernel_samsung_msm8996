@@ -1,5 +1,8 @@
 dtb-$(CONFIG_ARCH_MSM8996) += msm8996-v2-pmi8994-mtp.dtb \
 	msm8996-v2-pmi8994-pmk8001-mtp.dtb \
+	msm8996-v2-pm8004-cdp.dtb \
+	msm8996-v2-pm8004-mtp.dtb \
+	msm8996-v2-pmi8994-pm8004-cdp.dtb \
 	msm8996-v2-pmi8994-pm8004-mtp.dtb \
 	msm8996-v2-pmi8994-pm8004-pmk8001-mtp.dtb \
 	msm8996-v2-fluid.dtb \

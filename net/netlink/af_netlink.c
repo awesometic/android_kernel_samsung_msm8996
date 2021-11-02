@@ -269,6 +269,11 @@ static int __netlink_deliver_tap_skb(struct sk_buff *skb,
 	struct sk_buff *nskb;
 	struct sock *sk = skb->sk;
 	int ret = -ENOMEM;
+	
+	if (!net_eq(dev_net(dev), sock_net(sk)) &&
+		!net_eq(dev_net(dev), &init_net)) {
+		return 0;
+	}
 
 	if (!net_eq(dev_net(dev), sock_net(sk)))
 		return 0;
@@ -1310,7 +1315,7 @@ static void do_one_broadcast(struct sock *sk,
 	sock_hold(sk);
 	if (p->skb2 == NULL) {
 		if (skb_shared(p->skb)) {
-			p->skb2 = skb_clone(p->skb, p->allocation);
+			p->skb2 = skb_copy(p->skb, p->allocation);
 		} else {
 			p->skb2 = skb_get(p->skb);
 			/*

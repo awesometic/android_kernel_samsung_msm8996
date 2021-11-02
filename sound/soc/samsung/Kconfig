@@ -239,3 +239,9 @@ config SND_SOC_ODROIDX2
 	select SND_SAMSUNG_I2S
 	help
 	  Say Y here to enable audio support for the Odroid-X2/U3.
+
+config SND_SOC_SEC_AUDIO_EX
+	tristate "Support SEC Audio"
+	default n
+	help
+		Support class devices for samsung audio devices.

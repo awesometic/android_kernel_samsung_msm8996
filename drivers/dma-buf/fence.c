@@ -314,6 +314,19 @@ fence_remove_callback(struct fence *fence, struct fence_cb *cb)
 }
 EXPORT_SYMBOL(fence_remove_callback);
 
+bool
+fence_remove_callback_locked(struct fence *fence, struct fence_cb *cb)
+{
+	bool ret;
+
+	ret = !list_empty(&cb->node);
+	if (ret)
+		list_del_init(&cb->node);
+
+	return ret;
+}
+EXPORT_SYMBOL(fence_remove_callback_locked);
+
 struct default_wait_cb {
 	struct fence_cb base;
 	struct task_struct *task;

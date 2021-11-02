@@ -7,6 +7,7 @@ Required properties
 - compatible :			Must be "qcom,mdss-rotator".
 - qcom,mdss-wb-count:		The number of writeback block
 				in the hardware
+
 - <name>-supply:		Phandle for <name> regulator device node.
 
 Bus Scaling Data:
@@ -60,6 +61,21 @@ Example:
 		qcom,mdss-has-downscale;
 		qcom,mdss-has-ubwc;
 		qcom,mdss-wb-count = <2>;
+
+		qcom,mdss-has-reg-bus;
+		/* Bus Scale Settings */
+		qcom,msm-bus,name = "mdss_rotator";
+		qcom,msm-bus,num-cases = <3>;
+		qcom,msm-bus,num-paths = <1>;
+		qcom,mdss-num-nrt-paths = <1>;
+		qcom,msm-bus,vectors-KBps =
+			<25 512 0 0>,
+			<25 512 0 6400000>,
+			<25 512 0 6400000>;
+
+		vdd-supply = <&gdsc_mdss>;
+		gdsc-mmagic-mdss-supply = <&gdsc_mmagic_mdss>;
+		qcom,supply-names = "vdd", "gdsc-mmagic-mdss";
 
 		qcom,mdss-has-reg-bus;
 		/* Bus Scale Settings */

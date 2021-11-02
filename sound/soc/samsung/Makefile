@@ -71,3 +71,8 @@ obj-$(CONFIG_SND_SOC_LOWLAND) += snd-soc-lowland.o
 obj-$(CONFIG_SND_SOC_LITTLEMILL) += snd-soc-littlemill.o
 obj-$(CONFIG_SND_SOC_BELLS) += snd-soc-bells.o
 obj-$(CONFIG_SND_SOC_ODROIDX2) += snd-soc-odroidx2-max98090.o
+
+# Samsung Device Support
+snd-soc-sec-audio-ex-objs := sec-audio-ex.o
+
+obj-$(CONFIG_SND_SOC_SEC_AUDIO_EX) += snd-soc-sec-audio-ex.o

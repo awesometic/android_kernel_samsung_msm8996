@@ -931,8 +931,11 @@ static int scsi_vpd_inquiry(struct scsi_device *sdev, unsigned char *buffer,
 	 */
 	result = scsi_execute_req(sdev, cmd, DMA_FROM_DEVICE, buffer,
 				  len, NULL, 30 * HZ, 3, NULL);
-	if (result)
+	if (result) {
+		if (page == 0xb0 || page == 0x0)
+			pr_err("%s: page_code=0x%x, result=%d.\n", __func__, page, result);
 		return -EIO;
+	}
 
 	/* Sanity check that we got the page back that we asked for */
 	if (buffer[1] != page)
@@ -958,15 +961,28 @@ static int scsi_vpd_inquiry(struct scsi_device *sdev, unsigned char *buffer,
 int scsi_get_vpd_page(struct scsi_device *sdev, u8 page, unsigned char *buf,
 		      int buf_len)
 {
-	int i, result;
+	int i, result = 0;
+#if 1	/* check discard configuration */
+	int retry_count = 2;
+	u8 fail_status;
+	unsigned long flags;
 
-	if (sdev->skip_vpd_pages)
+ retry:
+	memset(buf, 0, buf_len);
+	fail_status = 0;
+#endif
+
+	if (sdev->skip_vpd_pages) {
+		fail_status |= (0x1 << 7);
 		goto fail;
+	}
 
 	/* Ask for all the pages supported by this device */
 	result = scsi_vpd_inquiry(sdev, buf, 0, buf_len);
-	if (result < 4)
+	if (result < 4) {
+		fail_status |= (0x1 << 6);
 		goto fail;
+	}
 
 	/* If the user actually wanted this page, we can skip the rest */
 	if (page == 0)
@@ -980,16 +996,45 @@ int scsi_get_vpd_page(struct scsi_device *sdev, u8 page, unsigned char *buf,
 		/* ran off the end of the buffer, give us benefit of doubt */
 		goto found;
 	/* The device claims it doesn't support the requested page */
+	fail_status |= (0x1 << 5);
 	goto fail;
 
  found:
+	memset(buf, 0, buf_len);
 	result = scsi_vpd_inquiry(sdev, buf, page, buf_len);
-	if (result < 0)
+	if (result < 0) {
+		fail_status |= (0x1 << 4);
 		goto fail;
+	}
+
+#if 1	/* check discard configuration : SBC3 6.5.3 */
+	if (sdev->host->by_ufs && page == 0xb0 && buf[3] != 0x3c)
+		goto fail;
+#endif
 
 	return 0;
 
  fail:
+#if 1	/* check discard configuration */
+	if (sdev->host->by_ufs && page == 0xb0) {
+		spin_lock_irqsave(sdev->host->host_lock, flags);
+		pr_err("%s: fail_status=0x%x. result=%d.\n", __func__, fail_status, result);
+
+		printk("read BlockLimitVPD :");
+		for (i = 0 ; i < buf_len ; i++) {
+			if (!(i % 16))
+				printk("\n 0x%02x:", i);
+			printk(" %02x", buf[i]);
+		}
+		printk(".\n");
+		spin_unlock_irqrestore(sdev->host->host_lock, flags);
+
+		if (retry_count > 0) {
+			retry_count--;
+			goto retry;
+		}
+	}
+#endif
 	return -EINVAL;
 }
 EXPORT_SYMBOL_GPL(scsi_get_vpd_page);

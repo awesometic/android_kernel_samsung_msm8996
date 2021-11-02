@@ -118,12 +118,20 @@ enum {
 	MDSS_PANEL_POWER_LP2,
 };
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+enum {
+	MDSS_PANEL_BLANK_BLANK = 0,
+	MDSS_PANEL_BLANK_UNBLANK,
+	MDSS_PANEL_BLANK_LOW_POWER,
+	MDSS_PANEL_BLANK_READY_TO_UNBLANK,
+};
+#else 
 enum {
 	MDSS_PANEL_BLANK_BLANK = 0,
 	MDSS_PANEL_BLANK_UNBLANK,
 	MDSS_PANEL_BLANK_LOW_POWER,
 };
-
+#endif
 
 enum {
 	MDSS_PANEL_LOW_PERSIST_MODE_OFF = 0,
@@ -280,6 +288,15 @@ enum mdss_intf_events {
 	MDSS_EVENT_PANEL_TIMING_SWITCH,
 	MDSS_EVENT_UPDATE_PARAMS,
 	MDSS_EVENT_MAX,
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	MDSS_SAMSUNG_EVENT_START,
+	MDSS_SAMSUNG_EVENT_FRAME_UPDATE,
+	MDSS_SAMSUNG_EVENT_FB_EVENT_CALLBACK,
+	MDSS_SAMSUNG_EVENT_PANEL_ESD_RECOVERY,
+	MDSS_SAMSUNG_EVENT_MULTI_RESOLUTION,
+	MDSS_SAMSUNG_EVENT_MAX,
+#endif
 };
 
 struct lcd_panel_info {
@@ -687,7 +704,6 @@ struct mdss_panel_info {
 	u32 partial_update_roi_merge;
 	struct ion_handle *splash_ihdl;
 	int panel_power_state;
-	int blank_state;
 	int compression_mode;
 
 	uint32_t panel_dead;
@@ -761,12 +777,17 @@ struct mdss_panel_info {
 
 	/* debugfs structure for the panel */
 	struct mdss_panel_debugfs_info *debugfs_info;
-
 	/* persistence mode on/off */
 	bool persist_mode;
 
 	/* HDR properties of display panel*/
-	struct mdss_panel_hdr_properties hdr_properties;
+	struct mdss_panel_hdr_properties hdr_properties;	
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	int panel_state;
+	int blank_state;
+#else
+	int blank_state;
+#endif
 };
 
 struct mdss_panel_timing {
@@ -836,6 +857,9 @@ struct mdss_panel_data {
 	int panel_te_gpio;
 	int panel_en_gpio;
 	struct completion te_done;
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	void *panel_private;
+#endif
 };
 
 struct mdss_panel_debugfs_info {

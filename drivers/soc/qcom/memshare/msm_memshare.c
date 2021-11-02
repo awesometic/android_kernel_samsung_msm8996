@@ -24,6 +24,12 @@
 #include <soc/qcom/scm.h>
 #include "msm_memshare.h"
 #include "heap_mem_ext_v01.h"
+#ifdef CONFIG_SEC_BSP
+#include <linux/uaccess.h>
+#include <linux/miscdevice.h>
+#include <linux/fs.h>
+#include <soc/qcom/secure_buffer.h>
+#endif
 
 #include <soc/qcom/secure_buffer.h>
 #include <soc/qcom/ramdump.h>
@@ -47,6 +53,9 @@ struct memshare_driver {
 	struct mutex mem_share;
 	struct mutex mem_free;
 	struct work_struct memshare_init_work;
+#ifdef CONFIG_SEC_BSP
+	struct memshare_rd_device *memshare_rd_dev;
+#endif
 };
 
 struct memshare_child {
@@ -145,6 +154,216 @@ static int mem_share_configure_ramdump(void)
 	return 0;
 }
 
+#ifdef CONFIG_SEC_BSP
+struct memshare_rd_device {
+	char name[256];
+	struct miscdevice device;
+	unsigned long address;
+	void *v_address;
+	unsigned long size;
+	unsigned int data_ready;	
+	struct dma_attrs attrs;
+};
+
+static void memshare_set_nhlos_permission(phys_addr_t addr, u32 size)
+{
+	int ret;
+	u32 source_vmlist[1] = {VMID_HLOS};
+	int dest_vmids[2] = {VMID_MSS_MSA, VMID_HLOS};
+	int dest_perms[2] = {PERM_READ|PERM_WRITE, PERM_READ};
+
+	if (!size || !addr) {
+		pr_err("%s: Unable to handle addr(0x%llx), size(%d)", 
+			__func__, addr, size);
+		return;
+	}
+
+	ret = hyp_assign_phys(addr, size, source_vmlist, 1, dest_vmids, 
+				dest_perms, 2);
+
+	pr_info("%s: hyp_assign_phys called addr(0x%llx) size(%d)  ret:%d\n", 
+					__func__, addr, size, ret);
+
+	if (ret != 0) {
+		if (ret == -ENOSYS)
+			pr_warn("hyp_assign_phys is not supported!");
+		else
+			pr_err("hyp_assign_phys failed IPA=0x016%pa size=%u err=%d\n",
+				&addr, size, ret);
+	}
+}
+
+static void memshare_unset_nhlos_permission(phys_addr_t addr, u32 size)
+{
+	int ret;
+	u32 source_vmlist[2] = {VMID_MSS_MSA, VMID_HLOS};
+	int dest_vmids[1] = {VMID_HLOS};
+	int dest_perms[1] = {PERM_READ|PERM_WRITE|PERM_EXEC};
+
+	if (!size || !addr) {
+		pr_err("%s: Unable to handle addr(0x%llx), size(%d)", 
+			__func__, addr, size);
+		return;
+	}
+
+	ret = hyp_assign_phys(addr, size, source_vmlist, 2, dest_vmids, 
+				dest_perms, 1);
+
+	pr_info("%s: hyp_assign_phys called addr(0x%llx) size(%d)  ret:%d\n", 
+					__func__, addr, size, ret);
+
+	if (ret != 0) {
+		if (ret == -ENOSYS)
+			pr_warn("hyp_assign_phys is not supported!");
+		else
+			pr_err("hyp_assign_phys failed IPA=0x016%pa size=%u err=%d\n",
+				&addr, size, ret);
+	}
+}
+
+static int memshare_rd_open(struct inode *inode, struct file *filep)
+{
+	return 0;
+}
+
+static int memshare_rd_release(struct inode *inode, struct file *filep)
+{
+	return 0;
+}
+
+static ssize_t memshare_rd_read(struct file *filep, char __user *buf, 
+				size_t count, loff_t *pos)
+{
+	struct memshare_rd_device *rd_dev = container_of(filep->private_data,
+				struct memshare_rd_device, device);
+	void *device_mem = NULL;
+	unsigned long data_left = 0;
+	unsigned long addr = 0;
+	int copy_size = 0;
+	int ret = 0;
+
+	if ((filep->f_flags & O_NONBLOCK) && !rd_dev->data_ready)
+		return -EAGAIN;
+
+	data_left = rd_dev->size - *pos;
+	addr = rd_dev->address + *pos; 
+
+	/* EOF check */
+	if (data_left == 0) {
+		pr_info("%s(%s): Ramdump complete. %lld bytes read.", __func__,
+			rd_dev->name, *pos);
+		ret = 0;
+		goto ramdump_done;
+	}
+
+	copy_size = min(count, (size_t)SZ_1M);
+	copy_size = min((unsigned long)copy_size, data_left);
+	device_mem = ioremap_nocache(addr, copy_size);
+
+	if (device_mem == NULL) {
+		pr_err("%s(%s): Unable to ioremap: addr %lx, size %d\n", __func__,
+			rd_dev->name, addr, copy_size);
+		ret = -ENOMEM;
+		goto ramdump_done;
+	}
+
+	pr_debug("%s:copy_to_user(buf:%llx, p_addr:%llx, device_mem :%llx, copy_size :%d\n",
+			__func__, (unsigned long long)buf, (unsigned long long) addr, 
+			(unsigned long long)device_mem, copy_size);
+
+	if (copy_to_user(buf, device_mem, copy_size)) {
+		pr_err("%s(%s): Couldn't copy all data to user.", __func__,
+			rd_dev->name);
+		iounmap(device_mem);
+		ret = -EFAULT;
+		goto ramdump_done;
+	}
+
+	iounmap(device_mem);
+	*pos += copy_size;
+
+	pr_debug("%s(%s): Read %d bytes from address %lx.", __func__,
+			rd_dev->name, copy_size, addr);
+
+	return copy_size;
+
+ramdump_done:
+	*pos = 0;
+	return ret;
+}
+
+static const struct file_operations memshare_rd_file_ops = {
+	.open = memshare_rd_open,
+	.release = memshare_rd_release,
+	.read = memshare_rd_read
+};
+
+static void *create_memshare_rd_device(const char *dev_name, 
+											struct device *parent)
+{
+	int ret;
+	struct memshare_rd_device *rd_dev;
+
+	if (!dev_name) {
+		pr_err("%s: Invalid device name.\n", __func__);
+		return NULL;
+	}
+
+	rd_dev = kzalloc(sizeof(struct memshare_rd_device), GFP_KERNEL);
+
+	if (!rd_dev) {
+		pr_err("%s: Couldn't alloc space for ramdump device!",
+			__func__);
+		return NULL;
+	}
+
+	snprintf(rd_dev->name, ARRAY_SIZE(rd_dev->name), "ramdump_%s",
+		 dev_name);
+
+	rd_dev->device.minor = MISC_DYNAMIC_MINOR;
+	rd_dev->device.name = rd_dev->name;
+	rd_dev->device.fops = &memshare_rd_file_ops;
+	rd_dev->device.parent = parent;
+
+	ret = misc_register(&rd_dev->device);
+
+	if (ret) {
+		pr_err("%s: misc_register failed for %s (%d)", __func__,
+				dev_name, ret);
+		kfree(rd_dev);
+		return NULL;
+	}
+
+	return (void *)rd_dev;
+}
+
+static void destroy_memshare_rd_device(void *dev)
+{
+	struct memshare_rd_device *rd_dev = dev;
+
+	if (IS_ERR_OR_NULL(rd_dev))
+		return ;
+
+	misc_deregister(&rd_dev->device);
+	kfree(rd_dev);
+} 
+
+static int memshare_rd_set(struct memshare_rd_device *rd_dev,
+phys_addr_t p_addr, u32 size, void * v_addr)
+{
+	int rc = 0;
+
+	rd_dev->address = p_addr;
+	rd_dev->v_address = v_addr;
+	rd_dev->size = size;
+	rd_dev->data_ready = 1;
+
+	pr_debug("%s: p_addr(%llx), size(%d)\n", __func__, p_addr, size);
+
+	return rc;
+}
+#endif
+
 static int check_client(int client_id, int proc, int request)
 {
 	int i = 0, rc;
@@ -190,6 +409,7 @@ void free_client(int id)
 	memblock[id].phy_addr = 0;
 	memblock[id].virtual_addr = 0;
 	memblock[id].alloted = 0;
+	memblock[id].size = 0;
 	memblock[id].guarantee = 0;
 	memblock[id].sequence_id = -1;
 	memblock[id].memory_type = MEMORY_CMA;
@@ -233,7 +453,9 @@ void initialize_client(void)
 		memblock[i].hyp_mapping = 0;
 		memblock[i].file_created = 0;
 	}
+#ifndef CONFIG_SEC_BSP
 	dma_set_attr(DMA_ATTR_NO_KERNEL_MAPPING, &attrs);
+#endif
 }
 
 /*
@@ -378,6 +600,14 @@ static int modem_notifier_cb(struct notifier_block *this, unsigned long code,
 		bootup_request++;
 		break;
 
+#ifdef CONFIG_SEC_BSP
+	case SUBSYS_AFTER_SHUTDOWN:
+		pr_err("memshare: Modem shutdown has happened\n");
+		memshare_unset_nhlos_permission(memsh_drv->memshare_rd_dev->address,
+				memsh_drv->memshare_rd_dev->size);
+		memsh_drv->memshare_rd_dev->data_ready = 0;
+		break;
+#endif
 	default:
 		pr_debug("Memshare: code: %lu\n", code);
 		break;
@@ -441,15 +671,25 @@ static int handle_alloc_req(void *req_h, void *req, void *conn_h)
 		alloc_resp.resp = QMI_RESULT_FAILURE_V01;
 		memblock[GPS].size = 0;
 	} else {
+#ifdef CONFIG_SEC_BSP
+		memshare_set_nhlos_permission(memblock[GPS].phy_addr,
+				alloc_req->num_bytes);
+		memshare_rd_set(memsh_drv->memshare_rd_dev, memblock[GPS].phy_addr,
+				alloc_req->num_bytes, memblock[GPS].virtual_addr);
+		memblock[GPS].alloted = 1;
+		memblock[GPS].free_memory += 1;
+		memblock[GPS].size = alloc_req->num_bytes;
+#endif
 		alloc_resp.resp = QMI_RESULT_SUCCESS_V01;
 	}
 
 	mutex_unlock(&memsh_drv->mem_share);
 
-	pr_debug("alloc_resp.num_bytes :%d, alloc_resp.handle :%lx, alloc_resp.mem_req_result :%lx\n",
-			  alloc_resp.num_bytes,
-			  (unsigned long int)alloc_resp.handle,
-			  (unsigned long int)alloc_resp.resp);
+	pr_info("%s: alloc_resp.num_bytes :%d, alloc_resp.handle :%lx, \
+				alloc_resp.mem_req_result :%lx\n", __func__,
+				alloc_resp.num_bytes, (unsigned long int)alloc_resp.handle,
+				(unsigned long int)alloc_resp.resp);
+
 	rc = qmi_send_resp_from_cb(mem_share_svc_handle, conn_h, req_h,
 			&mem_share_svc_alloc_resp_desc, &alloc_resp,
 			sizeof(alloc_resp));
@@ -529,6 +769,8 @@ static int handle_alloc_generic_req(void *req_h, void *req, void *conn_h)
 			&mem_share_svc_alloc_generic_resp_desc, alloc_resp,
 			sizeof(alloc_resp));
 
+	kfree(alloc_resp);
+
 	if (rc < 0)
 		pr_err("In %s, Error sending the alloc request: %d\n",
 							__func__, rc);
@@ -558,6 +800,11 @@ static int handle_free_req(void *req_h, void *req, void *conn_h)
 			memblock[GPS].virtual_addr,
 				free_req->handle);
 	}
+#ifdef CONFIG_SEC_BSP
+	memshare_unset_nhlos_permission(memblock[GPS].phy_addr,
+			memsh_drv->memshare_rd_dev->size);
+	memsh_drv->memshare_rd_dev->data_ready = 0;
+#endif
 	free_resp.resp = QMI_RESULT_SUCCESS_V01;
 	mutex_unlock(&memsh_drv->mem_free);
 	rc = qmi_send_resp_from_cb(mem_share_svc_handle, conn_h, req_h,
@@ -837,8 +1084,8 @@ int memshare_alloc(struct device *dev,
 		ret = -ENOMEM;
 		return ret;
 	}
-	pr_debug("pblk->phy_addr :%lx, pblk->virtual_addr %lx\n",
-		  (unsigned long int)pblk->phy_addr,
+	pr_info("%s: pblk->phy_addr : 0x%lx, pblk->virtual_addr : 0x%lx\n",
+			__func__, (unsigned long int)pblk->phy_addr,
 		  (unsigned long int)pblk->virtual_addr);
 	return 0;
 }
@@ -998,6 +1245,17 @@ static int memshare_probe(struct platform_device *pdev)
 	subsys_notif_register_notifier("modem", &nb);
 	pr_info("In %s, Memshare probe success\n", __func__);
 
+#ifdef CONFIG_SEC_BSP
+	drv->memshare_rd_dev = create_memshare_rd_device(MEMSHARE_DEV_NAME, 
+								&pdev->dev);
+	if (!drv->memshare_rd_dev) {
+		pr_err("%s : Unable to create a memshare ramdump device.\n",
+				__func__);
+		rc = -ENOMEM;
+		return rc;
+	}
+#endif
+
 	return 0;
 }
 
@@ -1011,6 +1269,9 @@ static int memshare_remove(struct platform_device *pdev)
 	qmi_handle_destroy(mem_share_svc_handle);
 	destroy_workqueue(mem_share_svc_workqueue);
 
+#ifdef CONFIG_SEC_BSP
+	destroy_memshare_rd_device(memsh_drv->memshare_rd_dev);
+#endif
 	return 0;
 }
 

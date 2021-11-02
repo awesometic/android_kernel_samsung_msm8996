@@ -22,6 +22,11 @@
 #include "mdss_mdp.h"
 #include "mdss_debug.h"
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+#include "samsung/ss_dsi_panel_common.h" /* UTIL HEADER */
+DEFINE_MUTEX(XLOG_DUMP_LOCK);
+#endif
+
 #ifdef CONFIG_FB_MSM_MDSS_XLOG_DEBUG
 #define XLOG_DEFAULT_ENABLE 1
 #else
@@ -38,7 +43,7 @@
  * sysfs node or panic. This prevents kernel log from xlog message
  * flood.
  */
-#define MDSS_XLOG_PRINT_ENTRY	256
+#define MDSS_XLOG_PRINT_ENTRY	512
 
 /*
  * xlog keeps this number of entries in memory for debug purpose. This
@@ -47,7 +52,7 @@
  */
 #define MDSS_XLOG_ENTRY	(MDSS_XLOG_PRINT_ENTRY * 4)
 #define MDSS_XLOG_MAX_DATA 15
-#define MDSS_XLOG_BUF_MAX 512
+#define MDSS_XLOG_BUF_MAX 1024
 #define MDSS_XLOG_BUF_ALIGN 32
 
 DEFINE_SPINLOCK(xlock);
@@ -204,7 +209,7 @@ static void mdss_xlog_dump_all(void)
 
 	while (__mdss_xlog_dump_calc_range()) {
 		mdss_xlog_dump_entry(xlog_buf, MDSS_XLOG_BUF_MAX);
-		pr_info("%s", xlog_buf);
+		pr_err("%s", xlog_buf);
 	}
 }
 
@@ -235,8 +240,10 @@ static void mdss_dump_debug_bus(u32 bus_dump_flag,
 	int list_size = mdata->dbg_bus_size;
 	int i;
 
-	if (!(mdata->dbg_bus && list_size))
+	if (!(mdata->dbg_bus && list_size)) {
+		pr_err("return dbg bus\n");
 		return;
+	}
 
 	/* will keep in memory 4 entries of 4 bytes each */
 	list_size = (list_size * 4 * 4);
@@ -451,9 +458,14 @@ void mdss_dump_reg(const char *dump_name, u32 reg_dump_flag, char *addr,
 		x8 = readl_relaxed(addr+0x8);
 		xc = readl_relaxed(addr+0xc);
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+		if (in_log)
+			pr_err("%04x : %08x %08x %08x %08x\n", i * 16, x0, x4, x8, xc);
+#else
 		if (in_log)
 			pr_info("%pK : %08x %08x %08x %08x\n", addr, x0, x4, x8,
 				xc);
+#endif
 
 		if (dump_addr && in_mem) {
 			dump_addr[i*4] = x0;
@@ -574,6 +586,7 @@ static void mdss_xlog_dump_array(struct mdss_debug_base *blk_arr[],
 	u32 len, bool dead, const char *name, bool dump_dbgbus,
 	bool dump_vbif_dbgbus)
 {
+#if !defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
 	int i;
 
 	for (i = 0; i < len; i++) {
@@ -581,9 +594,24 @@ static void mdss_xlog_dump_array(struct mdss_debug_base *blk_arr[],
 			mdss_dump_reg_by_ranges(blk_arr[i],
 				mdss_dbg_xlog.enable_reg_dump);
 	}
+#endif
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	if (mdss_samsung_dsi_te_check()) {
+		pr_err("%s : recovery need..\n", __func__);
+		return;
+	}
+#endif
 
 	mdss_xlog_dump_all();
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	mdss_samsung_dump_regs();
+	mdss_samsung_dsi_dump_regs(0);
+	mdss_samsung_dsi_dump_regs(1);
+#endif
+
+	pr_err("dbgbus:%d vbifbus:%d\n", dump_dbgbus, dump_vbif_dbgbus);
 	if (dump_dbgbus)
 		mdss_dump_debug_bus(mdss_dbg_xlog.enable_dbgbus_dump,
 			&mdss_dbg_xlog.dbgbus_dump);
@@ -602,12 +630,37 @@ static void mdss_xlog_dump_array(struct mdss_debug_base *blk_arr[],
 
 static void xlog_debug_work(struct work_struct *work)
 {
-
 	mdss_xlog_dump_array(mdss_dbg_xlog.blk_arr,
 		ARRAY_SIZE(mdss_dbg_xlog.blk_arr),
 		mdss_dbg_xlog.work_panic, "xlog_workitem",
 		mdss_dbg_xlog.work_dbgbus,
 		mdss_dbg_xlog.work_vbif_dbgbus);
+}
+
+struct mmsscc_offset {
+	u32 offset;
+	u32 size;
+};
+
+static struct mmsscc_offset ccoffset[] = {
+	{0x2000, 0x18c},
+	{0x2300, 0x4c},
+	{0x2440, 0x44},
+	{0x5000, 0xe0},
+};
+
+void mdss_debug_clock_register_dump(void)
+{
+	int i, j;
+
+	if (!mdss_res->mmss_cc_io.base)
+		return;
+	for (i = 0; i < ARRAY_SIZE(ccoffset); i++) {
+		for (j = 0; j < ccoffset[i].size ; j += 4) {
+			pr_err("mmsscc offset:0x%x value:0x%x\n", ccoffset[i].offset + j,
+				readl_relaxed(mdss_res->mmss_cc_io.base + ccoffset[i].offset + j));
+		}
+	}
 }
 
 void mdss_xlog_tout_handler_default(bool queue, const char *name, ...)
@@ -621,11 +674,31 @@ void mdss_xlog_tout_handler_default(bool queue, const char *name, ...)
 	struct mdss_debug_base **blk_arr;
 	u32 blk_len;
 
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	MDSS_XLOG(0xffff, 0xffff, 0xffff, 0xffff, 0xffff);
+
+	mutex_lock(&XLOG_DUMP_LOCK);
+
+	if (!mdss_xlog_is_enabled(MDSS_XLOG_DEFAULT)) {
+		mutex_unlock(&XLOG_DUMP_LOCK);
+		return;
+	}
+
+	mdss_dbg_xlog.xlog_enable = 0;
+
+	if (queue && work_pending(&mdss_dbg_xlog.xlog_dump_work)) {
+		mutex_unlock(&XLOG_DUMP_LOCK);
+		return;
+	}
+
+	dump_stack();
+#else
 	if (!mdss_xlog_is_enabled(MDSS_XLOG_DEFAULT))
 		return;
 
 	if (queue && work_pending(&mdss_dbg_xlog.xlog_dump_work))
 		return;
+#endif
 
 	blk_arr = &mdss_dbg_xlog.blk_arr[0];
 	blk_len = ARRAY_SIZE(mdss_dbg_xlog.blk_arr);
@@ -644,11 +717,21 @@ void mdss_xlog_tout_handler_default(bool queue, const char *name, ...)
 			index++;
 		}
 
-		if (!strcmp(blk_name, "dbg_bus"))
+		if (!strcmp(blk_name, "dbg_bus")) {
+			pr_err("debug_bus string...\n");
 			dump_dbgbus = true;
+		} else {
+			pr_err("NO debug_bus string..\n");
+		}
 
-		if (!strcmp(blk_name, "vbif_dbg_bus"))
+		if (!strcmp(blk_name, "vbif_dbg_bus")) {
+			pr_err("dump_vbif_dbgbus true..\n");
 			dump_vbif_dbgbus = true;
+		} else {
+			pr_err("dump_vbif_dbgbus false..\n");
+		}
+/* logging patch to remove unnecessary dump and add WB block register dump */
+//		mdss_debug_clock_register_dump();
 
 		if (!strcmp(blk_name, "panic"))
 			dead = true;
@@ -665,6 +748,10 @@ void mdss_xlog_tout_handler_default(bool queue, const char *name, ...)
 		mdss_xlog_dump_array(blk_arr, blk_len, dead, name, dump_dbgbus,
 			dump_vbif_dbgbus);
 	}
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	mutex_unlock(&XLOG_DUMP_LOCK);
+#endif
 }
 
 static int mdss_xlog_dump_open(struct inode *inode, struct file *file)
@@ -700,6 +787,13 @@ static ssize_t mdss_xlog_dump_write(struct file *file,
 	const char __user *user_buf, size_t count, loff_t *ppos)
 {
 	mdss_dump_reg_all();
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	mdss_samsung_dsi_te_check();
+	mdss_samsung_dump_regs();
+	mdss_samsung_dsi_dump_regs(0);
+	mdss_samsung_dsi_dump_regs(1);
+#endif
 
 	mdss_xlog_dump_all();
 
@@ -756,6 +850,11 @@ int mdss_create_xlog_debug(struct mdss_debug_data *mdd)
 	pr_info("xlog_status: enable:%d, panic:%d, dump:%d\n",
 		mdss_dbg_xlog.xlog_enable, mdss_dbg_xlog.panic_on_err,
 		mdss_dbg_xlog.enable_reg_dump);
+
+#if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
+	mdss_dbg_xlog.xlog_enable = MDSS_XLOG_DEFAULT | MDSS_XLOG_IOMMU \
+		| MDSS_XLOG_DBG | MDSS_XLOG_ALL;
+#endif
 
 	return 0;
 }

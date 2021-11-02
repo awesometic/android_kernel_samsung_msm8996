@@ -118,6 +118,75 @@ struct fsg_config {
 	unsigned int		fsg_num_buffers;
 };
 
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+/* Data shared by all the FSG instances. */
+struct fsg_common {
+	struct usb_gadget	*gadget;
+	struct usb_composite_dev *cdev;
+	struct fsg_dev		*fsg, *new_fsg;
+	wait_queue_head_t	fsg_wait;
+
+	/* filesem protects: backing files in use */
+	struct rw_semaphore	filesem;
+
+	/* lock protects: state, all the req_busy's */
+	spinlock_t		lock;
+
+	struct usb_ep		*ep0;		/* Copy of gadget->ep0 */
+	struct usb_request	*ep0req;	/* Copy of cdev->req */
+	unsigned int		ep0_req_tag;
+
+	struct fsg_buffhd	*next_buffhd_to_fill;
+	struct fsg_buffhd	*next_buffhd_to_drain;
+	struct fsg_buffhd	*buffhds;
+	unsigned int		fsg_num_buffers;
+	int			cmnd_size;
+	u8			cmnd[MAX_COMMAND_SIZE];
+
+	unsigned int		nluns;
+	unsigned int		lun;
+	struct fsg_lun		**luns;
+	struct fsg_lun		*curlun;
+
+	unsigned int		bulk_out_maxpacket;
+	enum fsg_state		state;		/* For exception handling */
+	unsigned int		exception_req_tag;
+
+	enum data_direction	data_dir;
+	u32			data_size;
+	u32			data_size_from_cmnd;
+	u32			tag;
+	u32			residue;
+	u32			usb_amount_left;
+
+	unsigned int		can_stall:1;
+	unsigned int		free_storage_on_release:1;
+	unsigned int		phase_error:1;
+	unsigned int		short_packet_received:1;
+	unsigned int		bad_lun_okay:1;
+	unsigned int		running:1;
+	unsigned int		sysfs:1;
+
+	int			thread_wakeup_needed;
+	struct completion	thread_notifier;
+	struct task_struct	*thread_task;
+
+	/* Callback functions. */
+	const struct fsg_operations	*ops;
+	/* Gadget's private data. */
+	void			*private_data;
+	char vendor_string[8 + 1];
+	char product_string[16 + 1];
+	/* Additional image version info for SUA */
+	char version_string[100 + 1];
+	char inquiry_string[INQUIRY_MAX_LEN];
+	/* LUN name for sysfs purpose */
+	char name[FSG_MAX_LUNS][LUN_NAME_LEN];
+	struct kref		ref;
+	struct timer_list	vfs_timer;
+};
+#endif
+
 static inline struct fsg_opts *
 fsg_opts_from_func_inst(const struct usb_function_instance *fi)
 {

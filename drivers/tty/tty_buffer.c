@@ -362,6 +362,7 @@ EXPORT_SYMBOL(tty_insert_flip_string_flags);
 void tty_schedule_flip(struct tty_port *port)
 {
 	struct tty_bufhead *buf = &port->buf;
+	WARN_ON(port->low_latency);
 
 	buf->tail->commit = buf->tail->used;
 	schedule_work(&buf->work);
@@ -492,7 +493,8 @@ static void flush_to_ldisc(struct work_struct *work)
  */
 void tty_flush_to_ldisc(struct tty_struct *tty)
 {
-	flush_work(&tty->port->buf.work);
+	if (!tty->port->low_latency)
+		flush_work(&tty->port->buf.work);
 }
 
 /**
@@ -508,7 +510,16 @@ void tty_flush_to_ldisc(struct tty_struct *tty)
 
 void tty_flip_buffer_push(struct tty_port *port)
 {
-	tty_schedule_flip(port);
+    if (!port->low_latency)
+        tty_schedule_flip(port);
+    else {    
+    	struct tty_bufhead *buf = &port->buf;
+
+    	if (buf->tail != NULL)
+    		buf->tail->commit = buf->tail->used;
+
+		flush_to_ldisc(&buf->work);
+    }
 }
 EXPORT_SYMBOL(tty_flip_buffer_push);
 

@@ -304,10 +304,6 @@
 		mdss_fb2: qcom,mdss_fb_hdmi {
 			cell-index = <2>;
 			compatible = "qcom,mdss-fb";
-			qcom,cont-splash-memory {
-				linux,contiguous-region =
-				<&cont_splash_mem_hdmi>;
-			};
 		};
 
 		mdss_fb3: qcom,mdss_fb_secondary {
@@ -410,8 +406,8 @@
 			qcom,timing-db-mode;
 			oled-vdda-supply = <&pm8994_l19>;
 			vddio-supply = <&pm8994_l14>;
-			lab-supply = <&lab_regulator>;
-			ibb-supply = <&ibb_regulator>;
+			/* lab-supply = <&lab_regulator>; */
+			/* ibb-supply = <&ibb_regulator>; */
 			qcom,mdss-mdp = <&mdss_mdp>;
 
 			clocks = <&clock_mmss clk_mdss_byte0_clk>,
@@ -457,12 +453,11 @@
 				<0x996400 0x558>,
 				<0x828000 0x108>;
 			reg-names = "dsi_ctrl", "dsi_phy", "mmss_misc_phys";
-
 			qcom,timing-db-mode;
 			oled-vdda-supply = <&pm8994_l19>;
 			vddio-supply = <&pm8994_l14>;
-			lab-supply = <&lab_regulator>;
-			ibb-supply = <&ibb_regulator>;
+			/* lab-supply = <&lab_regulator>; */
+			/* ibb-supply = <&ibb_regulator>; */
 			qcom,mdss-mdp = <&mdss_mdp>;
 
 			clocks = <&clock_mmss clk_mdss_byte1_clk>,

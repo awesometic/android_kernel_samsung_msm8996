@@ -14,12 +14,15 @@
 
 #include <linux/time.h>
 #include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/iopoll.h>
 #include <linux/platform_device.h>
 #include <linux/msm-bus.h>
 #include <soc/qcom/scm.h>
 #include <linux/phy/phy.h>
 #include <linux/phy/phy-qcom-ufs.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 
 #include "ufshcd.h"
 #include "unipro.h"
@@ -375,6 +378,7 @@ static int ufs_qcom_hce_enable_notify(struct ufs_hba *hba,
 		/* check if UFS PHY moved from DISABLED to HIBERN8 */
 		err = ufs_qcom_check_hibern8(hba);
 		ufs_qcom_enable_hw_clk_gating(hba);
+
 		break;
 	default:
 		dev_err(hba->dev, "%s: invalid status %d\n", __func__, status);
@@ -656,10 +660,68 @@ out:
 	return err;
 }
 
+static void ufs_qcom_dev_hw_reset(struct ufs_hba *hba)
+{
+	struct device *dev = hba->dev;
+	struct pinctrl *ufs_hw_reset_pinctrl;
+	struct pinctrl_state *ufs_power_on;
+	struct pinctrl_state *ufs_power_off;
+	int ret = 0;
+
+	if (!gpio_is_valid(hba->hw_reset_gpio))
+		return;
+
+	ufs_hw_reset_pinctrl = devm_pinctrl_get(dev);
+	if (IS_ERR(ufs_hw_reset_pinctrl)) {
+		pr_err("%s: pinctrl_get is failed.\n", __func__);
+	} else {
+		ufs_power_on = pinctrl_lookup_state(ufs_hw_reset_pinctrl, "ufs_poweron");
+		if (IS_ERR(ufs_power_on)) {
+			pr_err("%s: fail to ufs_poweron lookup_state.\n", __func__);
+			return;
+		}
+
+		ufs_power_off = pinctrl_lookup_state(ufs_hw_reset_pinctrl, "ufs_poweroff");
+		if (IS_ERR(ufs_power_off)) {
+			pr_err("%s: fail to ufs_poweroff lookup_state.\n", __func__);
+			return;
+		}
+
+		ret = pinctrl_select_state(ufs_hw_reset_pinctrl, ufs_power_off);
+		if (ret)
+			pr_err("%s: fail to select_state ufs power off.\n", __func__);
+		else
+			pr_err("UFS %s done.\n", "off");
+
+		udelay(5);
+
+		ret = pinctrl_select_state(ufs_hw_reset_pinctrl, ufs_power_on);
+		if (ret)
+			pr_err("%s: fail to select_state ufs power on.\n", __func__);
+		else
+			pr_err("UFS %s done.\n", "on");
+
+		devm_pinctrl_put(ufs_hw_reset_pinctrl);
+	}
+}
+
 static int ufs_qcom_full_reset(struct ufs_hba *hba)
 {
+	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
 	struct ufs_clk_info *clki;
 	int ret = -ENOTSUPP;
+
+	host->hw_reset_count++;
+	host->last_hw_reset = (unsigned long)ktime_to_us(ktime_get());
+	host->hw_reset_saved_err = hba->saved_err;
+	host->hw_reset_saved_uic_err = hba->saved_uic_err;
+	host->hw_reset_outstanding_tasks = hba->outstanding_tasks;
+	host->hw_reset_outstanding_reqs = hba->outstanding_reqs;
+	memcpy(&host->hw_reset_ufs_stats, &hba->ufs_stats, sizeof(struct ufs_stats));
+
+	msleep(2000);
+
+	ufs_qcom_dev_hw_reset(hba);
 
 	list_for_each_entry(clki, &hba->clk_list_head, list) {
 		if (!strcmp(clki->name, "core_clk")) {
@@ -674,30 +736,6 @@ static int ufs_qcom_full_reset(struct ufs_hba *hba)
 		}
 	}
 out:
-	return ret;
-}
-
-static int ufs_qcom_crypto_req_setup(struct ufs_hba *hba,
-	struct ufshcd_lrb *lrbp, u8 *cc_index, bool *enable, u64 *dun)
-{
-	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
-	struct request *req;
-	int ret;
-
-	if (lrbp->cmd && lrbp->cmd->request)
-		req = lrbp->cmd->request;
-	else
-		return 0;
-
-	/* Use request LBA as the DUN value */
-	if (req->bio)
-		*dun = req->bio->bi_iter.bi_sector;
-
-	ret = ufs_qcom_ice_req_setup(host, lrbp->cmd, cc_index, enable);
-	if (ret)
-		dev_err(hba->dev, "%s: ufs_qcom_ice_req_setup failed (%d)\n",
-			__func__, ret);
-
 	return ret;
 }
 
@@ -746,14 +784,53 @@ out:
 	return err;
 }
 
-static int ufs_qcom_crypto_engine_get_status(struct ufs_hba *hba, u32 *status)
+static int ufs_qcom_crypto_engine_eh(struct ufs_hba *hba)
+{
+	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
+	int ice_status = 0;
+	int err = 0;
+
+	host->ice.crypto_engine_err = 0;
+
+	if (host->ice.quirks &
+	    UFS_QCOM_ICE_QUIRK_HANDLE_CRYPTO_ENGINE_ERRORS) {
+		err = ufs_qcom_ice_get_status(host, &ice_status);
+		if (!err)
+			host->ice.crypto_engine_err = ice_status;
+
+		if (host->ice.crypto_engine_err) {
+			dev_err(hba->dev, "%s handling crypto engine error\n",
+					__func__);
+			/*
+			 * block commands from scsi mid-layer.
+			 * As crypto error is a fatal error and will result in
+			 * a host reset we should leave scsi mid layer blocked
+			 * until host reset is completed.
+			 * Host reset will be handled in a seperate workqueue
+			 * and will be triggered from ufshcd_check_errors.
+			 */
+			ufshcd_scsi_block_requests(hba);
+
+			ufshcd_abort_outstanding_transfer_requests(hba,
+					DID_TARGET_FAILURE);
+		}
+	}
+
+	return host->ice.crypto_engine_err;
+}
+
+static int ufs_qcom_crypto_engine_get_err(struct ufs_hba *hba)
 {
 	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
 
-	if (!status)
-		return -EINVAL;
+	return host->ice.crypto_engine_err;
+}
 
-	return ufs_qcom_ice_get_status(host, status);
+static void ufs_qcom_crypto_engine_reset_err(struct ufs_hba *hba)
+{
+	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
+
+	host->ice.crypto_engine_err = 0;
 }
 
 struct ufs_qcom_dev_params {
@@ -1780,6 +1857,9 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct ufs_qcom_host *host;
 	struct resource *res;
+	struct pinctrl *ufs_hw_reset_pinctrl;
+	struct pinctrl_state *ufs_power_on;
+	int ret = 0;
 
 	if (strlen(android_boot_dev) && strcmp(android_boot_dev, dev_name(dev)))
 		return -ENODEV;
@@ -1912,6 +1992,28 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 		dev_warn(dev, "%s: failed to configure the testbus %d\n",
 				__func__, err);
 		err = 0;
+	}
+
+	if (!gpio_is_valid(hba->hw_reset_gpio))
+		goto out;
+
+	ufs_hw_reset_pinctrl = devm_pinctrl_get(dev);
+	if (IS_ERR(ufs_hw_reset_pinctrl)) {
+		pr_err("%s: pinctrl_get is failed.\n", __func__);
+	} else {
+		ufs_power_on = pinctrl_lookup_state(ufs_hw_reset_pinctrl, "ufs_poweron");
+		if (IS_ERR(ufs_power_on)) {
+			pr_err("%s: fail to ufs_poweron lookup_state.\n", __func__);
+			goto out;
+		}
+
+		ret = pinctrl_select_state(ufs_hw_reset_pinctrl, ufs_power_on);
+		if (ret)
+			pr_err("%s: fail to select_state ufs power on.\n", __func__);
+		else
+			pr_err("UFS set %s done.\n", "on");
+
+		devm_pinctrl_put(ufs_hw_reset_pinctrl);
 	}
 
 	goto out;
@@ -2221,7 +2323,7 @@ bool ufs_qcom_testbus_cfg_is_ok(struct ufs_qcom_host *host,
 int ufs_qcom_testbus_config(struct ufs_qcom_host *host)
 {
 	int reg = 0;
-	int offset, ret = 0, testbus_sel_offset = 19;
+	int offset = 0, ret = 0, testbus_sel_offset = 19;
 	u32 mask = TEST_BUS_SUB_SEL_MASK;
 	unsigned long flags;
 	struct ufs_hba *hba;
@@ -2347,17 +2449,19 @@ static struct ufs_hba_variant_ops ufs_hba_qcom_vops = {
 	.full_reset		= ufs_qcom_full_reset,
 	.update_sec_cfg		= ufs_qcom_update_sec_cfg,
 	.dbg_register_dump	= ufs_qcom_dump_dbg_regs,
+	.dev_hw_reset           = ufs_qcom_dev_hw_reset,
 #ifdef CONFIG_DEBUG_FS
 	.add_debugfs		= ufs_qcom_dbg_add_debugfs,
 #endif
 };
 
 static struct ufs_hba_crypto_variant_ops ufs_hba_crypto_variant_ops = {
-	.crypto_req_setup	= ufs_qcom_crypto_req_setup,
 	.crypto_engine_cfg_start	= ufs_qcom_crytpo_engine_cfg_start,
 	.crypto_engine_cfg_end	= ufs_qcom_crytpo_engine_cfg_end,
-	.crypto_engine_reset	  = ufs_qcom_crytpo_engine_reset,
-	.crypto_engine_get_status = ufs_qcom_crypto_engine_get_status,
+	.crypto_engine_reset	= ufs_qcom_crytpo_engine_reset,
+	.crypto_engine_eh	= ufs_qcom_crypto_engine_eh,
+	.crypto_engine_get_err	= ufs_qcom_crypto_engine_get_err,
+	.crypto_engine_reset_err = ufs_qcom_crypto_engine_reset_err,
 };
 
 static struct ufs_hba_pm_qos_variant_ops ufs_hba_pm_qos_variant_ops = {

@@ -1446,7 +1446,6 @@ void bam_data_disconnect(struct data_port *gr, enum function_type func,
 				d->rx_req = NULL;
 			}
 
-
 			/* Only for SYS2BAM mode related UL workaround */
 			if (d->src_pipe_type == USB_BAM_PIPE_SYS2BAM) {
 

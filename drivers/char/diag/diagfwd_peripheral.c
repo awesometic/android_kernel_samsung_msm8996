@@ -339,19 +339,22 @@ static void diagfwd_cntl_read_done(struct diagfwd_info *fwd_info,
 				   unsigned char *buf, int len)
 {
 	if (!fwd_info) {
+		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"invalid fwd info\n");
 		diag_ws_release();
 		return;
 	}
 
 	if (fwd_info->type != TYPE_CNTL) {
-		pr_err("diag: In %s, invalid type %d for peripheral %d\n",
+		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"diag: In %s, invalid type %d for peripheral %d\n",
 		       __func__, fwd_info->type, fwd_info->peripheral);
 		diag_ws_release();
 		return;
 	}
 
 	diag_ws_on_read(DIAG_WS_MUX, len);
+	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"calling diag_cntl_process_read_data for  len %d\n",len);
 	diag_cntl_process_read_data(fwd_info, buf, len);
+	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"returned from diag_cntl_process_read_data for len %d\n",len);
 	/*
 	 * Control packets are not consumed by the clients. Mimic
 	 * consumption by setting and clearing the wakeup source copy_count
@@ -359,9 +362,11 @@ static void diagfwd_cntl_read_done(struct diagfwd_info *fwd_info,
 	 */
 	diag_ws_on_copy_fail(DIAG_WS_MUX);
 	/* Reset the buffer in_busy value after processing the data */
-	if (fwd_info->buf_1)
+	if (fwd_info->buf_1){
+		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"resetting in busy\n");
 		atomic_set(&fwd_info->buf_1->in_busy, 0);
-
+	}
+	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"forward queue reads\n");
 	diagfwd_queue_read(fwd_info);
 	diagfwd_queue_read(&peripheral_info[TYPE_DATA][fwd_info->peripheral]);
 	diagfwd_queue_read(&peripheral_info[TYPE_CMD][fwd_info->peripheral]);
@@ -631,7 +636,7 @@ void diagfwd_close_transport(uint8_t transport, uint8_t peripheral)
 
 	if (peripheral >= NUM_PERIPHERALS)
 		return;
-
+	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"closing transport for trasnport type %d peripheral %d\n",transport,peripheral);
 	switch (transport) {
 	case TRANSPORT_SMD:
 		transport_open = TRANSPORT_SOCKET;
@@ -654,6 +659,7 @@ void diagfwd_close_transport(uint8_t transport, uint8_t peripheral)
 	if (fwd_info->p_ops && fwd_info->p_ops->close)
 		fwd_info->p_ops->close(fwd_info->ctxt);
 	fwd_info = &early_init_info[transport_open][peripheral];
+	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"closed transport for trasnport type %d peripheral %d\n",transport_open,peripheral);
 	dest_info = &peripheral_info[TYPE_CNTL][peripheral];
 	dest_info->inited = 1;
 	dest_info->ctxt = fwd_info->ctxt;
@@ -669,6 +675,7 @@ void diagfwd_close_transport(uint8_t transport, uint8_t peripheral)
 	invalidate_fn(dest_info->ctxt, dest_info);
 	if (!check_channel_state(dest_info->ctxt))
 		diagfwd_late_open(dest_info);
+	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"calling invalidate for dest_info%p and dest_info context%p\n",dest_info,dest_info->ctxt);
 	diagfwd_cntl_open(dest_info);
 	init_fn(peripheral);
 	mutex_unlock(&driver->diagfwd_channel_mutex[peripheral]);
@@ -725,7 +732,7 @@ static void __diag_fwd_open(struct diagfwd_info *fwd_info)
 {
 	if (!fwd_info)
 		return;
-
+	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"opening channel for peripheral %d type %d transport %d\n",fwd_info->peripheral,fwd_info->type,fwd_info->transport);
 	atomic_set(&fwd_info->opened, 1);
 	if (!fwd_info->inited)
 		return;
@@ -737,9 +744,11 @@ static void __diag_fwd_open(struct diagfwd_info *fwd_info)
 			atomic_set(&fwd_info->buf_2->in_busy, 0);
 	}
 
-	if (fwd_info->p_ops && fwd_info->p_ops->open)
+	if (fwd_info->p_ops && fwd_info->p_ops->open) {
+		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"calling openon transport type for peripheral %d type %d transport %d\n",fwd_info->peripheral,fwd_info->type,fwd_info->transport);
 		fwd_info->p_ops->open(fwd_info->ctxt);
-
+	}
+DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"queuing read for peripheral %d type %d transport %d\n",fwd_info->peripheral,fwd_info->type,fwd_info->transport);
 	diagfwd_queue_read(fwd_info);
 }
 
@@ -855,6 +864,7 @@ int diagfwd_channel_read_done(struct diagfwd_info *fwd_info,
 			      unsigned char *buf, uint32_t len)
 {
 	if (!fwd_info) {
+		DIAG_LOG(DIAG_DEBUG_PERIPHERALS, "fwd info is NULL\n");
 		diag_ws_release();
 		return -EIO;
 	}
@@ -865,13 +875,17 @@ int diagfwd_channel_read_done(struct diagfwd_info *fwd_info,
 	 * in_busy flags. No need to queue read in this case.
 	 */
 	if (len == 0) {
+		DIAG_LOG(DIAG_DEBUG_PERIPHERALS, "received read done for zero length packet\n");
 		diagfwd_reset_buffers(fwd_info, buf);
 		diag_ws_release();
 		return 0;
 	}
 
-	if (fwd_info && fwd_info->c_ops && fwd_info->c_ops->read_done)
+	if (fwd_info && fwd_info->c_ops && fwd_info->c_ops->read_done){
+		DIAG_LOG(DIAG_DEBUG_PERIPHERALS, "called read done on fwdinfo%p peripheral %d type %d transport %d\n",
+				 fwd_info,fwd_info->peripheral,fwd_info->type,fwd_info->transport);
 		fwd_info->c_ops->read_done(fwd_info, buf, len);
+	}
 	fwd_info->read_bytes += len;
 
 	return 0;
@@ -908,7 +922,7 @@ void diagfwd_channel_read(struct diagfwd_info *fwd_info)
 	}
 
 	if (!fwd_info->inited || !atomic_read(&fwd_info->opened)) {
-		pr_debug("diag: In %s, p: %d, t: %d, inited: %d, opened: %d  ch_open: %d\n",
+		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"diag: In %s, p: %d, t: %d, inited: %d, opened: %d  ch_open: %d\n",
 			 __func__, fwd_info->peripheral, fwd_info->type,
 			 fwd_info->inited, atomic_read(&fwd_info->opened),
 			 fwd_info->ch_open);
@@ -945,11 +959,12 @@ void diagfwd_channel_read(struct diagfwd_info *fwd_info)
 			atomic_set(&temp_buf->in_busy, 1);
 		}
 	} else {
-		pr_debug("diag: In %s, both buffers are empty for p: %d, t: %d\n",
+		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"diag: In %s, both buffers are busy for p: %d, t: %d\n",
 			 __func__, fwd_info->peripheral, fwd_info->type);
 	}
 
 	if (!read_buf) {
+		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"no buffers available to queue read\n");
 		diag_ws_release();
 		return;
 	}
@@ -966,6 +981,7 @@ void diagfwd_channel_read(struct diagfwd_info *fwd_info)
 	return;
 
 fail_return:
+	DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"failed calling read\n");
 	diag_ws_release();
 	atomic_set(&temp_buf->in_busy, 0);
 	return;
@@ -977,7 +993,7 @@ static void diagfwd_queue_read(struct diagfwd_info *fwd_info)
 		return;
 
 	if (!fwd_info->inited || !atomic_read(&fwd_info->opened)) {
-		pr_debug("diag: In %s, p: %d, t: %d, inited: %d, opened: %d  ch_open: %d\n",
+		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"diag: In %s, p: %d, t: %d, inited: %d, opened: %d  ch_open: %d\n",
 			 __func__, fwd_info->peripheral, fwd_info->type,
 			 fwd_info->inited, atomic_read(&fwd_info->opened),
 			 fwd_info->ch_open);
@@ -994,8 +1010,10 @@ static void diagfwd_queue_read(struct diagfwd_info *fwd_info)
 		return;
 	}
 
-	if (fwd_info->p_ops && fwd_info->p_ops->queue_read && fwd_info->ctxt)
+	if (fwd_info->p_ops && fwd_info->p_ops->queue_read && fwd_info->ctxt){
+		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,"queuing read in fwd queue read\n");
 		fwd_info->p_ops->queue_read(fwd_info->ctxt);
+	}
 }
 
 void diagfwd_buffers_init(struct diagfwd_info *fwd_info)

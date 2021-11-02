@@ -647,6 +647,8 @@ struct ipa_repl_ctx {
  * IPA context specific to the system-bam pipes a.k.a LAN IN/OUT and WAN
  */
 struct ipa_sys_context {
+	char *debug_stage;
+	int debug_inactivity_cycles;
 	u32 len;
 	struct sps_register_event event;
 	atomic_t curr_polling_state;

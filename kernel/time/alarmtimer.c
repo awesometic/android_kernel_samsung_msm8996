@@ -56,6 +56,82 @@ static struct wakeup_source *ws;
 static struct rtc_timer		rtctimer;
 static struct rtc_device	*rtcdev;
 static DEFINE_SPINLOCK(rtcdev_lock);
+//		Code removed in Qcom delivery MSM8996.LA.2.0.3-00015-STD.PROD-1
+//
+//static struct mutex power_on_alarm_lock;
+//
+///**
+// * set_power_on_alarm - set power on alarm value into rtc register
+// *
+// * Get the soonest power off alarm timer and set the alarm value into rtc
+// * register.
+// */
+//#ifdef CONFIG_RTC_AUTO_PWRON
+//inline void set_power_on_alarm(void) { }
+//#else
+//void set_power_on_alarm(void)
+//{
+//	int rc;
+//	struct timespec wall_time, alarm_ts;
+//	long alarm_secs = 0l;
+//	long rtc_secs, alarm_time, alarm_delta;
+//	struct rtc_time rtc_time;
+//	struct rtc_wkalrm alarm;
+//	struct rtc_device *rtc;
+//	struct timerqueue_node *next;
+//	unsigned long flags;
+//	struct alarm_base *base = &alarm_bases[ALARM_POWEROFF_REALTIME];
+//
+//	rc = mutex_lock_interruptible(&power_on_alarm_lock);
+//	if (rc != 0)
+//		return;
+//
+//	spin_lock_irqsave(&base->lock, flags);
+//	next = timerqueue_getnext(&base->timerqueue);
+//	spin_unlock_irqrestore(&base->lock, flags);
+//
+//	rtc = alarmtimer_get_rtcdev();
+//	if (!rtc)
+//		goto exit;
+//
+//	if (next) {
+//		alarm_ts = ktime_to_timespec(next->expires);
+//		alarm_secs = alarm_ts.tv_sec;
+//	}
+//
+//	if (!alarm_secs)
+//		goto disable_alarm;
+//
+//	getnstimeofday(&wall_time);
+//
+//	/*
+//	 * alarm_secs have to be bigger than "wall_time +1".
+//	 * It is to make sure that alarm time will be always
+//	 * bigger than wall time.
+//	*/
+//	if (alarm_secs <= wall_time.tv_sec + 1)
+//		goto disable_alarm;
+//
+//	rtc_read_time(rtc, &rtc_time);
+//	rtc_tm_to_time(&rtc_time, &rtc_secs);
+//	alarm_delta = wall_time.tv_sec - rtc_secs;
+//	alarm_time = alarm_secs - alarm_delta;
+//
+//	rtc_time_to_tm(alarm_time, &alarm.time);
+//	alarm.enabled = 1;
+//	rc = rtc_set_alarm(rtc, &alarm);
+//	if (rc)
+//		goto disable_alarm;
+//
+//	mutex_unlock(&power_on_alarm_lock);
+//	return;
+//
+//disable_alarm:
+//	rtc_timer_cancel(rtc, &rtc->aie_timer);
+//exit:
+//	mutex_unlock(&power_on_alarm_lock);
+//}
+//#endif
 
 static void alarmtimer_triggered_func(void *p)
 {
@@ -115,6 +191,109 @@ rtc_irq_reg_err:
 	return err;
 
 }
+
+#ifdef CONFIG_RTC_AUTO_PWRON
+extern int rtc_set_bootalarm(struct rtc_device *rtc, struct rtc_wkalrm *alarm);
+/* 0|1234|56|78|90|12 */
+/* 1|2010|01|01|00|00 */
+//en yyyy mm dd hh mm
+#define BOOTALM_BIT_EN       0
+#define BOOTALM_BIT_YEAR     1
+#define BOOTALM_BIT_MONTH    5
+#define BOOTALM_BIT_DAY      7
+#define BOOTALM_BIT_HOUR     9
+#define BOOTALM_BIT_MIN     11
+#define BOOTALM_BIT_TOTAL   13
+
+int alarm_set_alarm(char* alarm_data)
+{
+	struct rtc_wkalrm alm;
+	int ret;
+	char buf_ptr[BOOTALM_BIT_TOTAL+1] = {0,};
+	struct rtc_time     rtc_tm;
+	unsigned long       rtc_sec;
+	unsigned long       rtc_alarm_time;
+	struct timespec     rtc_delta;
+	struct timespec     wall_time;
+	ktime_t             wall_ktm;
+	struct rtc_time     wall_tm;
+
+	if (!rtcdev) {
+		printk(
+			"alarm_set_alarm: no RTC, time will be lost on reboot\n");
+		return -1;
+	}
+
+	strlcpy(buf_ptr, alarm_data, BOOTALM_BIT_TOTAL+1);
+
+	alm.time.tm_sec = 0;
+	alm.time.tm_min  =  (buf_ptr[BOOTALM_BIT_MIN]    -'0') * 10
+	                  + (buf_ptr[BOOTALM_BIT_MIN+1]  -'0');
+	alm.time.tm_hour =  (buf_ptr[BOOTALM_BIT_HOUR]   -'0') * 10
+	                  + (buf_ptr[BOOTALM_BIT_HOUR+1] -'0');
+	alm.time.tm_mday =  (buf_ptr[BOOTALM_BIT_DAY]    -'0') * 10
+	                  + (buf_ptr[BOOTALM_BIT_DAY+1]  -'0');
+	alm.time.tm_mon  =  (buf_ptr[BOOTALM_BIT_MONTH]  -'0') * 10
+	                  + (buf_ptr[BOOTALM_BIT_MONTH+1]-'0');
+	alm.time.tm_year =  (buf_ptr[BOOTALM_BIT_YEAR]   -'0') * 1000
+	                  + (buf_ptr[BOOTALM_BIT_YEAR+1] -'0') * 100
+	                  + (buf_ptr[BOOTALM_BIT_YEAR+2] -'0') * 10
+	                  + (buf_ptr[BOOTALM_BIT_YEAR+3] -'0');
+
+	alm.enabled = (*buf_ptr == '1');
+
+	pr_info("[SAPA] %s : %s => tm(%d %04d-%02d-%02d %02d:%02d:%02d)\n",
+			__func__, buf_ptr, alm.enabled,
+			alm.time.tm_year, alm.time.tm_mon, alm.time.tm_mday,
+			alm.time.tm_hour, alm.time.tm_min, alm.time.tm_sec);
+
+	if ( alm.enabled ) {
+		/* If time daemon is exist */
+
+		alm.time.tm_mon -= 1;
+		alm.time.tm_year -= 1900;
+
+		/* read current time */
+		rtc_read_time(rtcdev, &rtc_tm);
+		rtc_tm_to_time(&rtc_tm, &rtc_sec);
+		pr_info("[SAPA] rtc  %4d-%02d-%02d %02d:%02d:%02d -> %lu\n",
+			rtc_tm.tm_year, rtc_tm.tm_mon, rtc_tm.tm_mday,
+			rtc_tm.tm_hour, rtc_tm.tm_min, rtc_tm.tm_sec, rtc_sec);
+
+		/* read kernel time */
+		getnstimeofday(&wall_time);
+		wall_ktm = timespec_to_ktime(wall_time);
+		wall_tm = rtc_ktime_to_tm(wall_ktm);
+		pr_info("[SAPA] wall %4d-%02d-%02d %02d:%02d:%02d -> %lu\n",
+			wall_tm.tm_year, wall_tm.tm_mon, wall_tm.tm_mday,
+			wall_tm.tm_hour, wall_tm.tm_min, wall_tm.tm_sec, wall_time.tv_sec);
+
+		/* calculate offset */
+		set_normalized_timespec(&rtc_delta,
+					wall_time.tv_sec - rtc_sec,
+					wall_time.tv_nsec);
+
+		/* convert user requested SAPA time to second type */
+		rtc_tm_to_time(&alm.time, &rtc_alarm_time);
+
+		/* convert to RTC time with user requested SAPA time and offset */
+		rtc_alarm_time -= rtc_delta.tv_sec;
+		rtc_time_to_tm(rtc_alarm_time, &alm.time);
+		pr_info("[SAPA] arlm %4d-%02d-%02d %02d:%02d:%02d -> %lu\n",
+			alm.time.tm_year, alm.time.tm_mon, alm.time.tm_mday,
+			alm.time.tm_hour, alm.time.tm_min, alm.time.tm_sec, rtc_alarm_time);
+
+	}
+	ret = rtc_set_bootalarm(rtcdev, &alm);
+	if (ret < 0) {
+		printk( "alarm_set_alarm: "
+			"Failed to set ALARM, time will be lost on reboot\n");
+		return -2;
+	}
+	return 0;
+}
+extern int alarm_set_alarm(char* alarm_data);
+#endif /*CONFIG_RTC_AUTO_PWRON*/
 
 static void alarmtimer_rtc_remove_device(struct device *dev,
 				struct class_interface *class_intf)
@@ -326,8 +505,14 @@ static int alarmtimer_suspend(struct device *dev)
 
 	rtc = alarmtimer_get_rtcdev();
 	/* If we have no rtcdev, just return */
-	if (!rtc)
+	if (!rtc) {
+		pr_info("@@@@@@%s: fail\n", __func__);
 		return 0;
+	}
+	else {
+		pr_info("@@@@@@%s: success\n", __func__);
+	}
+
 
 	/* Find the soonest timer to expire*/
 	for (i = 0; i < ALARM_NUMTYPE; i++) {
@@ -562,7 +747,7 @@ EXPORT_SYMBOL_GPL(alarm_forward_now);
  * clock2alarm - helper that converts from clockid to alarmtypes
  * @clockid: clockid.
  */
-static enum alarmtimer_type clock2alarm(clockid_t clockid)
+enum alarmtimer_type clock2alarm(clockid_t clockid)
 {
 	if (clockid == CLOCK_REALTIME_ALARM)
 		return ALARM_REALTIME;

@@ -469,7 +469,7 @@ struct i2c_msm_resources {
 
 #define I2C_MSM_PINCTRL_ACTIVE       "i2c_active"
 #define I2C_MSM_PINCTRL_SUSPEND      "i2c_sleep"
-
+#define I2C_MSM_PINCTRL_POWER_OFF    "i2c_pwr_off"
 /*
  * i2c_msm_xfer_buf: current xfer position and preprocessed tags
  *

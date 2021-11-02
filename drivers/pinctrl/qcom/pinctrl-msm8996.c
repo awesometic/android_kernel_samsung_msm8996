@@ -988,7 +988,7 @@ static const char * const pwr_nav_groups[] = {
 	"gpio32",
 };
 static const char * const dac_calib18_groups[] = {
-	"gpio32", "gpio59",
+//	"gpio32", "gpio59",	/* temp disable for muic bringup */
 };
 static const char * const hdmi_ddc_groups[] = {
 	"gpio32", "gpio33",
@@ -997,7 +997,7 @@ static const char * const pwr_crypto_groups[] = {
 	"gpio33",
 };
 static const char * const dac_calib19_groups[] = {
-	"gpio33", "gpio60",
+//	"gpio33", "gpio60",	/* temp disable for muic bringup */
 };
 static const char * const dac_calib20_groups[] = {
 	"gpio34", "gpio61",

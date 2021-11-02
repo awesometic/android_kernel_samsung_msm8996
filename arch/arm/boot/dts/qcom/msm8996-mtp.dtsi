@@ -11,7 +11,6 @@
  */
 
 #include "msm8996-pinctrl.dtsi"
-#include "msm8996-camera-sensor-mtp.dtsi"
 #include "msm8996-wsa881x.dtsi"
 
 / {
@@ -46,12 +45,14 @@
 
 &uartblsp2dm1 {
 	status = "ok";
-	pinctrl-names = "default";
+	pinctrl-names = "default", "sleep";
 	pinctrl-0 = <&uart_console_active>;
+	pinctrl-1 = <&uart_console_sleep>;
 };
 
 &sdhc_1 {
 	vdd-supply = <&pm8994_l20>;
+	qcom,vdd-always-on;
 	qcom,vdd-voltage-level = <2950000 2950000>;
 	qcom,vdd-current-level = <200 570000>;
 
@@ -274,65 +275,12 @@
 	};
 };
 
-&mdss_hdmi_tx {
-	pinctrl-names = "hdmi_hpd_active", "hdmi_ddc_active", "hdmi_cec_active",
-				"hdmi_active", "hdmi_sleep";
-	pinctrl-0 = <&mdss_hdmi_hpd_active &mdss_hdmi_ddc_suspend
-						&mdss_hdmi_cec_suspend>;
-	pinctrl-1 = <&mdss_hdmi_hpd_active &mdss_hdmi_ddc_active
-						&mdss_hdmi_cec_suspend>;
-	pinctrl-2 = <&mdss_hdmi_hpd_active &mdss_hdmi_cec_active
-						&mdss_hdmi_ddc_suspend>;
-	pinctrl-3 = <&mdss_hdmi_hpd_active &mdss_hdmi_ddc_active
-						&mdss_hdmi_cec_active>;
-	pinctrl-4 = <&mdss_hdmi_hpd_suspend &mdss_hdmi_ddc_suspend
-						&mdss_hdmi_cec_suspend>;
+&mdss_hdmi_pll {
+	status = "disabled";
 };
 
-&pmi8994_vadc {
-	chan@0 {
-		label = "usbin";
-		reg = <0>;
-		qcom,decimation = <0>;
-		qcom,pre-div-channel-scaling = <4>;
-		qcom,calibration-type = "absolute";
-		qcom,scale-function = <0>;
-		qcom,hw-settle-time = <0>;
-		qcom,fast-avg-setup = <0>;
-	};
-
-	chan@1 {
-		label = "dcin";
-		reg = <1>;
-		qcom,decimation = <0>;
-		qcom,pre-div-channel-scaling = <4>;
-		qcom,calibration-type = "absolute";
-		qcom,scale-function = <0>;
-		qcom,hw-settle-time = <0>;
-		qcom,fast-avg-setup = <0>;
-	};
-
-	chan@43 {
-		label = "usb_dp";
-		reg = <0x43>;
-		qcom,decimation = <0>;
-		qcom,pre-div-channel-scaling = <1>;
-		qcom,calibration-type = "absolute";
-		qcom,scale-function = <0>;
-		qcom,hw-settle-time = <0>;
-		qcom,fast-avg-setup = <0>;
-	};
-
-	chan@44 {
-		label = "usb_dm";
-		reg = <0x44>;
-		qcom,decimation = <0>;
-		qcom,pre-div-channel-scaling = <1>;
-		qcom,calibration-type = "absolute";
-		qcom,scale-function = <0>;
-		qcom,hw-settle-time = <0>;
-		qcom,fast-avg-setup = <0>;
-	};
+&mdss_hdmi_tx {
+	status = "disabled";
 };
 
 #include "msm8996-sde-display.dtsi"
@@ -357,8 +305,7 @@
 	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
 	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
 	qcom,platform-te-gpio = <&tlmm 10 0>;
-	qcom,platform-reset-gpio = <&tlmm 8 0>;
-	qcom,platform-bklight-en-gpio = <&pm8994_gpios 14 0>;
+	qcom,platform-reset-gpio = <&tlmm 8 0>;	
 };
 
 &mdss_dsi1 {
@@ -367,17 +314,7 @@
 	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
 	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
 	qcom,platform-te-gpio = <&tlmm 10 0>;
-	qcom,platform-reset-gpio = <&tlmm 8 0>;
-	qcom,platform-bklight-en-gpio = <&pm8994_gpios 14 0>;
-};
-
-&ibb_regulator {
-	qcom,qpnp-ibb-discharge-resistor = <32>;
-};
-
-&labibb {
-	status = "ok";
-	qpnp,qpnp-labibb-mode = "lcd";
+	qcom,platform-reset-gpio = <&tlmm 8 0>;	
 };
 
 &dsi_tosh_720_vid {
@@ -388,7 +325,6 @@
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_vdd_no_labibb>;
 	qcom,platform-reset-gpio = <&tlmm 8 0>;
 	qcom,platform-bklight-en-gpio = <&pm8994_gpios 14 0>;
-	qcom,5v-boost-gpio = <&pmi8994_gpios 8 0>;
 };
 
 &dsi_truly_1080_vid {
@@ -419,7 +355,6 @@
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
 	qcom,platform-reset-gpio = <&tlmm 8 0>;
 	qcom,platform-bklight-en-gpio = <&pm8994_gpios 14 0>;
-	qcom,5v-boost-gpio = <&pmi8994_gpios 8 0>;
 };
 
 &dsi_dual_nt35597_video {
@@ -488,33 +423,28 @@
 };
 
 &dsi_dual_jdi_video {
-	pwms = <&pmi8994_pwm_4 0 0>;
 	pwm-names = "backlight";
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
 	qcom,mdss-dsi-bl-pwm-pmi;
 	qcom,mdss-dsi-bl-pmic-pwm-frequency = <100>;
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
-	qcom,5v-boost-gpio = <&pmi8994_gpios 8 0>;
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
 };
 
 &dsi_dual_jdi_cmd {
-	pwms = <&pmi8994_pwm_4 0 0>;
 	pwm-names = "backlight";
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
 	qcom,mdss-dsi-bl-pwm-pmi;
 	qcom,mdss-dsi-bl-pmic-pwm-frequency = <100>;
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
-	qcom,5v-boost-gpio = <&pmi8994_gpios 8 0>;
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
 	qcom,partial-update-enabled;
 	qcom,panel-roi-alignment = <4 4 2 2 20 20>;
 };
 
 &dsi_dual_jdi_4k_nofbc_video {
-	pwms = <&pmi8994_pwm_4 0 0>;
 	pwm-names = "backlight";
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
 	qcom,mdss-dsi-bl-pwm-pmi;
@@ -532,7 +462,6 @@
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_no_labibb>;
 	qcom,platform-reset-gpio = <&tlmm 8 0>;
 	qcom,platform-bklight-en-gpio = <&pm8994_gpios 14 0>;
-	qcom,5v-boost-gpio = <&pmi8994_gpios 8 0>;
 };
 
 /{
@@ -542,38 +471,8 @@
 	};
 };
 
-&pmi8994_charger {
-	qcom,dc-psy-type = "Wipower";
-	qcom,dcin-vadc = <&pmi8994_vadc>;
-	qcom,wipower-default-ilim-map = <4000000 20000000 550 700 300>;
-	qcom,wipower-pt-ilim-map = <4000000 7140000 550 700 300>,
-					<7140000 8140000 550 700 300>,
-					<8140000 9140000 500 700 300>,
-					<9140000 9950000 500 700 300>;
-	qcom,wipower-div2-ilim-map = <4000000 4820000 550 700 300>,
-					<4820000 5820000 550 700 300>,
-					<5820000 6820000 550 650 650>,
-					<6820000 7820000 550 700 600>,
-					<7820000 8500000 550 700 550>;
-};
-
-&i2c_7 {
-	smb1351-charger@1d {
-		compatible = "qcom,smb1351-charger";
-		reg = <0x1d>;
-		qcom,parallel-charger;
-		qcom,float-voltage-mv = <4400>;
-		qcom,recharge-mv = <100>;
-	};
-};
-
-&pmi8994_fg {
-	qcom,battery-data = <&mtp_batterydata>;
-	qcom,ext-sense-type;
-};
-
 &usb_otg_switch {
-	status = "okay";
+	status = "disabled";
 };
 
 &pm8994_mpps {
@@ -594,81 +493,6 @@
 		qcom,src-sel = <0>;		/* Constant */
 		qcom,master-en = <1>;		/* Enable GPIO */
 		qcom,invert = <1>;
-		status = "okay";
-	};
-};
-
-&pmi8994_gpios {
-	gpio@c400 { /* GPIO 5 - USB3 OTG SWITCH EN */
-		qcom,mode = <1>;	/* Digital output */
-		qcom,vin-sel = <2>;	/* 1.8 */
-		qcom,src-sel = <0>;	/* GPIO */
-		qcom,master-en = <1>;	/* Enable GPIO */
-		qcom,invert = <0>;	/* Output low initially */
-		status = "okay";
-	};
-};
-
-&pmi8994_gpios {
-	gpio@c700 {	/* GPIO 8, lcd_reg_en, 5V boost  */
-		qcom,mode = <1>;
-		qcom,vin-sel = <2>;
-		qcom,src-sel = <0>;
-		qcom,invert = <1>;   /* need invert = 0 */
-		qcom,master-en = <1>;
-		status = "okay";
-	};
-
-	gpio@c100 {	/* GPIO 2  SPKR_SD_N */
-		qcom,mode = <1>;	/* DIGITAL OUT */
-		qcom,pull = <5>;	/* No Pull */
-		qcom,vin-sel = <2>;	/* 1.8 */
-		qcom,src-sel = <0>;	/* CONSTANT */
-		qcom,master-en = <1>;	/* ENABLE GPIO */
-		status = "okay";
-	};
-
-	gpio@c200 {	/* GPIO 3 SPKR_SD_N */
-		qcom,mode = <1>;	/* DIGITAL OUT */
-		qcom,pull = <5>;	/* No Pull */
-		qcom,vin-sel = <2>;	/* 1.8 */
-		qcom,src-sel = <0>;	/* CONSTANT */
-		qcom,master-en = <1>;	/* ENABLE GPIO */
-		status = "okay";
-	};
-
-	gpio@c900 { /* GPIO 10 - HPH_EN1 */
-		qcom,mode = <1>;
-		qcom,pull = <5>;
-		qcom,vin-sel = <2>;
-		qcom,src-sel = <2>;
-		qcom,master-en = <1>;
-		status = "okay";
-	};
-};
-
-&pmi8994_pwm_4 {
-	qcom,channel-owner = "lcd_bl";
-	qcom,dtest-line = <4>;
-	qcom,dtest-output = <1>;
-	status = "okay";
-};
-
-&pmi8994_mpps {
-	mpp@a000 { /* MPP 1 */
-		qcom,mode = <1>;                /* Digital output */
-		qcom,output-type = <0>;         /* CMOS logic */
-		qcom,vin-sel = <2>;             /* S4 1.8V */
-		qcom,src-sel = <7>;             /* DTEST4 */
-		qcom,master-en = <1>;           /* Enable MPP */
-		status = "okay";
-	};
-
-	mpp@a300 { /* MPP 4 */
-		/* WLED FET */
-		qcom,mode = <1>;        /* DIGITAL OUT */
-		qcom,vin-sel = <0>;     /* VIN0 */
-		qcom,master-en = <1>;
 		status = "okay";
 	};
 };
@@ -777,7 +601,6 @@
 		qcom,hdmi-audio-rx;
 		asoc-codec = <&stub_codec>, <&hdmi_audio>;
 		asoc-codec-names = "msm-stub-codec.1", "msm-hdmi-audio-codec-rx";
-		qcom,hph-en1-gpio = <&pmi8994_gpios 10 0>;
 		qcom,hph-en0-gpio = <&pm8994_gpios 13 0>;
 		qcom,us-euro-gpios = <&pm8994_mpps 2 0>;
 		qcom,wsa-max-devs = <2>;
@@ -905,14 +728,6 @@
 		qcom,master-en = <1>;		/* Enable GPIO */
 		status = "okay";
 	};
-};
-
-&pmi8994_haptics {
-	status = "okay";
-};
-
-&flash_led {
-	qcom,follow-otst2-rb-disabled;
 };
 
 &blsp1_uart2 {

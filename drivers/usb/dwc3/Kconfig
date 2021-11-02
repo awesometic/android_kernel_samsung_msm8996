@@ -126,4 +126,10 @@ config DWC3_HOST_USB3_LPM_ENABLE
 	help
 	  Select this when you want to enable USB3 LPM with dwc3 xhci host.
 
+config USB_CHARGING_EVENT
+	bool "Set usb charging current "
+	depends on USB_DWC3=y
+	help
+	  For satisfy BC1.2 specification
+	  In unconfigured state or suspend state, Set vbus current to 100mA
 endif

@@ -92,9 +92,12 @@ static struct wakeup_source read_in_suspend_ws;
 struct smd_tty_info {
 	smd_channel_t *ch;
 	struct tty_port port;
+	struct tty_port ctrl_port;
 	struct device *device_ptr;
+	struct device *ctrl_device_ptr;
 	struct wakeup_source pending_ws;
 	struct tasklet_struct tty_tsklt;
+	struct tasklet_struct tty_ctrl_tsklt;
 	struct timer_list buf_req_timer;
 	struct completion ch_allocated;
 	void *pil;
@@ -284,6 +287,27 @@ static void smd_tty_read(unsigned long param)
 	tty_kref_put(tty);
 }
 
+static void smdctrl_tty_read(unsigned long param)
+{
+	struct smd_tty_info *info = (struct smd_tty_info *)param;
+	struct tty_struct *tty = tty_port_tty_get(&info->ctrl_port);
+	int cnt, tiocm;
+	unsigned char *buf;
+
+	if (!tty)
+		return;
+
+	tiocm = smd_tiocmget(info->ch);
+
+	cnt = tty_prepare_flip_string(tty->port, &buf, sizeof(tiocm));
+	if (cnt != sizeof(tiocm))
+		return;
+
+	snprintf(buf, cnt, "%d", tiocm);
+
+	tty_flip_buffer_push(tty->port);
+}
+
 static void smd_tty_notify(void *priv, unsigned event)
 {
 	struct smd_tty_info *info = priv;
@@ -350,6 +374,13 @@ static void smd_tty_notify(void *priv, unsigned event)
 						msecs_to_jiffies(1000));
 		}
 		tty_kref_put(tty);
+		break;
+
+	case SMD_EVENT_STATUS: 
+		spin_lock_irqsave(&info->reset_lock_lha2, flags);
+		if(info->is_open)
+			tasklet_hi_schedule(&info->tty_ctrl_tsklt);
+		spin_unlock_irqrestore(&info->reset_lock_lha2, flags);
 		break;
 	}
 }
@@ -494,6 +525,11 @@ static void smd_tty_remove_driver(struct smd_tty_info *info)
 	SMD_TTY_INFO("End %s on smd_tty_ch[%s]\n", __func__, info->ch_name);
 }
 
+static int smdctrl_tty_port_activate(struct tty_port *tport,
+				 struct tty_struct *tty)
+{
+	return 0;
+}
 static int smd_tty_port_activate(struct tty_port *tport,
 				 struct tty_struct *tty)
 {
@@ -575,6 +611,7 @@ static int smd_tty_port_activate(struct tty_port *tport,
 	}
 
 	tasklet_init(&info->tty_tsklt, smd_tty_read, (unsigned long)info);
+	tasklet_init(&info->tty_ctrl_tsklt, smdctrl_tty_read, (unsigned long)info);
 	wakeup_source_init(&info->pending_ws, info->ch_name);
 	scnprintf(info->ra_wakeup_source_name, MAX_RA_WAKE_LOCK_NAME_LEN,
 		  "SMD_TTY_%s_RA", info->ch_name);
@@ -611,6 +648,7 @@ close_ch:
 
 release_wl_tl:
 	tasklet_kill(&info->tty_tsklt);
+	tasklet_kill(&info->tty_ctrl_tsklt);
 	wakeup_source_trash(&info->pending_ws);
 	wakeup_source_trash(&info->ra_wakeup_source);
 
@@ -624,6 +662,11 @@ out:
 	mutex_unlock(&info->open_lock_lha1);
 
 	return res;
+}
+
+static void smdctrl_tty_port_shutdown(struct tty_port *tport)
+{
+	return;
 }
 
 static void smd_tty_port_shutdown(struct tty_port *tport)
@@ -645,6 +688,7 @@ static void smd_tty_port_shutdown(struct tty_port *tport)
 	spin_unlock_irqrestore(&info->reset_lock_lha2, flags);
 
 	tasklet_kill(&info->tty_tsklt);
+	tasklet_kill(&info->tty_ctrl_tsklt);
 	wakeup_source_trash(&info->pending_ws);
 	wakeup_source_trash(&info->ra_wakeup_source);
 
@@ -787,6 +831,11 @@ static const struct tty_port_operations smd_tty_port_ops = {
 	.activate = smd_tty_port_activate,
 };
 
+static const struct tty_port_operations smdctrl_tty_port_ops = {
+	.shutdown = smdctrl_tty_port_shutdown,
+	.activate = smdctrl_tty_port_activate,
+};
+
 static const struct tty_operations smd_tty_ops = {
 	.open = smd_tty_open,
 	.close = smd_tty_close,
@@ -796,6 +845,27 @@ static const struct tty_operations smd_tty_ops = {
 	.unthrottle = smd_tty_unthrottle,
 	.tiocmget = smd_tty_tiocmget,
 	.tiocmset = smd_tty_tiocmset,
+};
+
+static int smdctrl_tty_open(struct tty_struct *tty, struct file *f)
+{
+	struct smd_tty_info *info = smd_tty + tty->index;
+
+	SMD_TTY_INFO("%s:tty->index = %d info = %p\n",
+			      __func__, tty->index, info);
+	return tty_port_open(&info->ctrl_port, tty, f);
+}
+
+static void smdctrl_tty_close(struct tty_struct *tty, struct file *f)
+{
+	struct smd_tty_info *info = smd_tty + tty->index;
+
+	tty_port_close(&info->ctrl_port, tty, f);
+}
+
+static const struct tty_operations smdctrl_tty_ops = {
+	.open = smdctrl_tty_open,
+	.close = smdctrl_tty_close,
 };
 
 static int smd_tty_pm_notifier(struct notifier_block *nb,
@@ -839,6 +909,7 @@ static void smd_tty_log_init(void)
 }
 
 static struct tty_driver *smd_tty_driver;
+static struct tty_driver *smdctrl_tty_driver;
 
 static int smd_tty_register_driver(void)
 {
@@ -871,13 +942,41 @@ static int smd_tty_register_driver(void)
 		put_tty_driver(smd_tty_driver);
 		SMD_TTY_ERR("%s: driver registration failed %d", __func__, ret);
 	}
+	
+	smdctrl_tty_driver = alloc_tty_driver(MAX_SMD_TTYS);
+	if (smdctrl_tty_driver == 0) {
+		SMD_TTY_ERR("%s - Driver allocation failed", __func__);
+		return -ENOMEM;
+	}
+
+	smdctrl_tty_driver->owner = THIS_MODULE;
+	smdctrl_tty_driver->driver_name = "smdctrl_tty_driver";
+	smdctrl_tty_driver->name = "smdls";
+	smdctrl_tty_driver->major = 0;
+	smdctrl_tty_driver->minor_start = 0;
+	smdctrl_tty_driver->type = TTY_DRIVER_TYPE_SERIAL;
+	smdctrl_tty_driver->subtype = SERIAL_TYPE_NORMAL;
+	smdctrl_tty_driver->init_termios = tty_std_termios;
+	smdctrl_tty_driver->init_termios.c_iflag = 0;
+	smdctrl_tty_driver->init_termios.c_oflag = 0;
+	smdctrl_tty_driver->init_termios.c_cflag = B38400 | CS8 | CREAD;
+	smdctrl_tty_driver->init_termios.c_lflag = 0;
+	smdctrl_tty_driver->flags = TTY_DRIVER_RESET_TERMIOS |
+		TTY_DRIVER_REAL_RAW | TTY_DRIVER_DYNAMIC_DEV;
+	tty_set_operations(smdctrl_tty_driver, &smdctrl_tty_ops);
+
+	ret = tty_register_driver(smdctrl_tty_driver);
+	if (ret) {
+		put_tty_driver(smdctrl_tty_driver);
+		SMD_TTY_ERR("%s: driver registration failed %d", __func__, ret);
+	}
 
 	return ret;
 }
 
 static void smd_tty_device_init(int idx)
 {
-	struct tty_port *port;
+	struct tty_port *port, *ctrl_port;
 
 	port = &smd_tty[idx].port;
 	tty_port_init(port);
@@ -891,6 +990,14 @@ static void smd_tty_device_init(int idx)
 				PTR_ERR_OR_ZERO(smd_tty[idx].device_ptr));
 		return;
 	}
+
+	ctrl_port = &smd_tty[idx].ctrl_port;
+	tty_port_init(ctrl_port);
+	ctrl_port->ops = &smdctrl_tty_port_ops;
+	smd_tty[idx].ctrl_device_ptr = tty_port_register_device(ctrl_port, smdctrl_tty_driver,
+							   idx, NULL);
+
+	pr_info("ctrl_port = %p\n", &smd_tty[idx].ctrl_port);
 	init_completion(&smd_tty[idx].ch_allocated);
 	mutex_init(&smd_tty[idx].open_lock_lha1);
 	spin_lock_init(&smd_tty[idx].reset_lock_lha2);
@@ -902,6 +1009,9 @@ static void smd_tty_device_init(int idx)
 
 	if (device_create_file(smd_tty[idx].device_ptr, &dev_attr_open_timeout))
 		SMD_TTY_ERR("%s: Unable to create device attributes for %s",
+			__func__, smd_tty[idx].ch_name);
+	if (device_create_file(smd_tty[idx].ctrl_device_ptr, &dev_attr_open_timeout))
+		SMD_TTY_ERR("%s: Unable to create ctrl device attributes for %s",
 			__func__, smd_tty[idx].ch_name);
 }
 

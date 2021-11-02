@@ -37,6 +37,10 @@
 #include <asm/page.h>
 #include <asm/virt.h>
 
+#ifdef CONFIG_RKP_CFP_ROPP
+#include <asm/rkp_cfp.h>
+#endif
+
 #define __PHYS_OFFSET	(KERNEL_START - TEXT_OFFSET)
 
 #if (TEXT_OFFSET & 0xfff) != 0
@@ -207,9 +211,21 @@ section_table:
 #endif
 
 ENTRY(stext)
+#ifdef CONFIG_RKP_CFP_ROPP
+	/* Must intialize RRK to zero */
+	mov	RRK, #0
+#endif
+#ifdef CONFIG_RELOCATABLE_KERNEL
+	mov	x24, x1				// x1=PHYS_OFFSET
+	mov	x19, x2				// x2=real TEXT_OFFSET
+	adr	x21, __boot_kernel_offset
+	stp	x1, x2, [x21]
+#endif 
 	bl	preserve_boot_args
 	bl	el2_setup			// Drop to EL1, w20=cpu_boot_mode
+#ifndef CONFIG_RELOCATABLE_KERNEL
 	adrp	x24, __PHYS_OFFSET
+#endif 
 	bl	set_cpu_boot_mode_flag
 
 	bl	__vet_fdt
@@ -220,12 +236,50 @@ ENTRY(stext)
 	 * On return, the CPU will be ready for the MMU to be turned on and
 	 * the TCR will have been set.
 	 */
+#ifndef	CONFIG_RELOCATABLE_KERNEL
 	ldr	x27, =__mmap_switched		// address to jump to after
-						// MMU has been enabled
+#else
+	adr 	x27, __relocate_kernel
+#endif
 	adr_l	lr, __enable_mmu		// return (PIC) address
 	b	__cpu_setup			// initialise processor
 ENDPROC(stext)
 
+#ifdef CONFIG_RELOCATABLE_KERNEL
+
+#define R_AARCH64_RELATIVE	0x403
+#define R_AARCH64_ABS64		0x101
+
+__relocate_kernel:
+
+	sub	x23, x19, #TEXT_OFFSET
+	adrp 	x8, __dynsym_start		
+	add	x8, x8, :lo12:__dynsym_start	//x8: start of symbol table
+	adrp 	x9, __reloc_start		
+	add 	x9, x9, :lo12:__reloc_start	//x9: start of relocation table
+	adrp	x10, __reloc_end
+	add	x10, x10, :lo12:__reloc_end 	//x10: end of relocation table
+
+0:	cmp	x9, x10
+	b.hs	1f
+	ldp	x11, x12, [x9], #24
+	cmp	x12, #R_AARCH64_RELATIVE
+	b.ne	0b
+	ldr	x12, [x9, #-8]
+	add	x12, x12, x23			// relocate origin x23 
+	add	x11, x11, x23
+	str	x12, [x11, x28]
+	b	0b
+
+1:	ldr	x8, =vectors			// reload VBAR_EL1 with
+	msr	vbar_el1, x8			// relocated address
+	isb
+
+	ldr	x9, =__mmap_switched
+	br	x9
+ENDPROC(__relocate_kernel)
+#endif /*CONFIG_RELOCATABLE_KERNEL*/
+	
 /*
  * Preserve the arguments passed by the bootloader in x0 .. x3
  */
@@ -408,7 +462,13 @@ __create_page_tables:
 	mov	x0, x26				// swapper_pg_dir
 	mov	x5, #PAGE_OFFSET
 	create_pgd_entry x0, x5, x3, x6
+#ifdef CONFIG_RELOCATABLE_KERNEL
+	adr_l	x6, KERNEL_END			// __pa(KERNEL_END)
+	sub	x6, x6, x24				// x24 = PHYS_OFFSET
+	add	x6, x6, x5				// x5 = PAGE_OFFSET, x6 =  __pa(KERNEL_END) - PHYS_OFFSET + PAGE_OFFSET
+#else
 	ldr	x6, =KERNEL_END			// __va(KERNEL_END)
+#endif	
 	mov	x3, x24				// phys offset
 	create_block_map x0, x7, x3, x5, x6
 
@@ -448,6 +508,15 @@ ENDPROC(__create_page_tables)
  */
 	.set	initial_sp, init_thread_union + THREAD_START_SP
 __mmap_switched:
+#ifdef CONFIG_TIMA_RKP
+	ldr	x6, =rkp_map_bitmap
+	add	x7, x6, 0x30000
+3:	cmp	x6, x7
+	b.hs	4f
+	str	xzr, [x6], #8			// Clear BSS
+	b	3b
+4:
+#endif
 	// Clear BSS
 	adr_l	x0, __bss_start
 	mov	x1, xzr
@@ -591,6 +660,14 @@ ENTRY(set_cpu_boot_mode_flag)
 	ret
 ENDPROC(set_cpu_boot_mode_flag)
 
+#ifdef CONFIG_RELOCATABLE_KERNEL
+ENTRY(__boot_kernel_offset)
+	.quad	0     	//Kernel Physical Address
+	.quad	0	//Kernel Virtual Offset -- from the static compiling address
+	.quad 	TEXT_OFFSET 
+#endif	
+	
+	
 /*
  * We need to find out the CPU boot mode long after boot, so we need to
  * store it in a writable variable.
@@ -640,10 +717,9 @@ ENTRY(secondary_startup)
 	/*
 	 * Common entry point for secondary CPUs.
 	 */
-	adrp	x25, idmap_pg_dir
-	adrp	x26, swapper_pg_dir
-	bl	__cpu_setup			// initialise processor
-
+	adrp    x25, idmap_pg_dir
+	adrp    x26, swapper_pg_dir
+	bl  __cpu_setup         // initialise processor
 	ldr	x21, =secondary_data
 	ldr	x27, =__secondary_switched	// address to jump to after enabling the MMU
 	b	__enable_mmu
@@ -659,6 +735,14 @@ ENTRY(__secondary_switched)
 #else
 	ldr	x0, [x21]			// get secondary_data.stack
 	mov	sp, x0
+#ifdef CONFIG_RKP_CFP_ROPP
+	/* We are running off of the stack of the idle thread for this CPU.
+	 * The idle thread was forked from the CPU0 thread after it initialized its key.
+	 * We need to load our key from thread_info into x17 now.
+	 */
+	get_thread_info tsk
+	load_key tsk
+#endif
 	and	x0, x0, #~(THREAD_SIZE - 1)
 	msr	sp_el0, x0			// save thread_info
 #endif

@@ -115,6 +115,7 @@ static long msm_thermal_process_freq_table_req(struct msm_thermal_ioctl *query,
 	uint32_t table_idx, idx = 0, cluster_id = query->clock_freq.cluster_num;
 	struct clock_plan_arg *clock_freq = &(query->clock_freq);
 
+	/* Security : CVE-2016-2411 ANDROID-26866053 */
 	if (cluster_id >= num_possible_cpus())
 		return -EINVAL;
 
@@ -204,6 +205,7 @@ static long msm_thermal_process_voltage_table_req(
 	uint32_t cluster_id = query->voltage.cluster_num;
 	struct voltage_plan_arg *voltage = &(query->voltage);
 
+	/* Security : CVE-2016-2411 ANDROID-26866053 */
 	if (cluster_id >= num_possible_cpus())
 		return -EINVAL;
 

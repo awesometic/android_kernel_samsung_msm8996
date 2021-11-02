@@ -83,6 +83,9 @@ static int zram_show_mem_notifier(struct notifier_block *nb,
 {
 	int i;
 
+	if (action)
+		return 0;
+
 	if (!zram_devices)
 		return 0;
 
@@ -431,7 +434,8 @@ static struct zram_meta *zram_meta_alloc(int device_id, u64 disksize)
 	}
 
 	snprintf(pool_name, sizeof(pool_name), "zram%d", device_id);
-	meta->mem_pool = zs_create_pool(pool_name, GFP_NOIO | __GFP_HIGHMEM);
+	meta->mem_pool = zs_create_pool(pool_name, GFP_NOIO | __GFP_HIGHMEM,
+					NULL);
 	if (!meta->mem_pool) {
 		pr_err("Error creating memory pool\n");
 		goto out_error;

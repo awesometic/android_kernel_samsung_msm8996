@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -27,6 +27,9 @@
 #include <linux/iommu.h>
 #include <linux/platform_device.h>
 #include <media/v4l2-fh.h>
+#if defined(CONFIG_SEC_GRACEQLTE_PROJECT)
+#include <linux/gpio.h>
+#endif
 
 #include "camera.h"
 #include "msm.h"
@@ -92,9 +95,6 @@ static int camera_v4l2_querycap(struct file *filep, void *fh,
 	int rc;
 	struct v4l2_event event;
 
-	if (msm_is_daemon_present() == false)
-		return 0;
-
 	/* can use cap->driver to make differentiation */
 	camera_pack_event(filep, MSM_CAMERA_GET_PARM,
 		MSM_CAMERA_PRIV_QUERY_CAP, -1, &event);
@@ -113,9 +113,6 @@ static int camera_v4l2_s_crop(struct file *filep, void *fh,
 {
 	int rc = 0;
 	struct v4l2_event event;
-
-	if (msm_is_daemon_present() == false)
-		return 0;
 
 	if (crop->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 
@@ -138,9 +135,6 @@ static int camera_v4l2_g_crop(struct file *filep, void *fh,
 	int rc = 0;
 	struct v4l2_event event;
 
-	if (msm_is_daemon_present() == false)
-		return 0;
-
 	if (crop->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 		camera_pack_event(filep, MSM_CAMERA_GET_PARM,
 			MSM_CAMERA_PRIV_G_CROP, -1, &event);
@@ -160,9 +154,6 @@ static int camera_v4l2_queryctrl(struct file *filep, void *fh,
 {
 	int rc = 0;
 	struct v4l2_event event;
-
-	if (msm_is_daemon_present() == false)
-		return 0;
 
 	if (ctrl->type == V4L2_CTRL_TYPE_MENU) {
 
@@ -290,13 +281,21 @@ static int camera_v4l2_streamon(struct file *filep, void *fh,
 	int rc;
 	struct camera_v4l2_private *sp = fh_to_private(fh);
 
+#if defined(CONFIG_SEC_GRACEQLTE_PROJECT)
+	int ret = 0;
+	pr_info("[%s] : tz led on", __func__);	
+	ret = gpio_request(45, "tz_led_gpio");
+	if (ret) {
+	    pr_err("can't get tz_led_gpio");
+	} else {
+	    pr_info("set tz led gpio to high\n");
+	    gpio_direction_output(45, 1);
+	}
+#endif
+
 	mutex_lock(&sp->lock);
 	rc = vb2_streamon(&sp->vb2_q, buf_type);
 	mutex_unlock(&sp->lock);
-
-	if (msm_is_daemon_present() == false)
-		return 0;
-
 	camera_pack_event(filep, MSM_CAMERA_SET_PARM,
 		MSM_CAMERA_PRIV_STREAM_ON, -1, &event);
 
@@ -312,18 +311,24 @@ static int camera_v4l2_streamoff(struct file *filep, void *fh,
 		enum v4l2_buf_type buf_type)
 {
 	struct v4l2_event event;
-	int rc = 0;
+	int rc;
 	struct camera_v4l2_private *sp = fh_to_private(fh);
 
-	if (msm_is_daemon_present() != false) {
-		camera_pack_event(filep, MSM_CAMERA_SET_PARM,
-			MSM_CAMERA_PRIV_STREAM_OFF, -1, &event);
+#if defined(CONFIG_SEC_GRACEQLTE_PROJECT)
+	pr_info("[%s] : tz led off", __func__);	
+	pr_info("set tz led gpio to low\n");
+	gpio_direction_output(45, 0);
+	gpio_free(45);
+#endif
 
-		rc = msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
-		if (rc < 0)
-			return rc;
-		rc = camera_check_event_status(&event);
-	}
+	camera_pack_event(filep, MSM_CAMERA_SET_PARM,
+		MSM_CAMERA_PRIV_STREAM_OFF, -1, &event);
+
+	rc = msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
+	if (rc < 0)
+		return rc;
+
+	rc = camera_check_event_status(&event);
 	mutex_lock(&sp->lock);
 	vb2_streamoff(&sp->vb2_q, buf_type);
 	mutex_unlock(&sp->lock);
@@ -334,9 +339,6 @@ static int camera_v4l2_g_fmt_vid_cap_mplane(struct file *filep, void *fh,
 	struct v4l2_format *pfmt)
 {
 	int rc = -EINVAL;
-
-	if (msm_is_daemon_present() == false)
-		return 0;
 
 	if (pfmt->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 		struct v4l2_event event;
@@ -382,22 +384,22 @@ static int camera_v4l2_s_fmt_vid_cap_mplane(struct file *filep, void *fh,
 			pr_debug("%s: plane size[%d]\n", __func__,
 					user_fmt->plane_sizes[i]);
 
-		if (msm_is_daemon_present() != false) {
-			camera_pack_event(filep, MSM_CAMERA_SET_PARM,
-				MSM_CAMERA_PRIV_S_FMT, -1, &event);
+		camera_pack_event(filep, MSM_CAMERA_SET_PARM,
+			MSM_CAMERA_PRIV_S_FMT, -1, &event);
 
-			rc = msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
-			if (rc < 0)
-				return rc;
+		rc = msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
+		if (rc < 0)
+			return rc;
 
-			rc = camera_check_event_status(&event);
-			if (rc < 0)
-				return rc;
-		}
+		rc = camera_check_event_status(&event);
+		if (rc < 0)
+			return rc;
+
 		sp->is_vb2_valid = 1;
 	}
 
 	return rc;
+
 }
 
 static int camera_v4l2_try_fmt_vid_cap_mplane(struct file *filep, void *fh,
@@ -431,15 +433,14 @@ static int camera_v4l2_s_parm(struct file *filep, void *fh,
 	if (rc < 0)
 		return rc;
 
-	if (msm_is_daemon_present() != false) {
-		rc = msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
-		if (rc < 0)
-			goto error;
+	rc = msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
+	if (rc < 0)
+		goto error;
 
-		rc = camera_check_event_status(&event);
-		if (rc < 0)
-			goto error;
-	}
+	rc = camera_check_event_status(&event);
+	if (rc < 0)
+		goto error;
+
 	/* use stream_id as stream index */
 	parm->parm.capture.extendedmode = sp->stream_id;
 	sp->stream_created = true;
@@ -458,9 +459,7 @@ static int camera_v4l2_subscribe_event(struct v4l2_fh *fh,
 	int rc = 0;
 	struct camera_v4l2_private *sp = fh_to_private(fh);
 
-	mutex_lock(&sp->lock);
 	rc = v4l2_event_subscribe(&sp->fh, sub, 5, NULL);
-	mutex_unlock(&sp->lock);
 
 	return rc;
 }
@@ -471,9 +470,7 @@ static int camera_v4l2_unsubscribe_event(struct v4l2_fh *fh,
 	int rc = 0;
 	struct camera_v4l2_private *sp = fh_to_private(fh);
 
-	mutex_lock(&sp->lock);
 	rc = v4l2_event_unsubscribe(&sp->fh, sub);
-	mutex_unlock(&sp->lock);
 
 	return rc;
 }
@@ -488,9 +485,6 @@ static long camera_v4l2_vidioc_private_ioctl(struct file *filep, void *fh,
 
 	if (WARN_ON(!k_ioctl || !pvdev))
 		return -EIO;
-
-	if (cmd != VIDIOC_MSM_CAMERA_PRIVATE_IOCTL_CMD)
-		return -EINVAL;
 
 	switch (k_ioctl->id) {
 	case MSM_CAMERA_PRIV_IOCTL_ID_RETURN_BUF: {
@@ -627,7 +621,6 @@ static int camera_v4l2_open(struct file *filep)
 	unsigned int opn_idx, idx;
 	BUG_ON(!pvdev);
 
-	mutex_lock(&pvdev->video_drvdata_mutex);
 	rc = camera_v4l2_fh_open(filep);
 	if (rc < 0) {
 		pr_err("%s : camera_v4l2_fh_open failed Line %d rc %d\n",
@@ -669,19 +662,20 @@ static int camera_v4l2_open(struct file *filep)
 			goto command_ack_q_fail;
 		}
 
-		if (msm_is_daemon_present() != false) {
-			camera_pack_event(filep, MSM_CAMERA_NEW_SESSION,
-				0, -1, &event);
-			rc = msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
-			if (rc < 0) {
-				pr_err("%s : NEW_SESSION event failed,rc %d\n",
-					__func__, rc);
-				goto post_fail;
-			}
+		camera_pack_event(filep, MSM_CAMERA_NEW_SESSION, 0, -1, &event);
+		rc = msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
+		if (rc < 0) {
+			pr_err("%s : posting of NEW_SESSION event failed\n",
+					__func__);
+			pr_err("%s : Line %d rc %d\n", __func__, __LINE__, rc);
+			goto post_fail;
+		}
 
-			rc = camera_check_event_status(&event);
-			if (rc < 0)
-				goto post_fail;
+		rc = camera_check_event_status(&event);
+		if (rc < 0) {
+			pr_err("%s : checking event status fails Line %d rc %d\n",
+					__func__, __LINE__, rc);
+			goto post_fail;
 		}
 		/* Enable power collapse latency */
 		msm_pm_qos_update_request(CAMERA_ENABLE_PC_LATENCY);
@@ -698,7 +692,6 @@ static int camera_v4l2_open(struct file *filep)
 	idx |= (1 << find_first_zero_bit((const unsigned long *)&opn_idx,
 				MSM_CAMERA_STREAM_CNT_BITS));
 	atomic_cmpxchg(&pvdev->opened, opn_idx, idx);
-	mutex_unlock(&pvdev->video_drvdata_mutex);
 
 	return rc;
 
@@ -713,7 +706,6 @@ stream_fail:
 vb2_q_fail:
 	camera_v4l2_fh_release(filep);
 fh_open_fail:
-	mutex_unlock(&pvdev->video_drvdata_mutex);
 	return rc;
 }
 
@@ -734,6 +726,7 @@ static unsigned int camera_v4l2_poll(struct file *filep,
 
 static int camera_v4l2_close(struct file *filep)
 {
+	int rc = 0;
 	struct v4l2_event event;
 	struct msm_video_device *pvdev = video_drvdata(filep);
 	struct camera_v4l2_private *sp = fh_to_private(filep->private_data);
@@ -744,29 +737,24 @@ static int camera_v4l2_close(struct file *filep)
 	if (WARN_ON(!session))
 		return -EIO;
 
-	mutex_lock(&pvdev->video_drvdata_mutex);
 	mutex_lock(&session->close_lock);
 	opn_idx = atomic_read(&pvdev->opened);
 	mask = (1 << sp->stream_id);
 	opn_idx &= ~mask;
 	atomic_set(&pvdev->opened, opn_idx);
 
-	if (msm_is_daemon_present() != false && sp->stream_created == true) {
+	if (sp->stream_created == true) {
 		pr_debug("%s: close stream_id=%d\n", __func__, sp->stream_id);
 		camera_pack_event(filep, MSM_CAMERA_SET_PARM,
 			MSM_CAMERA_PRIV_DEL_STREAM, -1, &event);
 		msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
+		sp->stream_created = false;
 	}
 
-	if (sp->stream_created == true)
-		sp->stream_created = false;
-
 	if (atomic_read(&pvdev->opened) == 0) {
-		if (msm_is_daemon_present() != false) {
-			camera_pack_event(filep, MSM_CAMERA_DEL_SESSION,
-				0, -1, &event);
-			msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
-		}
+		camera_pack_event(filep, MSM_CAMERA_DEL_SESSION, 0, -1, &event);
+		msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
+
 		msm_delete_command_ack_q(pvdev->vdev->num, 0);
 		msm_delete_stream(pvdev->vdev->num, sp->stream_id);
 		mutex_unlock(&session->close_lock);
@@ -786,9 +774,8 @@ static int camera_v4l2_close(struct file *filep)
 	}
 
 	camera_v4l2_fh_release(filep);
-	mutex_unlock(&pvdev->video_drvdata_mutex);
 
-	return 0;
+	return rc;
 }
 
 #ifdef CONFIG_COMPAT
@@ -933,7 +920,6 @@ int camera_init_v4l2(struct device *dev, unsigned int *session)
 
 	*session = pvdev->vdev->num;
 	atomic_set(&pvdev->opened, 0);
-	mutex_init(&pvdev->video_drvdata_mutex);
 	video_set_drvdata(pvdev->vdev, pvdev);
 	device_init_wakeup(&pvdev->vdev->dev, 1);
 	goto init_end;

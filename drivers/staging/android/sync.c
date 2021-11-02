@@ -30,11 +30,16 @@
 #define CREATE_TRACE_POINTS
 #include "trace/sync.h"
 
+extern void mdss_xlog_tout_handler_default(bool queue, const char *name, ...);
 static void sync_fence_signal_pt(struct sync_pt *pt);
 static int _sync_pt_has_signaled(struct sync_pt *pt);
 static void sync_fence_free(struct kref *kref);
 static void sync_dump(void);
 
+#define XLOG_TOUT_DATA_LIMITER (NULL)
+#define MDSS_XLOG_TOUT_HANDLER_EXT(...) \
+	mdss_xlog_tout_handler_default(false, __func__, ##__VA_ARGS__, \
+	XLOG_TOUT_DATA_LIMITER)
 static LIST_HEAD(sync_timeline_list_head);
 static DEFINE_SPINLOCK(sync_timeline_list_lock);
 
@@ -627,6 +632,8 @@ int sync_fence_wait(struct sync_fence *fence, long timeout)
 			pr_info("fence timeout on [%pK] after %dms\n", fence,
 				jiffies_to_msecs(timeout));
 			sync_dump();
+			if(timeout == 1234)
+				MDSS_XLOG_TOUT_HANDLER_EXT("panic");
 		}
 		return -ETIME;
 	}

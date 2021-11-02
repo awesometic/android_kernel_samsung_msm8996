@@ -64,7 +64,6 @@
 struct wiphy;
 
 #define SUPPORT_WDEV_CFG80211_VENDOR_EVENT_ALLOC 1
-#define CFG80211_DEL_STA_V2 1
 #define CFG80211_SCAN_BSSID 1
 #define CFG80211_CONNECT_PREV_BSSID 1
 #define CFG80211_CONNECT_BSS 1
@@ -895,22 +894,6 @@ struct station_parameters {
 };
 
 /**
- * struct station_del_parameters - station deletion parameters
- *
- * Used to delete a station entry (or all stations).
- *
- * @mac: MAC address of the station to remove or NULL to remove all stations
- * @subtype: Management frame subtype to use for indicating removal
- *	(10 = Disassociation, 12 = Deauthentication)
- * @reason_code: Reason code for the Disassociation/Deauthentication frame
- */
-struct station_del_parameters {
-	const u8 *mac;
-	u8 subtype;
-	u16 reason_code;
-};
-
-/**
  * enum cfg80211_station_type - the type of station being modified
  * @CFG80211_STA_AP_CLIENT: client of an AP interface
  * @CFG80211_STA_AP_MLME_CLIENT: client of an AP interface that has
@@ -1651,6 +1634,7 @@ struct cfg80211_sched_scan_request {
 	int n_ssids;
 	u32 n_channels;
 	enum nl80211_bss_scan_width scan_width;
+	u32 interval;
 	const u8 *ie;
 	size_t ie_len;
 	u32 flags;
@@ -2366,7 +2350,7 @@ struct cfg80211_qos_map {
  * @stop_ap: Stop being an AP, including stopping beaconing.
  *
  * @add_station: Add a new station.
- * @del_station: Remove a station
+ * @del_station: Remove a station; @mac may be NULL to remove all stations.
  * @change_station: Modify a given station. Note that flags changes are not much
  *	validated in cfg80211, in particular the auth/assoc/authorized flags
  *	might come to the driver in invalid combinations -- make sure to check
@@ -2634,7 +2618,7 @@ struct cfg80211_ops {
 			       const u8 *mac,
 			       struct station_parameters *params);
 	int	(*del_station)(struct wiphy *wiphy, struct net_device *dev,
-			       struct station_del_parameters *params);
+			       const u8 *mac);
 	int	(*change_station)(struct wiphy *wiphy, struct net_device *dev,
 				  const u8 *mac,
 				  struct station_parameters *params);

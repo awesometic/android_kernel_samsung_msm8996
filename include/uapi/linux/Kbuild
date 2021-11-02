@@ -297,6 +297,7 @@ header-y += msm_audio_g711.h
 header-y += msm_audio_g711_dec.h
 header-y += msm-core-interface.h
 header-y += msm_dsps.h
+header-y += msm_audio_backend_interfaces.h
 header-y += msm_ion.h
 header-y += msm_ipa.h
 header-y += msm_ipc.h

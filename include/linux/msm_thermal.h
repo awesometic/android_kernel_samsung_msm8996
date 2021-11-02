@@ -152,6 +152,7 @@ struct device_clnt_data {
 	void                         *usr_data;
 };
 
+extern void sec_debug_set_thermal_upload(void);
 #ifdef CONFIG_THERMAL_MONITOR
 extern int msm_thermal_init(struct msm_thermal_data *pdata);
 extern int msm_thermal_device_init(void);

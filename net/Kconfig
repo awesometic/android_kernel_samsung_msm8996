@@ -90,6 +90,7 @@ if INET
 source "net/ipv4/Kconfig"
 source "net/ipv6/Kconfig"
 source "net/netlabel/Kconfig"
+source "net/mptcp/Kconfig"
 
 endif # if INET
 
@@ -253,6 +254,7 @@ source "net/netlink/Kconfig"
 source "net/mpls/Kconfig"
 source "net/hsr/Kconfig"
 source "net/rmnet_data/Kconfig"
+source "net/ncm/Kconfig"
 
 config RPS
 	boolean "RPS"

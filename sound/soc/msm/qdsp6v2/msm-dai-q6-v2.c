@@ -30,6 +30,7 @@
 
 #define MSM_DAI_PRI_AUXPCM_DT_DEV_ID 1
 #define MSM_DAI_SEC_AUXPCM_DT_DEV_ID 2
+#define MSM_DAI_TERT_AUXPCM_DT_DEV_ID 3
 
 #define spdif_clock_value(rate) (2*rate*32*2)
 #define CHANNEL_STATUS_SIZE 24
@@ -869,6 +870,14 @@ static int msm_dai_q6_auxpcm_prepare(struct snd_pcm_substream *substream,
 				aux_dai_data->clk_set.clk_id =
 					Q6AFE_LPASS_CLK_ID_SEC_PCM_EBIT;
 			break;
+		case MSM_DAI_TERT_AUXPCM_DT_DEV_ID:
+			if (pcm_clk_rate)
+				aux_dai_data->clk_set.clk_id =
+					Q6AFE_LPASS_CLK_ID_TER_PCM_IBIT;
+			else
+				aux_dai_data->clk_set.clk_id =
+					Q6AFE_LPASS_CLK_ID_TER_PCM_EBIT;
+			break;
 		default:
 			dev_err(dai->dev, "%s: AUXPCM id: %d not supported\n",
 				__func__, dai->id);
@@ -1051,6 +1060,32 @@ static struct snd_soc_dai_driver msm_dai_q6_aux_pcm_dai[] = {
 			.rate_min = 8000,
 		},
 		.id = MSM_DAI_SEC_AUXPCM_DT_DEV_ID,
+		.ops = &msm_dai_q6_auxpcm_ops,
+		.probe = msm_dai_q6_aux_pcm_probe,
+		.remove = msm_dai_q6_dai_auxpcm_remove,
+	},
+	{
+		.playback = {
+			.stream_name = "Tert AUX PCM Playback",
+			.aif_name = "TERT_AUX_PCM_RX",
+			.rates = (SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000),
+			.formats = SNDRV_PCM_FMTBIT_S16_LE,
+			.channels_min = 1,
+			.channels_max = 1,
+			.rate_max = 16000,
+			.rate_min = 8000,
+		},
+		.capture = {
+			.stream_name = "Tert AUX PCM Capture",
+			.aif_name = "TERT_AUX_PCM_TX",
+			.rates = (SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000),
+			.formats = SNDRV_PCM_FMTBIT_S16_LE,
+			.channels_min = 1,
+			.channels_max = 1,
+			.rate_max = 16000,
+			.rate_min = 8000,
+		},
+		.id = MSM_DAI_TERT_AUXPCM_DT_DEV_ID,
 		.ops = &msm_dai_q6_auxpcm_ops,
 		.probe = msm_dai_q6_aux_pcm_probe,
 		.remove = msm_dai_q6_dai_auxpcm_remove,
@@ -1764,7 +1799,7 @@ static int msm_dai_q6_set_channel_map(struct snd_soc_dai *dai,
 			pr_err("%s: invalid tx num %d\n", __func__, tx_num);
 			return -EINVAL;
 		}
-
+		
 		for (i = 0; i < tx_num; i++) {
 			dai_data->port_config.slim_sch.shared_ch_mapping[i] =
 			    tx_slot[i];
@@ -2426,6 +2461,11 @@ static int msm_auxpcm_dev_probe(struct platform_device *pdev)
 		dai_data->tx_pid = AFE_PORT_ID_SECONDARY_PCM_TX;
 		pdev->id = MSM_DAI_SEC_AUXPCM_DT_DEV_ID;
 		i = 1;
+	} else if (!strncmp(intf_name, "tertiary", sizeof("tertiary"))) {
+		dai_data->rx_pid = AFE_PORT_ID_TERTIARY_PCM_RX;
+		dai_data->tx_pid = AFE_PORT_ID_TERTIARY_PCM_TX;
+		pdev->id = MSM_DAI_TERT_AUXPCM_DT_DEV_ID;
+		i = 2;
 	} else {
 		dev_err(&pdev->dev, "%s: invalid DT intf name %s\n",
 			__func__, intf_name);
@@ -2507,7 +2547,7 @@ static struct snd_soc_dai_driver msm_dai_q6_slimbus_rx_dai[] = {
 			.aif_name = "SLIMBUS_0_RX",
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_96000 |
-			SNDRV_PCM_RATE_192000,
+			SNDRV_PCM_RATE_192000 | SNDRV_PCM_RATE_44100,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE |
 				SNDRV_PCM_FMTBIT_S24_LE,
 			.channels_min = 1,
@@ -3610,6 +3650,8 @@ static int msm_dai_q6_mi2s_dev_probe(struct platform_device *pdev)
 	u32 tx_line = 0;
 	u32  rx_line = 0;
 	u32 mi2s_intf = 0;
+	u32 mi2s_slave = 0;
+	u32 mi2s_ext_mclk_rate = 0;
 	struct msm_mi2s_pdata *mi2s_pdata;
 	int rc;
 
@@ -3657,11 +3699,28 @@ static int msm_dai_q6_mi2s_dev_probe(struct platform_device *pdev)
 			"qcom,msm-mi2s-tx-lines");
 		goto free_pdata;
 	}
-	dev_dbg(&pdev->dev, "dev name %s Rx line 0x%x , Tx ine 0x%x\n",
-		dev_name(&pdev->dev), rx_line, tx_line);
+
+	rc = of_property_read_u32(pdev->dev.of_node, "qcom,msm-mi2s-slave",
+				  &mi2s_slave);
+	if (rc) {
+		dev_dbg(&pdev->dev, "%s: %s Not found, defaulting to Master\n",
+			__func__, "qcom,msm-mi2s-slave");
+	}
+
+	rc = of_property_read_u32(pdev->dev.of_node, "qcom,msm-mi2s-ext-mclk",
+				  &mi2s_ext_mclk_rate);
+	if (rc) {
+		dev_dbg(&pdev->dev, "%s: %s Not found\n",
+			__func__, "qcom,msm-mi2s-ext-mclk");
+	}
+
+	dev_dbg(&pdev->dev, "dev name %s Rx line 0x%x, Tx line 0x%x, slave %d, mi2s_ext_mclk_rate %u\n",
+		dev_name(&pdev->dev), rx_line, tx_line, mi2s_slave, mi2s_ext_mclk_rate);
 	mi2s_pdata->rx_sd_lines = rx_line;
 	mi2s_pdata->tx_sd_lines = tx_line;
 	mi2s_pdata->intf_id = mi2s_intf;
+	mi2s_pdata->slave = mi2s_slave;
+	mi2s_pdata->ext_mclk_rate = mi2s_ext_mclk_rate;
 
 	dai_data = kzalloc(sizeof(struct msm_dai_q6_mi2s_dai_data),
 			   GFP_KERNEL);
@@ -5165,14 +5224,17 @@ static int msm_dai_q6_tdm_set_tdm_slot(struct snd_soc_dai *dai,
 
 	/* HW only supports 16 and 8 slots configuration */
 	switch (slots) {
+	case 2:
+		cap_mask = 0x3; 
+		break;
+	case 4:
+		cap_mask = 0xF;
+		break;
 	case 8:
 		cap_mask = 0xFF;
 		break;
 	case 16:
 		cap_mask = 0xFFFF;
-		break;
-	case 4:
-		cap_mask = 0xF;
 		break;
 
 	default:
@@ -5414,11 +5476,6 @@ static int msm_dai_q6_tdm_hw_params(struct snd_pcm_substream *substream,
 	pr_debug("%s: dev_name: %s\n",
 		__func__, dev_name(dai->dev));
 
-	if (params_rate(params) != 48000) {
-		dev_err(dai->dev, "%s: invalid param rate %d\n",
-			__func__, params_rate(params));
-		return -EINVAL;
-	}
 	if ((params_channels(params) == 0) ||
 		(params_channels(params) > 8)) {
 		dev_err(dai->dev, "%s: invalid param channels %d\n",
@@ -5489,6 +5546,23 @@ static int msm_dai_q6_tdm_hw_params(struct snd_pcm_substream *substream,
 	tdm->nslots_per_frame = tdm_group->nslots_per_frame;
 	tdm->slot_width = tdm_group->slot_width;
 	tdm->slot_mask = tdm_group->slot_mask;
+
+	// re-check slot mask
+	if (tdm->nslots_per_frame != tdm->num_channels)
+	{
+		switch (tdm->num_channels) {
+		case 2:
+			tdm->slot_mask = 0x3;
+			break;
+		case 4:
+			tdm->slot_mask = 0xF;
+			break;
+		default :
+			dev_err(dai->dev, "%s: invalid param channels %d\n",
+				__func__, tdm->num_channels);
+			return -EINVAL;
+		}
+	}
 
 	pr_debug("%s: TDM:\n"
 		"num_channels=%d sample_rate=%d bit_width=%d\n"

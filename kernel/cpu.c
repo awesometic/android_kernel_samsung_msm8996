@@ -395,6 +395,7 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen)
 		cpu_relax();
 
 	hotplug_cpu__broadcast_tick_pull(cpu);
+
 	/* This actually kills the CPU. */
 	__cpu_die(cpu);
 

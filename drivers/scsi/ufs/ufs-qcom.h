@@ -213,6 +213,12 @@ struct ufs_qcom_ice_data {
 	struct platform_device *pdev;
 	int state;
 
+	/*
+	 * If UFS host controller should handle cryptographic engine's
+	 * errors, enables this quirk.
+	 */
+	#define UFS_QCOM_ICE_QUIRK_HANDLE_CRYPTO_ENGINE_ERRORS	UFS_BIT(0)
+
 	u16 quirks;
 
 	bool crypto_engine_err;
@@ -340,6 +346,14 @@ struct ufs_qcom_host {
 
 	struct work_struct ice_cfg_work;
 	struct request *req_pending;
+	/* hw reset info. */
+	unsigned int hw_reset_count;
+	unsigned long last_hw_reset;
+	u32 hw_reset_saved_err;
+	u32 hw_reset_saved_uic_err;
+	unsigned long hw_reset_outstanding_tasks;
+	unsigned long hw_reset_outstanding_reqs;
+	struct ufs_stats hw_reset_ufs_stats;
 };
 
 static inline u32

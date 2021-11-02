@@ -66,16 +66,23 @@
 #include <scsi/scsi_dbg.h>
 #include <scsi/scsi_eh.h>
 
+#define CUSTOMIZE_UPIU_FLAGS
+
 #include <linux/fault-inject.h>
 #include "ufs.h"
 #include "ufshci.h"
+#include "ufs_quirks.h"
 
 #define UFSHCD "ufshcd"
 #define UFSHCD_DRIVER_VERSION "0.3"
 
 #define UFS_BIT(x)	BIT(x)
 
+#define UFSHCD_RESUME_STEP_DEBUGGING
+
 struct ufs_hba;
+
+extern unsigned int system_rev;
 
 enum dev_cmd_type {
 	DEV_CMD_TYPE_NOP		= 0x0,
@@ -331,6 +338,7 @@ struct ufs_hba_variant_ops {
 	int	(*full_reset)(struct ufs_hba *);
 	void	(*dbg_register_dump)(struct ufs_hba *hba);
 	int	(*update_sec_cfg)(struct ufs_hba *hba, bool restore_sec_cfg);
+	void	(*dev_hw_reset)(struct ufs_hba *);
 #ifdef CONFIG_DEBUG_FS
 	void	(*add_debugfs)(struct ufs_hba *hba, struct dentry *root);
 	void	(*remove_debugfs)(struct ufs_hba *hba);
@@ -339,24 +347,29 @@ struct ufs_hba_variant_ops {
 
 /**
  * struct ufs_hba_crypto_variant_ops - variant specific crypto callbacks
- * @crypto_req_setup:	retreieve the necessary cryptographic arguments to setup
-			a requests's transfer descriptor.
  * @crypto_engine_cfg_start: start configuring cryptographic engine
  *							 according to tag
  *							 parameter
  * @crypto_engine_cfg_end: end configuring cryptographic engine
  *						   according to tag parameter
- * @crypto_engine_reset: perform reset to the cryptographic engine
- * @crypto_engine_get_status: get errors status of the cryptographic engine
+ * @crypto_engine_eh: cryptographic engine error handling.
+ *                Return true is it detects an error, false on
+ *                success
+ * @crypto_engine_get_err: returns the saved error status of the
+ *                         cryptographic engine.If a positive
+ *                         value is returned, host controller
+ *                         should be reset.
+ * @crypto_engine_reset_err: resets the saved error status of
+ *                         the cryptographic engine
  */
 struct ufs_hba_crypto_variant_ops {
-	int	(*crypto_req_setup)(struct ufs_hba *, struct ufshcd_lrb *lrbp,
-				    u8 *cc_index, bool *enable, u64 *dun);
 	int	(*crypto_engine_cfg_start)(struct ufs_hba *, unsigned int);
 	int	(*crypto_engine_cfg_end)(struct ufs_hba *, struct ufshcd_lrb *,
 			struct request *);
 	int	(*crypto_engine_reset)(struct ufs_hba *);
-	int	(*crypto_engine_get_status)(struct ufs_hba *, u32 *);
+	int	(*crypto_engine_eh)(struct ufs_hba *);
+	int	(*crypto_engine_get_err)(struct ufs_hba *);
+	void	(*crypto_engine_reset_err)(struct ufs_hba *);
 };
 
 /**
@@ -803,10 +816,8 @@ struct ufs_hba {
 	/* HBA Errors */
 	u32 errors;
 	u32 uic_error;
-	u32 ce_error;	/* crypto engine errors */
 	u32 saved_err;
 	u32 saved_uic_err;
-	u32 saved_ce_err;
 	bool silence_err_logs;
 	bool force_host_reset;
 
@@ -892,6 +903,26 @@ struct ufs_hba {
 	int			latency_hist_enabled;
 	struct io_latency_state io_lat_read;
 	struct io_latency_state io_lat_write;
+#define UFS_PW_ON	0
+#define UFS_PW_OFF	1
+	int hw_reset_gpio;
+
+	/* bkops enable/disable */
+	struct device_attribute bkops_en_attr;
+
+ 	struct device_attribute unique_number_attr;
+ 	struct device_attribute manufacturer_id_attr;
+#if defined(CONFIG_SCSI_UFS_QCOM)
+	struct device_attribute hw_reset_info_attr;
+#endif
+	char unique_number[UFS_UN_MAX_DIGITS];
+ 	u16 manufacturer_id;
+	u8 lifetime;
+#if defined(UFSHCD_RESUME_STEP_DEBUGGING)
+	u32 	resume_fail_step;
+	ktime_t	resume_fail_time;
+	int 	resume_fail_ret;
+#endif
 };
 
 /* Returns true if clocks can be gated. Otherwise false */
@@ -935,11 +966,6 @@ static inline bool ufshcd_is_intr_aggr_allowed(struct ufs_hba *hba)
 		return true;
 	else
 		return false;
-}
-
-static inline bool ufshcd_is_crypto_supported(struct ufs_hba *hba)
-{
-	return !!(hba->capabilities & MASK_CRYPTO_SUPPORT);
 }
 
 #define ufshcd_writel(hba, val, reg)	\
@@ -1051,6 +1077,11 @@ static inline int ufshcd_dme_peer_get(struct ufs_hba *hba,
 }
 
 int ufshcd_read_device_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+int ufshcd_read_health_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+#ifdef CONFIG_JOURNAL_DATA_TAG
+int ufshcd_read_vendor_specific_desc(struct ufs_hba *hba, enum desc_idn desc_id,
+		int desc_index, u8 *buf, u32 size);
+#endif
 
 static inline bool ufshcd_is_hs_mode(struct ufs_pa_layer_attr *pwr_info)
 {
@@ -1152,6 +1183,14 @@ static inline int ufshcd_vops_hce_enable_notify(struct ufs_hba *hba,
 		hba->var->vops->hce_enable_notify(hba, status);
 	return 0;
 }
+
+static inline void ufshcd_vops_dev_hw_reset(struct ufs_hba *hba)
+{
+	if (hba->var && hba->var->vops && hba->var->vops->dev_hw_reset)
+		hba->var->vops->dev_hw_reset(hba);
+	return;
+}
+
 static inline int ufshcd_vops_link_startup_notify(struct ufs_hba *hba,
 						bool status)
 {
@@ -1237,16 +1276,6 @@ static inline void ufshcd_vops_remove_debugfs(struct ufs_hba *hba)
 }
 #endif
 
-static inline int ufshcd_vops_crypto_req_setup(struct ufs_hba *hba,
-	struct ufshcd_lrb *lrbp, u8 *cc_index, bool *enable, u64 *dun)
-{
-	if (hba->var && hba->var->crypto_vops &&
-		hba->var->crypto_vops->crypto_req_setup)
-		return hba->var->crypto_vops->crypto_req_setup(hba, lrbp,
-			cc_index, enable, dun);
-	return 0;
-}
-
 static inline int ufshcd_vops_crypto_engine_cfg_start(struct ufs_hba *hba,
 						unsigned int task_tag)
 {
@@ -1276,14 +1305,27 @@ static inline int ufshcd_vops_crypto_engine_reset(struct ufs_hba *hba)
 	return 0;
 }
 
-static inline int ufshcd_vops_crypto_engine_get_status(struct ufs_hba *hba,
-		u32 *status)
+static inline int ufshcd_vops_crypto_engine_eh(struct ufs_hba *hba)
 {
 	if (hba->var && hba->var->crypto_vops &&
-	    hba->var->crypto_vops->crypto_engine_get_status)
-		return hba->var->crypto_vops->crypto_engine_get_status(hba,
-			status);
+	    hba->var->crypto_vops->crypto_engine_eh)
+		return hba->var->crypto_vops->crypto_engine_eh(hba);
 	return 0;
+}
+
+static inline int ufshcd_vops_crypto_engine_get_err(struct ufs_hba *hba)
+{
+	if (hba->var && hba->var->crypto_vops &&
+	    hba->var->crypto_vops->crypto_engine_get_err)
+		return hba->var->crypto_vops->crypto_engine_get_err(hba);
+	return 0;
+}
+
+static inline void ufshcd_vops_crypto_engine_reset_err(struct ufs_hba *hba)
+{
+	if (hba->var && hba->var->crypto_vops &&
+	    hba->var->crypto_vops->crypto_engine_reset_err)
+		hba->var->crypto_vops->crypto_engine_reset_err(hba);
 }
 
 static inline void ufshcd_vops_pm_qos_req_start(struct ufs_hba *hba,
@@ -1300,5 +1342,48 @@ static inline void ufshcd_vops_pm_qos_req_end(struct ufs_hba *hba,
 	if (hba->var && hba->var->pm_qos_vops && hba->var->pm_qos_vops->req_end)
 		hba->var->pm_qos_vops->req_end(hba, req, lock);
 }
+
+#define UFS_DEV_ATTR(name, fmt, args...)					\
+static ssize_t ufs_##name##_show (struct device *dev, struct device_attribute *attr, char *buf)	\
+{										\
+	struct Scsi_Host *host = container_of(dev, struct Scsi_Host, shost_dev);\
+	struct ufs_hba *hba = shost_priv(host);                                 \
+	return sprintf(buf, fmt, args);						\
+}										\
+static DEVICE_ATTR(name, S_IRUGO, ufs_##name##_show, NULL)
+
+enum ufshcd_resume_fail_step {
+	UFSHCD_RESUME_START,
+	UFSHCD_CLK_EN,
+	UFSHCD_SET_HPM,
+	UFSHCD_VENDOR_RESUME,
+	UFSHCD_HIBERN8_EXIT,
+	UFSHCD_RE_LINK,
+	UFSHCD_SET_LINK_ACTIVE,
+	UFSHCD_SET_DEV_ACTIVE_PWR_MODE,
+	UFSHCD_EN_AUTO_BKOPS,
+	UFSHCD_URGENT_BKOPS,
+	UFSHCD_RESUME_DONE,
+	UFSHCD_SUSPEND_DONE,
+};
+
+#if defined(UFSHCD_RESUME_STEP_DEBUGGING)
+static inline void ufshcd_resume_fail_check(struct ufs_hba *hba,
+		enum ufshcd_resume_fail_step step, int ret)
+{
+	if (hba->resume_fail_ret)
+		return;
+
+	hba->resume_fail_step |= BIT(step);
+	hba->resume_fail_time = ktime_get();
+	hba->resume_fail_ret = ret;
+}
+#else
+static inline void ufshcd_resume_fail_check(struct ufs_hba *hba,
+		                enum ufshcd_resume_fail_step step, int ret)
+{
+	return;
+}
+#endif
 
 #endif /* End of Header */

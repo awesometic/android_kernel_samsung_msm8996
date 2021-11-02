@@ -51,6 +51,10 @@
 #include <linux/compat.h>
 #include "compat_qseecom.h"
 
+#ifdef CONFIG_SEC_DEBUG
+#include <linux/qcom/sec_debug.h>
+#endif
+
 #define QSEECOM_DEV			"qseecom"
 #define QSEOS_VERSION_14		0x14
 #define QSEEE_VERSION_00		0x400000
@@ -2214,8 +2218,13 @@ static int __qseecom_check_app_exists(struct qseecom_check_app_ireq req,
 	list_for_each_entry(entry,
 			&qseecom.registered_app_list_head, list) {
 		if (!strcmp(entry->app_name, req.app_name)) {
-			found_app = true;
-			break;
+			//Case Number:  02276645
+			//Subject: QSEE daemon loaded wrong tz apps.
+			//Cause  : qseecom didn't check the app name length.
+			if (strlen(entry->app_name) == strlen(req.app_name)) {
+				found_app = true;
+				break;
+			}
 		}
 	}
 	spin_unlock_irqrestore(&qseecom.registered_app_list_lock, flags);
@@ -2531,6 +2540,8 @@ static int qseecom_unmap_ion_allocated_memory(struct qseecom_dev_handle *data)
 		ion_unmap_kernel(qseecom.ion_clnt, data->client.ihandle);
 		ion_free(qseecom.ion_clnt, data->client.ihandle);
 		data->client.ihandle = NULL;
+		memset((void *)&data->client,
+			0, sizeof(struct qseecom_client_handle));
 	}
 	return ret;
 }
@@ -2599,6 +2610,8 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
 		/* Populate the structure for sending scm call to load image */
 		req.qsee_cmd_id = QSEOS_APP_SHUTDOWN_COMMAND;
 		req.app_id = data->client.app_id;
+		if (!memcmp(data->client.app_name, "tz_ccm", strlen("tz_ccm"))) 
+            pr_err("[!] will unload (%s) ta with id = %d\n", (char *)data->client.app_name, data->client.app_id);
 
 		/* SCM_CALL to unload the app */
 		ret = qseecom_scm_call(SCM_SVC_TZSCHEDULER, 1, &req,
@@ -7273,6 +7286,13 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 		break;
 	}
 	case QSEECOM_IOCTL_APP_LOADED_QUERY_REQ: {
+		if ((data->type != QSEECOM_GENERIC) &&
+			(data->type != QSEECOM_CLIENT_APP)) {
+			pr_err("app loaded query req: invalid handle (%d)\n",
+				data->type);
+			ret = -EINVAL;
+			break;
+		}
 		data->type = QSEECOM_CLIENT_APP;
 		mutex_lock(&app_access_lock);
 		atomic_inc(&data->ioctl_count);
@@ -8530,6 +8550,12 @@ static int qseecom_probe(struct platform_device *pdev)
 		qseecom.fde_key_size = of_property_read_bool(
 					(&pdev->dev)->of_node,
 					"qcom,fde-key-size");
+#ifdef CONFIG_AES_256_ICE
+		if (qseecom.fde_key_size == false) {
+			pr_info("qseecom fde key size is 256bit\n");
+			qseecom.fde_key_size = true;
+		}
+#endif
 		qseecom.no_clock_support =
 				of_property_read_bool((&pdev->dev)->of_node,
 						"qcom,no-clock-support");
@@ -8610,6 +8636,9 @@ static int qseecom_probe(struct platform_device *pdev)
 					cmd_buf = (void *)&req;
 					cmd_len = sizeof(struct
 						qsee_apps_region_info_ireq);
+#ifdef CONFIG_SEC_DEBUG
+					sec_debug_secure_app_addr_size(req.addr, req.size);
+#endif
 					pr_warn("secure app region addr=0x%x size=0x%x",
 							req.addr, req.size);
 				} else {
@@ -8621,9 +8650,17 @@ static int qseecom_probe(struct platform_device *pdev)
 					cmd_buf = (void *)&req_64bit;
 					cmd_len = sizeof(struct
 					qsee_apps_region_info_64bit_ireq);
+#ifdef CONFIG_SEC_DEBUG
+					sec_debug_secure_app_addr_size(req_64bit.addr, req_64bit.size);
+#endif
 					pr_warn("secure app region addr=0x%llx size=0x%x",
 						req_64bit.addr, req_64bit.size);
 				}
+#ifdef CONFIG_SEC_DEBUG
+				sec_debug_secure_app_addr_size(req.addr, req.size);
+#endif
+				pr_warn("secure app region addr=0x%x size=0x%x",
+							req.addr, req.size);
 			} else {
 				pr_err("Fail to get secure app region info\n");
 				rc = -EINVAL;
@@ -8730,11 +8767,11 @@ static int qseecom_remove(struct platform_device *pdev)
 		&qseecom.registered_kclient_list_head, list) {
 
 		/* Break the loop if client handle is NULL */
-		if (!kclient->handle)
-			goto exit_free_kclient;
-
-		if (list_empty(&kclient->list))
-			goto exit_free_kc_handle;
+		if (!kclient->handle) {
+			list_del(&kclient->list);
+			kzfree(kclient);
+			break;
+		}
 
 		list_del(&kclient->list);
 		mutex_lock(&app_access_lock);
@@ -8746,11 +8783,6 @@ static int qseecom_remove(struct platform_device *pdev)
 			kzfree(kclient);
 		}
 	}
-
-exit_free_kc_handle:
-	kzfree(kclient->handle);
-exit_free_kclient:
-	kzfree(kclient);
 
 	spin_unlock_irqrestore(&qseecom.registered_kclient_list_lock, flags);
 

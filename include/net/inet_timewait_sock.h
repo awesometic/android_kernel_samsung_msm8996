@@ -100,6 +100,8 @@ static inline struct inet_timewait_sock *inet_twsk(const struct sock *sk)
 void inet_twsk_free(struct inet_timewait_sock *tw);
 void inet_twsk_put(struct inet_timewait_sock *tw);
 
+int inet_twsk_unhash(struct inet_timewait_sock *tw);
+
 void inet_twsk_bind_unhash(struct inet_timewait_sock *tw,
 			   struct inet_hashinfo *hashinfo);
 

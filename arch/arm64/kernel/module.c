@@ -29,15 +29,32 @@
 #include <asm/alternative.h>
 #include <asm/insn.h>
 #include <asm/sections.h>
+#include <linux/random.h>
 
 #define	AARCH64_INSN_IMM_MOVNZ		AARCH64_INSN_IMM_MAX
 #define	AARCH64_INSN_IMM_MOVK		AARCH64_INSN_IMM_16
+
+
+#ifdef  CONFIG_RELOCATABLE_KERNEL
+int randomize_module_space __read_mostly =  1; 
+#define RANDOMIZE_MODULE_REGION  (1*1024*1024)
+#endif
+
 
 void *module_alloc(unsigned long size)
 {
 	void *p;
 
-	p = __vmalloc_node_range(size, MODULE_ALIGN, MODULES_VADDR, MODULES_END,
+#ifdef CONFIG_RELOCATABLE_KERNEL
+	static unsigned long module_va = 0; 
+	/* random address is 16K ALIGN and will have 16MB shift spaces, this will reduce the avaliable memory space for modules */
+	if(module_va == 0) {
+		module_va = MODULES_VADDR; 
+		if (randomize_module_space)
+			module_va += ALIGN( get_random_int() %  RANDOMIZE_MODULE_REGION, PAGE_SIZE * 4); 
+	}
+
+	p = __vmalloc_node_range(size, MODULE_ALIGN, module_va, MODULES_END,
 				GFP_KERNEL, PAGE_KERNEL_EXEC, 0,
 				NUMA_NO_NODE, __builtin_return_address(0));
 
@@ -47,6 +64,18 @@ void *module_alloc(unsigned long size)
 	}
 
 	return p;
+#else
+	p = __vmalloc_node_range(size, MODULE_ALIGN, MODULES_VADDR, MODULES_END,
+				GFP_KERNEL, PAGE_KERNEL_EXEC, 0,
+				NUMA_NO_NODE, __builtin_return_address(0));
+
+	if (p && (kasan_module_alloc(p, size) < 0)) {
+		vfree(p);
+		return NULL;
+	}
+
+	return p; 
+#endif
 }
 
 enum aarch64_reloc_op {

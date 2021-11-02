@@ -1400,7 +1400,7 @@ static void msm_slim_qmi_recv_msg(struct kthread_work *work)
 
 	/* Drain all packets received */
 	do {
-		rc = qmi_recv_msg(qmi->handle);
+	rc = qmi_recv_msg(qmi->handle);
 	} while (rc == 0);
 	if (rc != -ENOMSG)
 		pr_err("%s: Error receiving QMI message:%d\n", __func__, rc);

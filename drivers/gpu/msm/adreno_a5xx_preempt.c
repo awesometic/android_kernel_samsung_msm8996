@@ -36,9 +36,9 @@ static void _update_wptr(struct adreno_device *adreno_dev, bool reset_timer)
 		adreno_writereg(adreno_dev, ADRENO_REG_CP_RB_WPTR,
 			rb->wptr);
 		/*
-		 * In case something got submitted while preemption was on
-		 * going, reset the timer.
-		 */
+		* In case something got submitted while preemption was on
+		* going, reset the timer.
+		*/
 		reset_timer = 1;
 	}
 
@@ -531,11 +531,17 @@ static int a5xx_preemption_iommu_init(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct kgsl_iommu *iommu = KGSL_IOMMU_PRIV(device);
+	int ret;
 
 	/* Allocate mem for storing preemption smmu record */
-	return kgsl_allocate_global(device, &iommu->smmu_info, PAGE_SIZE,
+
+	ret = kgsl_allocate_global(device, &iommu->smmu_info, PAGE_SIZE,
 		KGSL_MEMFLAGS_GPUREADONLY, KGSL_MEMDESC_PRIVILEGED,
 		"smmu_info");
+	if (ret) {
+		printk("kgsl %s %d result:%d from kgsl_allocate_global()\n", __func__, __LINE__, ret);
+	}
+	return ret;
 }
 
 static void a5xx_preemption_iommu_close(struct adreno_device *adreno_dev)
@@ -596,16 +602,21 @@ int a5xx_preemption_init(struct adreno_device *adreno_dev)
 		adreno_dev->num_ringbuffers *
 		A5XX_CP_CTXRECORD_PREEMPTION_COUNTER_SIZE, 0, 0,
 		"preemption_counters");
-	if (ret)
+
+	if (ret) {
+		printk("kgsl %s %d result:%d from kgsl_allocate_global()\n", __func__, __LINE__, ret);
 		goto err;
+	}
 
 	addr = preempt->counters.gpuaddr;
 
 	/* Allocate mem for storing preemption switch record */
 	FOR_EACH_RINGBUFFER(adreno_dev, rb, i) {
 		ret = a5xx_preemption_ringbuffer_init(adreno_dev, rb, addr);
-		if (ret)
+		if (ret) {
+			printk("kgsl %s %d result:%d from kgsl_allocate_global()\n", __func__, __LINE__, ret);
 			goto err;
+		}
 
 		addr += A5XX_CP_CTXRECORD_PREEMPTION_COUNTER_SIZE;
 	}

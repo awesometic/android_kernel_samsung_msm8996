@@ -210,6 +210,10 @@ source "drivers/input/misc/Kconfig"
 
 source "drivers/input/sensors/smi130/Kconfig"
 
+source "drivers/input/wacom/Kconfig"
+
+source "drivers/input/wacom_tab/Kconfig"
+
 endif
 
 menu "Hardware I/O ports"

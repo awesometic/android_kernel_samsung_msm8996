@@ -471,7 +471,7 @@ static int magicmouse_input_mapping(struct hid_device *hdev,
 	return 0;
 }
 
-static int magicmouse_input_configured(struct hid_device *hdev,
+static int  magicmouse_input_configured(struct hid_device *hdev,
 		struct hid_input *hi)
 
 {
@@ -485,7 +485,6 @@ static int magicmouse_input_configured(struct hid_device *hdev,
 		msc->input = NULL;
 		return ret;
 	}
-
 	return 0;
 }
 

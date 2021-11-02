@@ -839,7 +839,7 @@ static int pp_gamut_set_config(char __iomem *base_addr,
 	struct mdp_gamut_data_v1_7 *gamut_data = NULL;
 	char __iomem *base_addr_scale = base_addr;
 	uint64_t gamut_val;
-
+	
 	if (!base_addr || !cfg_data || !pp_sts) {
 		pr_err("invalid params base_addr %pK cfg_data %pK pp_sts_type %pK\n",
 		      base_addr, cfg_data, pp_sts);
@@ -907,7 +907,6 @@ static int pp_gamut_set_config(char __iomem *base_addr,
 		val = index_start;
 		val |= GAMUT_TABLE_SELECT(i);
 		writel_relaxed(val, (base_addr + GAMUT_TABLE_INDEX));
-
 		writel_relaxed(gamut_data->c1_c2_data[i][0],
 				base_addr + GAMUT_TABLE_LOWER_GB);
 		for (j = 0; j < gamut_data->tbl_size[i] - 1; j++) {
@@ -916,7 +915,7 @@ static int pp_gamut_set_config(char __iomem *base_addr,
 					gamut_data->c0_data[i][j];
 			writeq_relaxed(gamut_val,
 					base_addr + GAMUT_TABLE_UPPER_R);
-		}
+ 		}
 		writel_relaxed(gamut_data->c0_data[i][j],
 				base_addr + GAMUT_TABLE_UPPER_R);
 		if ((i >= MDP_GAMUT_SCALE_OFF_TABLE_NUM) ||
@@ -1723,11 +1722,17 @@ static int pp_igc_set_config(char __iomem *base_addr,
 		pr_err("invalid mask value for IGC %d", lut_cfg_data->block);
 		return -EINVAL;
 	}
-	if (!(lut_cfg_data->ops & MDP_PP_OPS_WRITE)) {
-		pr_debug("non write ops set %d\n", lut_cfg_data->ops);
+
+	if (lut_cfg_data->ops & MDP_PP_OPS_DISABLE) {
+		pr_debug("disable igc\n");
 		goto bail_out;
 	}
+
 	lut_data = lut_cfg_data->cfg_payload;
+	if (!lut_data) {
+		pr_err("invalid igc payload %p\n", lut_data);
+		return -EINVAL;
+	}
 	if (lut_data->len != IGC_LUT_ENTRIES || !lut_data->c0_c1_data ||
 	    !lut_data->c2_data) {
 		pr_err("invalid lut len %d c0_c1_data %pK  c2_data %pK\n",

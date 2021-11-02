@@ -30,6 +30,7 @@
 #include <linux/hashtable.h>
 #include <linux/ipc_router.h>
 #include <linux/ipc_logging.h>
+#include <linux/vmalloc.h>
 
 #include <soc/qcom/msm_qmi_interface.h>
 
@@ -897,6 +898,7 @@ static int qmi_encode_and_send_req(struct qmi_txn **ret_txn_handle,
 	struct qmi_txn *txn_handle;
 	int rc, encoded_req_len;
 	void *encoded_req;
+	int is_vmalloc = false;
 
 	if (!handle || !handle->dest_info ||
 	    !req_desc || !resp_desc || !resp)
@@ -935,7 +937,13 @@ static int qmi_encode_and_send_req(struct qmi_txn **ret_txn_handle,
 
 	/* Encode the request msg */
 	encoded_req_len = req_desc->max_msg_len + QMI_HEADER_SIZE;
-	encoded_req = kmalloc(encoded_req_len, GFP_KERNEL);
+	if (encoded_req_len >= SZ_16K) {
+		encoded_req = vmalloc(encoded_req_len);
+		is_vmalloc = true;
+	} else {
+		encoded_req = kmalloc(encoded_req_len, GFP_KERNEL);
+		is_vmalloc = false;
+	}
 	if (!encoded_req) {
 		pr_err("%s: Failed to allocate req_msg_buf\n", __func__);
 		rc = -ENOMEM;
@@ -995,7 +1003,10 @@ append_pend_txn:
 	}
 	mutex_unlock(&handle->handle_lock);
 
-	kfree(encoded_req);
+	if (is_vmalloc)
+		vfree(encoded_req);
+	else
+		kfree(encoded_req);
 	if (ret_txn_handle)
 		*ret_txn_handle = txn_handle;
 	return 0;
@@ -1003,7 +1014,10 @@ append_pend_txn:
 encode_and_send_req_err3:
 	list_del(&txn_handle->list);
 encode_and_send_req_err2:
-	kfree(encoded_req);
+	if (is_vmalloc)
+		vfree(encoded_req);
+	else
+		kfree(encoded_req);
 encode_and_send_req_err1:
 	kfree(txn_handle);
 	mutex_unlock(&handle->handle_lock);

@@ -624,6 +624,11 @@ static int gaudio_open_snd_dev(struct gaudio *card)
 	char *fn_play, *fn_cap, *fn_cntl;
 	int res = 0;
 
+	if (!card) {
+		pr_err("%s: Card is NULL", __func__);
+		return -ENODEV;
+	}
+
 	opts = container_of(card->func.fi, struct f_uac1_opts, func_inst);
 	fn_play = opts->fn_play;
 	fn_cap = opts->fn_cap;

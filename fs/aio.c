@@ -175,6 +175,10 @@ static struct backing_dev_info aio_fs_backing_dev_info = {
 	.capabilities   = BDI_CAP_NO_ACCT_AND_WRITEBACK | BDI_CAP_MAP_COPY,
 };
 
+#ifdef CONFIG_RKP_NS_PROT
+extern void rkp_set_mnt_flags(struct vfsmount *mnt, int flags);
+#endif
+
 static struct file *aio_private_file(struct kioctx *ctx, loff_t nr_pages)
 {
 	struct qstr this = QSTR_INIT("[aio]", 5);
@@ -230,8 +234,11 @@ static int __init aio_setup(void)
 	aio_mnt = kern_mount(&aio_fs);
 	if (IS_ERR(aio_mnt))
 		panic("Failed to create aio fs mount.");
+#ifdef CONFIG_RKP_NS_PROT
+	rkp_set_mnt_flags(aio_mnt, MNT_NOEXEC);
+#else
 	aio_mnt->mnt_flags |= MNT_NOEXEC;
-
+#endif
 	if (bdi_init(&aio_fs_backing_dev_info))
 		panic("Failed to init aio fs backing dev info.");
 
@@ -1447,6 +1454,7 @@ rw_common:
 			break;
 		}
 
+		get_file(file);
 		if (rw == WRITE)
 			file_start_write(file);
 
@@ -1459,6 +1467,7 @@ rw_common:
 
 		if (rw == WRITE)
 			file_end_write(file);
+		fput(file);
 		break;
 
 	case IOCB_CMD_FDSYNC:

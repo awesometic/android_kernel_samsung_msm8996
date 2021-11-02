@@ -26,4 +26,19 @@ config PFK
 		Information is used when file is encrypted later using
 		ICE or dm crypto engine
 
+config CRYPTO_FDE_KEY_UPDATE
+	tristate "Update ICE key slot #2 for dm-req-crypt by outside key"
+	default n
+	---help---
+	  ICE key can change to sec key.
+	  It uses only slot #2.
+
+	  If unsure, say N.
+
+config SCSI_UFSHCD
+	tristate "Universal Flash Storage Controller Driver Core"
+	depends on SCSI && SCSI_DMA
+	select PM_DEVFREQ
+	select DEVFREQ_GOV_SIMPLE_ONDEMAND
+
 endmenu

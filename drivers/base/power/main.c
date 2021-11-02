@@ -59,6 +59,10 @@ struct suspend_stats suspend_stats;
 static DEFINE_MUTEX(dpm_list_mtx);
 static pm_message_t pm_transition;
 
+#ifdef CONFIG_SEC_PM
+extern int wakeup_gpio_irq_flag;
+#endif
+
 static int async_error;
 
 static char *pm_verb(int event)
@@ -620,6 +624,10 @@ static int device_resume_early(struct device *dev, pm_message_t state, bool asyn
 
 	TRACE_DEVICE(dev);
 	TRACE_RESUME(0);
+
+#ifdef CONFIG_SEC_PM
+	wakeup_gpio_irq_flag = 0;
+#endif
 
 	if (dev->power.syscore || dev->power.direct_complete)
 		goto Out;

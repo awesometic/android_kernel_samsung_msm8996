@@ -3072,7 +3072,9 @@ skip_ramdump:
 	 * that was read from 0 to 4K. So fill it with zero's (to an
 	 * address for which PCIe RC honored the read without any errors).
 	 */
+#if 0
 	memset(phys_to_virt(0), 0, SZ_4K);
+#endif
 #endif
 
 	ret = device_create_file(dev, &dev_attr_fw_image_setup);

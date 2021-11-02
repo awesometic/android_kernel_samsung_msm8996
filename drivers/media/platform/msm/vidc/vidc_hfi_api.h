@@ -1003,6 +1003,11 @@ struct hal_video_signal_info {
 	bool full_range;
 };
 
+enum hal_video_color_space {
+	HAL_VIDEO_COLOR_SPACE_601,
+	HAL_VIDEO_COLOR_SPACE_709,
+};
+
 enum hal_iframesize_type {
 	HAL_IFRAMESIZE_TYPE_DEFAULT,
 	HAL_IFRAMESIZE_TYPE_MEDIUM,

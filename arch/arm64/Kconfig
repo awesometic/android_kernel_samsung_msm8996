@@ -17,7 +17,6 @@ config ARM64
 	select AUDIT_ARCH_COMPAT_GENERIC
 	select ARM_GIC_V2M if PCI_MSI
 	select ARM_GIC_V3
-	select ARM_GIC_V3_ITS if PCI_MSI
 	select BUILDTIME_EXTABLE_SORT
 	select CLONE_BACKWARDS
 	select COMMON_CLK if !ARCH_MSM
@@ -364,6 +363,483 @@ config ARCH_MSM8994_V1_TLBI_WA
 
 endmenu
 
+config SEC_FACTORY
+        bool "when it comes to sec factory mode"
+	default n
+	select SEC_NAD
+        help
+          It will support a sec factory mode
+
+config SEC_HEROQLTE_PROJECT
+	depends on ARCH_MSM8996
+		default n
+		bool "Samsung HEROQLTE Project"
+		help
+		  Support for Samsung HEROQLTE Project
+
+config MACH_HEROQLTE_ACG
+	depends on SEC_HEROQLTE_PROJECT
+		default n
+		bool "Samsung HEROQLTE USA ACG"
+		help
+		  Support for Samsung HEROQLTE USA ACG device.
+
+config MACH_HEROQLTE_ATT
+	depends on SEC_HEROQLTE_PROJECT
+		default n
+		bool "Samsung HEROQLTE USA ATT"
+		help
+		  Support for Samsung HEROQLTE USA ATT device.
+
+config MACH_HEROQLTE_CHNZC
+	depends on SEC_HEROQLTE_PROJECT
+	select PROC_TASK_STATE_CHN_ORDER
+	default n
+	bool "Samsung HEROQLTE CHN OPEN"
+	help
+	  Support for Samsung HEROQLTE CHN OPEN device.
+
+config MACH_HEROQLTE_DCM
+	depends on SEC_HEROQLTE_PROJECT
+		default n
+		bool "Samsung HEROQLTE JPN DCM"
+		help
+		  Support for Samsung HEROQLTE JPN DCM device.
+
+config MACH_HEROQLTE_KDI
+	depends on SEC_HEROQLTE_PROJECT
+		default n
+		bool "Samsung HEROQLTE JPN KDI"
+		help
+		  Support for Samsung HEROQLTE JPN KDI device.
+
+config MACH_HEROQLTE_SPR
+	depends on SEC_HEROQLTE_PROJECT
+		default n
+		bool "Samsung HEROQLTE USA SPR"
+		help
+		  Support for Samsung HEROQLTE USA SPR device.
+
+config MACH_HEROQLTE_TMO
+	depends on SEC_HEROQLTE_PROJECT
+		default n
+		bool "Samsung HEROQLTE USA TMO"
+		help
+		  Support for Samsung HEROQLTE USA TMO device.
+
+config MACH_HEROQLTE_USC
+	depends on SEC_HEROQLTE_PROJECT
+		default n
+		bool "Samsung HEROQLTE USA USC"
+		help
+		  Support for Samsung HEROQLTE USA USC device.
+
+config MACH_HEROQLTE_VZW
+	depends on SEC_HEROQLTE_PROJECT
+		default n
+		bool "Samsung HEROQLTE USA VZW"
+		help
+		  Support for Samsung HEROQLTE USA VZW device.
+
+config MACH_HEROQLTE_MTR
+	depends on SEC_HEROQLTE_PROJECT
+		default n
+		bool "Samsung HEROQLTE USA MTR"
+		help
+		  Support for Samsung HEROQLTE USA MTR device.
+
+config MACH_HEROQLTE_SED
+	depends on SEC_HEROQLTE_PROJECT
+		default n
+		bool "Samsung HEROQLTE USA OPEN"
+		help
+		  Support for Samsung HEROQLTE USA OPEN device.
+
+config SEC_HERO2QLTE_PROJECT
+	depends on ARCH_MSM8996
+		default n
+		bool "Samsung HERO2QLTE Project"
+		help
+		  Support for Samsung HERO2QLTE Project
+
+config MACH_HERO2QLTE_ATT
+	depends on SEC_HERO2QLTE_PROJECT
+		default n
+		bool "Samsung HERO2QLTE USA ATT"
+		help
+		  Support for Samsung HERO2QLTE USA ATT device.
+
+config MACH_HERO2QLTE_CHNZC
+	depends on SEC_HERO2QLTE_PROJECT
+	select PROC_TASK_STATE_CHN_ORDER
+	default n
+	bool "Samsung HERO2QLTE CHN OPEN"
+	help
+	  Support for Samsung HERO2QLTE CHN OPEN device.
+
+config MACH_HERO2QLTE_SPR
+	depends on SEC_HERO2QLTE_PROJECT
+		default n
+		bool "Samsung HERO2QLTE USA SPR"
+		help
+		  Support for Samsung HERO2QLTE USA SPR device.
+
+config MACH_HERO2QLTE_TMO
+	depends on SEC_HERO2QLTE_PROJECT
+		default n
+		bool "Samsung HERO2QLTE USA TMO"
+		help
+		  Support for Samsung HERO2QLTE USA TMO device.
+
+config MACH_HERO2QLTE_USC
+	depends on SEC_HERO2QLTE_PROJECT
+		default n
+		bool "Samsung HERO2QLTE USA USC"
+		help
+		  Support for Samsung HERO2QLTE USA USC device.
+
+config MACH_HERO2QLTE_VZW
+	depends on SEC_HERO2QLTE_PROJECT
+		default n
+		bool "Samsung HERO2QLTE USA VZW"
+		help
+		  Support for Samsung HERO2QLTE USA VZW device.
+
+config MACH_HERO2QLTE_DCM
+	depends on SEC_HERO2QLTE_PROJECT
+		default n
+		bool "Samsung HERO2QLTE JPN DCM"
+		help
+		  Support for Samsung HERO2QLTE JPN DCM device.
+
+config MACH_HERO2QLTE_KDI
+	depends on SEC_HERO2QLTE_PROJECT
+		default n
+		bool "Samsung HERO2QLTE JPN KDI"
+		help
+		  Support for Samsung HERO2QLTE JPN KDI device.
+
+config MACH_HERO2QLTE_SED
+	depends on SEC_HERO2QLTE_PROJECT
+		default n
+		bool "Samsung HERO2QLTE USA OPEN"
+		help
+		  Support for Samsung HERO2QLTE USA OPEN device.
+
+config MACH_HERO2QLTE_SINGLE
+	depends on SEC_HERO2QLTE_PROJECT
+		default n
+		bool "Samsung HERO2QLTE USA SINGLE"
+		help
+		  Support for Samsung HERO2QLTE USA SINGLE device.
+
+config SEC_AEROQLTE_PROJECT
+	depends on ARCH_MSM8996
+		default n
+		bool "Samsung AEROQLTE Project"
+		help
+		  Support for Samsung AEROQLTE Project
+
+config MACH_AEROQLTE_VZW
+	depends on SEC_AEROQLTE_PROJECT
+		default n
+		bool "Samsung AEROQLTE USA VZW"
+		help
+		  Support for Samsung AEROQLTE USA VZW device.
+
+config SEC_LUCKYQLTE_DSC_PROJECT
+	depends on ARCH_MSM8996
+		default n
+		bool "Samsung LUCKYQLTE DSC Project"
+		help
+		  Support for Samsung LUCKYQLTE DSC Project
+
+config SEC_POSEIDONLTE_PROJECT
+	depends on ARCH_MSM8996
+		default n
+		bool "Samsung POSEIDONLTE Project"
+		help
+		  Support for Samsung POSEIDONLTE Project
+
+config MACH_POSEIDONLTE_ATT
+	depends on SEC_POSEIDONLTE_PROJECT
+		default n
+		bool "Samsung POSEIDONQLTE USA ATT"
+		help
+		  Support for Samsung POSEIDONLTE USA ATT device.
+
+config SEC_HERO6LTE_PROJECT
+	depends on ARCH_MSM8996
+		default n
+		bool "Samsung HERO6LTE Project"
+		help
+		  Support for Samsung HERO6LTE Project
+
+config MACH_HERO6LTE_CHNZC
+	depends on SEC_HERO6LTE_PROJECT
+	select PROC_TASK_STATE_CHN_ORDER
+	default n
+	bool "Samsung HERO6LTE CHN OPEN"
+	help
+	  Support for Samsung HERO6LTE CHN OPEN device.
+
+config SEC_GRACEQLTE_PROJECT
+	depends on ARCH_MSM8996
+		default n
+		bool "Samsung GRACEQLTE Project"
+		help
+		  Support for Samsung GRACEQLTE Project
+
+config MACH_GRACEQLTE_ATT
+	depends on SEC_GRACEQLTE_PROJECT
+		default n
+		bool "Samsung GRACEQLTE USA ATT"
+		help
+		  Support for Samsung GRACEQLTE USA ATT device.
+
+config MACH_GRACEQLTE_VZW
+	depends on SEC_GRACEQLTE_PROJECT
+		default n
+		bool "Samsung GRACEQLTE USA VZW"
+		help
+		  Support for Samsung GRACEQLTE USA VZW device.
+
+config MACH_GRACEQLTE_CHNZC
+	depends on SEC_GRACEQLTE_PROJECT
+	select PROC_TASK_STATE_CHN_ORDER
+		default n
+		bool "Samsung GRACEQLTE USA CHN OPEN"
+		help
+		  Support for Samsung GRACEQLTE USA CHN OPEN device.
+
+config MACH_GRACEQLTE_TMO
+	depends on SEC_GRACEQLTE_PROJECT
+		default n
+		bool "Samsung GRACEQLTE USA TMO"
+		help
+		  Support for Samsung GRACEQLTE USA TMO device.
+
+config MACH_GRACEQLTE_SPR
+	depends on SEC_GRACEQLTE_PROJECT
+		default n
+		bool "Samsung GRACEQLTE USA SPR"
+		help
+		  Support for Samsung GRACEQLTE USA SPR device.
+
+config MACH_GRACEQLTE_USC
+	depends on SEC_GRACEQLTE_PROJECT
+		default n
+		bool "Samsung GRACEQLTE USA USC"
+		help
+		  Support for Samsung GRACEQLTE USA USC device.
+
+config MACH_GRACEQLTE_SINGLE
+	depends on SEC_GRACEQLTE_PROJECT
+		default n
+		bool "Samsung GRACEQLTE USA SINGLE"
+		help
+		  Support for Samsung GRACEQLTE USA SINGLE device.
+
+config MACH_GRACEQLTE_BMC
+	depends on SEC_GRACEQLTE_PROJECT
+		default n
+		bool "Samsung GRACEQLTE CAN BMC"
+		help
+		  Support for Samsung GRACEQLTE CAN BMC device.
+
+config MACH_GRACEQLTE_DCM
+	depends on SEC_GRACEQLTE_PROJECT
+		default n
+		bool "Samsung GRACEQLTE JPN DCM"
+		help
+		  Support for Samsung GRACEQLTE JPN DCM device.
+
+config MACH_GRACEQLTE_KDI
+	depends on SEC_GRACEQLTE_PROJECT
+		default n
+		bool "Samsung GRACEQLTE JPN KDI"
+		help
+		  Support for Samsung GRACEQLTE JPN KDI device.
+
+config SEC_VEYRONLTE_PROJECT
+	depends on ARCH_MSM8996
+	default n
+	bool "Samsung VEYRONLTE Project"
+	help
+	  Support for Samsung VEYRONLTE Project
+
+config MACH_VEYRONLTE_CHN_CTC
+	depends on SEC_VEYRONLTE_PROJECT
+	default n
+	bool "Samsung VEYRONLTE CHN CTC"
+	help
+	  Support for Samsung VEYRONLTE CHN CTC device.
+
+config SEC_GTS2LLTE_PROJECT
+	depends on ARCH_MSM8996
+	default n
+	bool "Samsung GTS2LLTE Project"
+	help
+	  Support for Samsung VEYRONLTE Project
+
+config MACH_GTS2LLTE_VZW
+	depends on SEC_GTS2LLTE_PROJECT
+	default n
+	bool "Samsung GTS2LLTE USA VZW"
+	help
+	  Support for Samsung GTS2LLTE USA VZW device.
+
+config SEC_GTS3LLTE_PROJECT
+	depends on ARCH_MSM8996
+	default n
+	bool "Samsung GTS3LLTE Project"
+	help
+	  Support for Samsung VEYRONLTE Project
+
+config MACH_GTS3LLTE_XX
+	depends on SEC_GTS3LLTE_PROJECT
+	default n
+	bool "Samsung GTS3LLTE EUR OPEN"
+	help
+	  Support for Samsung GTS3LLTE EUR OPEN device.
+	  
+config MACH_GTS3LLTE_ZC
+	depends on SEC_GTS3LLTE_PROJECT
+	default n
+	bool "Samsung GTS3LLTE CHN OPEN"
+	help
+	  Support for Samsung GTS3LLTE CHN OPEN device.
+	  
+config MACH_GTS3LLTE_ZH
+	depends on SEC_GTS3LLTE_PROJECT
+	default n
+	bool "Samsung GTS3LLTE CHN HK"
+	help
+	  Support for Samsung GTS3LLTE CHN HK device.
+
+config MACH_GTS3LLTE_UB
+	depends on SEC_GTS3LLTE_PROJECT
+	default n
+	bool "Samsung GTS3LLTE LTN OPEN"
+	help
+	  Support for Samsung GTS3LLTE LTN OPEN device.
+
+config MACH_GTS3LLTE_KX
+	depends on SEC_GTS3LLTE_PROJECT
+	default n
+	bool "Samsung GTS3LLTE KOR OPEN"
+	help
+	  Support for Samsung GTS3LLTE KOR OPEN device.
+
+config MACH_GTS3LLTE_DX
+	depends on SEC_GTS3LLTE_PROJECT
+	default n
+	bool "Samsung GTS3LLTE SEA OPEN"
+	help
+	  Support for Samsung GTS3LLTE SEA OPEN device.
+	  
+config MACH_GTS3LLTE_JV
+	depends on SEC_GTS3LLTE_PROJECT
+	default n
+	bool "Samsung GTS3LLTE MEA OPEN"
+	help
+	  Support for Samsung GTS3LLTE MEA OPEN device.
+
+config MACH_GTS3LLTE_TUR
+	depends on SEC_GTS3LLTE_PROJECT
+	default n
+	bool "Samsung GTS3LLTE MEA TUR"
+	help
+	  Support for Samsung GTS3LLTE MEA TUR device.
+
+config MACH_GTS3LLTE_DD
+	depends on SEC_GTS3LLTE_PROJECT
+	default n
+	bool "Samsung GTS3LLTE SWA OPEN"
+	help
+	  Support for Samsung GTS3LLTE SWA OPEN device.
+
+config MACH_GTS3LLTE_LDU
+	depends on SEC_GTS3LLTE_PROJECT
+	default n
+	bool "Samsung GTS3LLTE EUR LDU"
+	help
+	  Support for Samsung GTS3LLTE EUR LDU device.
+
+config SEC_GTS3LWIFI_PROJECT
+	depends on ARCH_MSM8996
+	default n
+	bool "Samsung GTS3LWIFI Project"
+	help
+	  Support for Samsung VEYRONLTE Project
+
+config MACH_GTS3LWIFI_XX
+	depends on SEC_GTS3LWIFI_PROJECT
+	default n
+	bool "Samsung GTS3LWIFI EUR OPEN"
+	help
+	  Support for Samsung GTS3LWIFI EUR OPEN device.
+
+config MACH_GTS3LWIFI_ZC
+	depends on SEC_GTS3LWIFI_PROJECT
+	default n
+	bool "Samsung GTS3LWIFI CHN OPEN"
+	help
+	  Support for Samsung GTS3LWIFI CHN OPEN device.
+
+config MACH_GTS3LLTE_USA
+	depends on SEC_GTS3LLTE_PROJECT
+	default n
+	bool "Samsung GTS3LLTE USA"
+	help
+	  Support for Samsung GTS3LLTE USA device.
+
+config MACH_GTS3LLTE_VZW
+	depends on MACH_GTS3LLTE_USA
+	default n
+	bool "Samsung GTS3LLTE USA VZW"
+	help
+	  Support for Samsung GTS3LLTE USA VZW device.
+
+config MACH_GTS3LLTE_SPR
+	depends on MACH_GTS3LLTE_USA
+	default n
+	bool "Samsung GTS3LLTE USA SPR"
+	help
+	  Support for Samsung GTS3LLTE USA SPR device.
+
+config MACH_GTS3LLTE_ATT
+	depends on MACH_GTS3LLTE_USA
+	default n
+	bool "Samsung GTS3LLTE USA ATT"
+	help
+	  Support for Samsung GTS3LLTE USA ATT device.
+
+config MACH_GTS3LLTE_TMO
+	depends on MACH_GTS3LLTE_USA
+	default n
+	bool "Samsung GTS3LLTE USA TMO"
+	help
+	  Support for Samsung GTS3LLTE USA TMO device.
+
+config MACH_GTS3LLTE_USC
+	depends on MACH_GTS3LLTE_USA
+	default n
+	bool "Samsung GTS3LLTE USA USC"
+	help
+	  Support for Samsung GTS3LLTE USA USC device.
+	  
+config MACH_GTS3LLTE_BMC
+	depends on MACH_GTS3LLTE_CAN
+	default n
+	bool "Samsung GTS3LLTE CAN BMC"
+	help
+	  Support for Samsung GTS3LLTE CAN BMC device.
+
+config SAMSUNG_PRODUCT_SHIP
+        bool "set up for product shipping"
+        default n
+
 menu "Bus support"
 
 config ARM_AMBA
@@ -637,6 +1113,15 @@ config CPU_BIG_ENDIAN
          Say Y if you plan on running a kernel in big-endian mode.
 
 config ARM64_SEV_IN_LOCK_UNLOCK
+	bool "Add explicit SEV in the spinlock unlock code path:
+	def_bool ARCH_MSM8996
+	help
+	In certain unexplained cases, the stlr alone might not wakeup
+	the processor waiting in WFE on a spinlock.
+	Add an explicity dsb and SEV in write_unlock, read_unlock
+	and spin_unlock to ensure that the core waiting on the lock
+        wakes up from WFE.
+
 	bool "Add explicit SEV in the spinlock unlock code path"
 	help
 	  In certain unexplained cases, the stlr alone might not wakeup
@@ -912,7 +1397,6 @@ menu "ARMv8.1 architectural features"
 
 config ARM64_PAN
 	bool "Enable support for Privileged Access Never (PAN)"
-	default y
 	help
 	 Privileged Access Never (PAN; part of the ARMv8.1 Extensions)
 	 prevents the kernel or hypervisor from accessing user-space (EL0)
@@ -1118,6 +1602,191 @@ config ARM64_ERRATUM_843419
 	  If unsure, say Y.
 
 endmenu
+
+#
+# BEGIN RKP_CFP CONFIG OPTIONS
+#
+
+menu "Control Flow Protection"
+
+config RKP_CFP
+	bool "Hyperdrive ROP protection"
+	# depends on TIMA_RKP
+	# Disable RKP for now, keep getting TIMA_RKP_VMM_PANIC when doing sleep.S code for saving/restoring x17.
+	default n
+	help
+        Static binary instrumentation of direct/indirect branches to prevent 
+        return-oriented programming (ROP) attacks and jump-oriented programming (JOP) attacks.
+
+config RKP_CFP_ROPP
+	bool "Hyperdrive: encrypt return-addresses"
+	select RKP_CFP
+	select RKP_CFP_FIX_SMC_BUG
+	default n
+
+choice
+	prompt "ROPP key"
+	default RKP_CFP_ROPP_RANDOM_KEY
+	depends on RKP_CFP && RKP_CFP_ROPP
+	help
+	  ROPP key configuration
+
+config RKP_CFP_ROPP_HYPKEY
+	bool "Use hypervisor for key secure storage"
+	help
+        if n, use random key or zero key
+
+config RKP_CFP_ROPP_RANDOM_KEY
+	bool "Hyperdrive: use pseudo random key for return-address encryption"
+	help
+        if n, use hyp key or zero key
+
+config RKP_CFP_ROPP_ZERO_KEY
+	bool "Hyperdrive: use zero key for return-address encryption"
+	help
+        if n, use hyp key or random key
+endchoice
+
+config RKP_CFP_JOPP
+	bool "Just to function entry only, Restrict BLR jump target to a valid function entry point and no br in C code"
+	select RKP_CFP
+	default n
+
+config RKP_CFP_JOPP_MAGIC
+	hex "Magic number put just above function labels to restrict BLR to function entry points"
+	# depends on RKP_CFP && RKP_CFP_JOPP
+	# basically it depends on above line but it's needed for avoiding a build break
+	default "0xb3ea3bad"
+
+config RKP_CFP_FIX_SMC_BUG
+	bool "Hyperdrive: [INSECURE] hack broken smc calls to save/restore RRK after it clobbers it"
+	depends on RKP_CFP_ROPP
+	default n
+endmenu
+
+#
+# END RKP_CFP CONFIG OPTIONS
+#
+
+config DRV_SAMSUNG
+	bool "samsung device dedicated drivers option"
+	default y
+	help
+	  This is driver option for samsung sec_class
+	  Say y here to enable samsung classes for drivers
+	  Provide option of enabling sec class
+	  Supports sec drivers key, touch, sec_debug etc
+
+config RTC_AUTO_PWRON
+        bool "RTC Auto Power on PM8994 PMICs"
+        depends on ARCH_MSM8996
+        default n
+        help
+          Support for the auto power on alarm on the PM8994 PMIC.
+          Say Y if you want to enable this feature.
+
+config RTC_AUTO_PWRON_PARAM
+        bool "RTC Auto Power on with param PM8994 PMICs"
+        depends on RTC_AUTO_PWRON
+        default n
+        help
+          This option is used to prevent invalid RTC alarm power on.
+          Say Y if you want to enable this feature.
+
+config BT_BCM4359
+	bool "Enable BCM4359 driver"
+	default n
+	help
+	  Adds BCM4358 RFKILL driver for Broadcom BCM4359 chipset.	  default is n.
+
+config BT_BLUESLEEP
+	bool "Enable BlUESLEEP driver"
+	default n
+	help
+	  Adds BlUESLEEP driver for Broadcom chipset.	  default is n.
+
+config RELOCATABLE_KERNEL 
+	bool "set kernel to relocatable in both virtual and physical address"
+	default y 
+	help 	
+	  This configuare will allow you to config the kernel into position independent kernel, with '--PIE' insert into LD script.
+
+config UH_RKP
+	bool "Samsung KNOX Micro Hypervisor"
+	default n
+	help 	
+	  this enables realtime kernel protection
+
+config TIMA_RKP 
+	bool "Samsung KNOX realtime kernel protection"
+	depends on TIMA
+	select UH_RKP
+	default n
+	help 	
+	  this enables realtime kernel protection
+
+config RKP_KDP
+	bool "Protection for cred structure"
+	depends on TIMA_RKP
+	default n
+	help
+	  Prevents unauthorized cred modification.
+
+config RKP_NS_PROT
+	bool "Protection for cred structure"
+	depends on RKP_KDP
+	default n
+	help
+	  Prevents unauthorized cred modification.
+
+
+config RKP_DMAP_PROT
+        bool "Page Double Mapping protection"
+	depends on RKP_KDP
+        default n
+        help
+          Prevents unauthorized mapping for page table.
+
+config BARCODE_PAINTER
+	bool "Bootloader Barcode Print MSM8996"
+	depends on ARCH_MSM8996
+	default n
+	help
+	  This option is used to add Barcode Print Func.
+	  Say Y if you want to enable this feature.
+
+config USER_RESET_DEBUG
+	bool "reset reason debug feature in user version"
+	default n
+	help
+	  This option provides reset history log in user version.
+	  This option enable proc/reset_reason support
+
+config USER_RESET_DEBUG_TEST
+	bool "reset reason debug test feature in eng version"
+	depends on USER_RESET_DEBUG
+	default n
+	help
+	  This option enable for test in eng version(KP, DP, TP, WP)
+
+config SEC_PERIPHERAL_SECURE_CHK
+        bool "PERIPHERAL SECURE check"
+	default n
+        help
+          To check the authentication of peripheral image.
+
+config SEC_ENGINEER_MODE_CONTROL
+        bool "Eng kernel Control feature"
+	default n
+        help
+          Use Eng kernel Control feature
+ 
+config GRACEQLTE_RAM_6G
+	depends on SEC_GRACEQLTE_PROJECT
+		default n
+		bool "Samsung GRACEQLTE RAM 6G"
+		help
+		  Support for Samsung GRACEQLTE 6G RAM device.
 
 source "net/Kconfig"
 

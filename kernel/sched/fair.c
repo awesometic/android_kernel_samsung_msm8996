@@ -3872,9 +3872,9 @@ int sched_hmp_proc_update_handler(struct ctl_table *table, int write,
 		post_big_task_count_change(cpu_online_mask);
 
 done:
+	mutex_unlock(&policy_mutex);
 	if (update_task_count)
 		put_online_cpus();
-	mutex_unlock(&policy_mutex);
 	return ret;
 }
 

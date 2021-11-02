@@ -243,7 +243,6 @@ config DM_REQ_CRYPT
 	tristate "Req Crypt target support"
 	depends on BLK_DEV_DM
 	select XTS
-	select CRYPTO_XTS
 	---help---
 	  This request based device-mapper target allows you to create a device that
 	  transparently encrypts the data on it. You'll need to activate
@@ -510,4 +509,25 @@ config DM_LOG_WRITES
 	  be called dm-log-writes.
 
 	  If unsure, say N.
+
+config CRYPTO_FDE_KEY_UPDATE
+	tristate "Update ICE key slot #2 for dm-req-crypt by outside key"
+	default n
+	---help---
+	  ICE key can change to sec key.
+	  It uses only slot #2.
+
+	  If unsure, say N.
+
+config AES_256_ICE
+	bool "Use AES-256 for inline crypto engine"
+	default n
+	depends on CRYPTO_DEV_QCOM_ICE
+
+config SCSI_UFSHCD
+	tristate "Universal Flash Storage Controller Driver Core"
+	depends on SCSI && SCSI_DMA
+	select PM_DEVFREQ
+	select DEVFREQ_GOV_SIMPLE_ONDEMAND
+
 endif # MD

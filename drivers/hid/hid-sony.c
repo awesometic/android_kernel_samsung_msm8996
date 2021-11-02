@@ -798,7 +798,7 @@ union sixaxis_output_report_01 {
 	__u8 buf[36];
 };
 
-static spinlock_t sony_dev_list_lock;
+static DEFINE_SPINLOCK(sony_dev_list_lock);
 static LIST_HEAD(sony_device_list);
 static DEFINE_IDA(sony_device_id_allocator);
 
@@ -1881,6 +1881,8 @@ static int sony_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		return -ENOMEM;
 	}
 
+	spin_lock_init(&sc->lock);
+
 	sc->quirks = quirks;
 	hid_set_drvdata(hdev, sc);
 	sc->hdev = hdev;
@@ -2057,7 +2059,7 @@ static struct hid_driver sony_driver = {
 	.name             = "sony",
 	.id_table         = sony_devices,
 	.input_mapping    = sony_mapping,
-	.input_configured = sony_input_configured,
+	.input_configured = (void*)sony_input_configured,
 	.probe            = sony_probe,
 	.remove           = sony_remove,
 	.report_fixup     = sony_report_fixup,

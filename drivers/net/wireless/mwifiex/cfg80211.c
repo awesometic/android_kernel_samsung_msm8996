@@ -1239,7 +1239,7 @@ static int mwifiex_cfg80211_change_beacon(struct wiphy *wiphy,
  */
 static int
 mwifiex_cfg80211_del_station(struct wiphy *wiphy, struct net_device *dev,
-			     struct station_del_parameters *params)
+			     const u8 *mac)
 {
 	struct mwifiex_private *priv = mwifiex_netdev_get_priv(dev);
 	struct mwifiex_sta_node *sta_node;
@@ -1248,7 +1248,7 @@ mwifiex_cfg80211_del_station(struct wiphy *wiphy, struct net_device *dev,
 	if (list_empty(&priv->sta_list) || !priv->bss_started)
 		return 0;
 
-	if (!params->mac || is_broadcast_ether_addr(params->mac)) {
+	if (!mac || is_broadcast_ether_addr(mac)) {
 		wiphy_dbg(wiphy, "%s: NULL/broadcast mac address\n", __func__);
 		list_for_each_entry(sta_node, &priv->sta_list, list) {
 			if (mwifiex_send_cmd(priv, HostCmd_CMD_UAP_STA_DEAUTH,
@@ -1258,10 +1258,9 @@ mwifiex_cfg80211_del_station(struct wiphy *wiphy, struct net_device *dev,
 			mwifiex_uap_del_sta_data(priv, sta_node);
 		}
 	} else {
-		wiphy_dbg(wiphy, "%s: mac address %pM\n", __func__,
-			  params->mac);
+		wiphy_dbg(wiphy, "%s: mac address %pM\n", __func__, mac);
 		spin_lock_irqsave(&priv->sta_list_spinlock, flags);
-		sta_node = mwifiex_get_sta_entry(priv, params->mac);
+		sta_node = mwifiex_get_sta_entry(priv, mac);
 		spin_unlock_irqrestore(&priv->sta_list_spinlock, flags);
 		if (sta_node) {
 			if (mwifiex_send_cmd(priv, HostCmd_CMD_UAP_STA_DEAUTH,

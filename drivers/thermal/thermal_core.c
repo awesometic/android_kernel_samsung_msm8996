@@ -220,7 +220,7 @@ static struct sensor_info *get_sensor(uint32_t sensor_id)
 			matching_sensor = pos;
 			break;
 		}
-	}
+ 	}
 	rcu_read_unlock();
 
 	return matching_sensor;
@@ -240,7 +240,7 @@ int sensor_get_id(char *name)
 			matching_id = pos->sensor_id;
 			break;
 		}
-	}
+ 	}
 	rcu_read_unlock();
 
 	return matching_id;
@@ -2451,10 +2451,10 @@ struct thermal_zone_device *thermal_zone_get_zone_by_name(const char *name)
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(pos, &thermal_tz_list, node)
-		if (!strncasecmp(name, pos->type, THERMAL_NAME_LENGTH)) {
-			found++;
-			ref = pos;
-		}
+ 		if (!strncasecmp(name, pos->type, THERMAL_NAME_LENGTH)) {
+ 			found++;
+ 			ref = pos;
+ 		}
 	rcu_read_unlock();
 
 	/* nothing has been found, thus an error code for it */

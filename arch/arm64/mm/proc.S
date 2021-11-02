@@ -25,6 +25,11 @@
 #include <asm/hwcap.h>
 #include <asm/pgtable.h>
 
+#ifdef CONFIG_RKP_CFP_FIX_SMC_BUG
+#include <asm/rkp_cfp.h>
+#endif
+
+#ifndef CONFIG_TIMA_RKP
 #ifdef CONFIG_ARM64_64K_PAGES
 #define TCR_TG_FLAGS	TCR_TG0_64K | TCR_TG1_64K
 #else
@@ -35,7 +40,15 @@
 
 /* PTWs cacheable, inner/outer WBWA */
 #define TCR_CACHE_FLAGS	TCR_IRGN_WBWA | TCR_ORGN_WBWA
-
+#else
+#ifndef CONFIG_SMP
+/* PTWs cacheable, inner/outer WBWA not shareable */
+#define TCR_FLAGS	TCR_IRGN_WBWA | TCR_ORGN_WBWA
+#else
+/* PTWs cacheable, inner/outer WBWA shareable */
+#define TCR_FLAGS	TCR_IRGN_WBWA | TCR_ORGN_WBWA | TCR_SHARED
+#endif
+#endif
 #define MAIR(attr, mt)	((attr) << ((mt) * 8))
 
 /*
@@ -101,8 +114,10 @@ ENTRY(cpu_do_resume)
 	msr	contextidr_el1, x4
 	msr	mair_el1, x5
 	msr	cpacr_el1, x6
+
 	msr	ttbr0_el1, x1
 	msr	ttbr1_el1, x7
+
 	tcr_set_idmap_t0sz x8, x7
 	msr	tcr_el1, x8
 	msr	vbar_el1, x9
@@ -187,8 +202,13 @@ ENTRY(__cpu_setup)
 	 * Set/prepare TCR and TTBR. We use 512GB (39-bit) address range for
 	 * both user and kernel.
 	 */
+#ifndef CONFIG_TIMA_RKP
 	ldr	x10, =TCR_TxSZ(VA_BITS) | TCR_CACHE_FLAGS | TCR_SMP_FLAGS | \
 			TCR_TG_FLAGS | TCR_ASID16 | TCR_TBI0 | TCR_A1
+#else
+	ldr	x10, =TCR_TxSZ(VA_BITS) | TCR_FLAGS | \
+		      TCR_ASID16 | TCR_TBI0 | TCR_A1 | (1 << 31)
+#endif
 	tcr_set_idmap_t0sz	x10, x9
 
 	/*
@@ -197,6 +217,12 @@ ENTRY(__cpu_setup)
 	 */
 	mrs	x9, ID_AA64MMFR0_EL1
 	bfi	x10, x9, #32, #3
+#ifdef CONFIG_TIMA_RKP
+#ifdef CONFIG_ARM64_64K_PAGES
+	orr	x10, x10, TCR_TG0_64K
+	orr	x10, x10, TCR_TG1_64K
+#endif
+#endif
 	msr	tcr_el1, x10
 	ret					// return to head.S
 ENDPROC(__cpu_setup)

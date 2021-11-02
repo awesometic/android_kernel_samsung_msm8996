@@ -41,14 +41,24 @@ pstore_ftrace_decode_cpu(struct pstore_ftrace_record *rec)
 
 #ifdef CONFIG_PSTORE_FTRACE
 extern void pstore_register_ftrace(void);
+extern void pstore_unregister_ftrace(void);
 #else
 static inline void pstore_register_ftrace(void) {}
+static inline void pstore_unregister_ftrace(void) {}
 #endif
 
 #ifdef CONFIG_PSTORE_PMSG
 extern void pstore_register_pmsg(void);
+extern void pstore_unregister_pmsg(void);
 #else
 static inline void pstore_register_pmsg(void) {}
+static inline void pstore_unregister_pmsg(void) {}
+#endif
+
+#ifdef CONFIG_PSTORE_PMSG_SSPLOG
+extern int ss_hook_pmsg(char *buffer, size_t count);
+#else
+static inline int ss_hook_pmsg(char *buffer, size_t count) {return 0;}
 #endif
 
 extern struct pstore_info *psinfo;

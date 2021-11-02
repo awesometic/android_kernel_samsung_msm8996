@@ -14,6 +14,7 @@
 #define NO_SET_RATE -1
 #define INIT_RATE -2
 
+//#define CONFIG_CAM_SOC_API_DBG
 #ifdef CONFIG_CAM_SOC_API_DBG
 #define CDBG(fmt, args...) pr_err(fmt, ##args)
 #else
@@ -59,7 +60,7 @@ static int msm_camera_get_clk_info_internal(struct device *dev,
 		pr_err("err: No clocks found in DT=%zu\n", cnt);
 		return -EINVAL;
 	}
-
+#if 0 //TEMP_8996_N
 	tmp = of_property_count_u32_elems(of_node, "qcom,clock-rates");
 	if (tmp <= 0) {
 		pr_err("err: No clk rates device tree, count=%zu", tmp);
@@ -71,7 +72,7 @@ static int msm_camera_get_clk_info_internal(struct device *dev,
 			cnt, tmp);
 		return -EINVAL;
 	}
-
+#endif
 	if (of_property_read_bool(of_node, "qcom,clock-cntl-support")) {
 		tmp = of_property_count_strings(of_node,
 				"qcom,clock-control");
@@ -1006,11 +1007,8 @@ uint32_t msm_camera_unregister_bus_client(enum cam_bus_client id)
 
 	mutex_destroy(&g_cv[id].lock);
 	msm_bus_scale_unregister_client(g_cv[id].bus_client);
-	g_cv[id].bus_client = 0;
-	g_cv[id].num_usecases = 0;
-	g_cv[id].num_paths = 0;
-	g_cv[id].vector_index = 0;
-	g_cv[id].dyn_vote = 0;
+	msm_bus_cl_clear_pdata(g_cv[id].pdata);
+	memset(&g_cv[id], 0, sizeof(struct msm_cam_bus_pscale_data));
 
 	return 0;
 }

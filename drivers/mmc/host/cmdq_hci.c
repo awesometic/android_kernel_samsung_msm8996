@@ -152,6 +152,7 @@ static void cmdq_clear_set_irqs(struct cmdq_host *cq_host, u32 clear, u32 set)
 static void cmdq_dump_task_history(struct cmdq_host *cq_host)
 {
 	int i;
+	u32 low32b = 0;
 
 	if (likely(!cq_host->mmc->cmdq_thist_enabled))
 		return;
@@ -170,6 +171,18 @@ static void cmdq_dump_task_history(struct cmdq_host *cq_host)
 			(cq_host->thist[i].is_dcmd) ? "DCMD" : "DATA",
 			lower_32_bits(cq_host->thist[i].task),
 			upper_32_bits(cq_host->thist[i].task));
+		pr_err(DRV_NAME ": Tag : %d, Issue time: %lld ms\n",
+				cq_host->thist[i].tag,
+				ktime_to_ms(cq_host->thist[i].issue_time));
+		low32b = lower_32_bits(cq_host->thist[i].task);
+		pr_err(DRV_NAME ": %s, blkcnt:0x%04x, rel_wr:%d, QBR:%d, PRIO:%d, DTAG:%d\n",
+				low32b & (1 << 12) ? "RD" : "WR", (low32b & (0xFFFF << 16)) >> 16,
+				(low32b & (1 << 15)) >> 15, (low32b & (1 << 14)) >> 14,
+				(low32b & (1 << 13)) >> 13, (low32b & (1 << 11)) >> 11);
+		pr_err(DRV_NAME ":   context:0x%x, FPROG:%d, ACT:0x%x, INT:%d, END:%d, VALID:%d\n",
+				(low32b & (0xF << 7)) >> 7, (low32b & (1 << 6)) >> 6,
+				(low32b & (0x7 << 3)) >> 3, (low32b & (1 << 2)) >> 2,
+				(low32b & (1 << 1)) >> 1, low32b & 1);
 	}
 	pr_err("-------------------------\n");
 }
@@ -198,6 +211,7 @@ static void cmdq_dump_adma_mem(struct cmdq_host *cq_host)
 static void cmdq_dumpregs(struct cmdq_host *cq_host)
 {
 	struct mmc_host *mmc = cq_host->mmc;
+	int err = 0;
 
 	MMC_TRACE(mmc,
 	"%s: 0x0C=0x%08x 0x10=0x%08x 0x14=0x%08x 0x18=0x%08x 0x28=0x%08x 0x2C=0x%08x 0x30=0x%08x 0x34=0x%08x 0x54=0x%08x 0x58=0x%08x 0x5C=0x%08x 0x48=0x%08x\n",
@@ -246,6 +260,16 @@ static void cmdq_dumpregs(struct cmdq_host *cq_host)
 	pr_err(DRV_NAME": Vendor cfg 0x%08x\n",
 	       cmdq_readl(cq_host, CQ_VENDOR_CFG));
 	pr_err(DRV_NAME ": ===========================================\n");
+
+	err = cmdq_readl(cq_host, CQTERRI);
+	if (err & CQ_RMEFV)
+		pr_err(DRV_NAME ": CMD: %d, err tag: %d\n",
+				GET_CMD_ERR_IDX(err),
+				GET_CMD_ERR_TAG(err));
+	if (err & CQ_DTEFV)
+		pr_err(DRV_NAME ": DAT: %d, err tag: %d\n",
+				GET_DAT_ERR_IDX(err),
+				GET_DAT_ERR_TAG(err));
 
 	cmdq_dump_task_history(cq_host);
 	if (cq_host->ops->dump_vendor_regs)
@@ -410,6 +434,11 @@ static int cmdq_enable(struct mmc_host *mmc)
 	    !mmc_card_configured_auto_bkops(mmc->card))
 		cmdq_writel(cq_host, cmdq_readl(cq_host, CQRMEM) | CQ_EXCEPTION,
 				CQRMEM);
+
+        /* disable write protection violation indication */
+	cmdq_writel(cq_host,
+		cmdq_readl(cq_host, CQRMEM) & ~(WP_VIOLATION | WP_ERASE_SKIP),
+		CQRMEM);
 
 	/* ensure the writes are done before enabling CQE */
 	mb();
@@ -623,7 +652,7 @@ static int cmdq_prep_tran_desc(struct mmc_request *mrq,
 }
 
 static void cmdq_log_task_desc_history(struct cmdq_host *cq_host, u64 task,
-					bool is_dcmd)
+					bool is_dcmd, u32 tag)
 {
 	if (likely(!cq_host->mmc->cmdq_thist_enabled))
 		return;
@@ -638,6 +667,8 @@ static void cmdq_log_task_desc_history(struct cmdq_host *cq_host, u64 task,
 		cq_host->thist_idx = 0;
 
 	cq_host->thist[cq_host->thist_idx].is_dcmd = is_dcmd;
+	cq_host->thist[cq_host->thist_idx].tag = tag;
+	cq_host->thist[cq_host->thist_idx].issue_time = ktime_get();
 	memcpy(&cq_host->thist[cq_host->thist_idx++].task,
 		&task, cq_host->task_desc_len);
 }
@@ -681,7 +712,7 @@ static void cmdq_prep_dcmd_desc(struct mmc_host *mmc,
 		mrq->cmd->opcode, timing, resp_type);
 	dataddr = (__le64 __force *)(desc + 4);
 	dataddr[0] = cpu_to_le64((u64)mrq->cmd->arg);
-	cmdq_log_task_desc_history(cq_host, *task_desc, true);
+	cmdq_log_task_desc_history(cq_host, *task_desc, true, DCMD_SLOT);
 	MMC_TRACE(mrq->host,
 		"%s: DCMD: Task: 0x%08x | Args: 0x%08x\n",
 		__func__,
@@ -744,7 +775,7 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	cmdq_prep_task_desc(mrq, &data, 1,
 			    (mrq->cmdq_req->cmdq_req_flags & QBR));
 	*task_desc = cpu_to_le64(data);
-	cmdq_log_task_desc_history(cq_host, *task_desc, false);
+	cmdq_log_task_desc_history(cq_host, *task_desc, false, tag);
 
 	err = cmdq_prep_tran_desc(mrq, cq_host, tag);
 	if (err) {
@@ -1274,6 +1305,8 @@ int cmdq_init(struct cmdq_host *cq_host, struct mmc_host *mmc,
 	mmc->cmdq_ops = &cmdq_host_ops;
 	mmc->num_cq_slots = NUM_SLOTS;
 	mmc->dcmd_cq_slot = DCMD_SLOT;
+	/* cmdq_task_history */
+	mmc->cmdq_thist_enabled = true;
 
 	cq_host->mrq_slot = kzalloc(sizeof(cq_host->mrq_slot) *
 				    cq_host->num_slots, GFP_KERNEL);

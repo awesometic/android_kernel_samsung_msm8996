@@ -318,6 +318,7 @@ void kgsl_process_event_groups(struct kgsl_device *device)
 {
 	struct kgsl_event_group *group;
 
+	trace_printk("device:%p, %pF\n", device, __builtin_return_address(0));
 	read_lock(&group_lock);
 	list_for_each_entry(group, &group_list, group)
 		_process_event_group(device, group, false);

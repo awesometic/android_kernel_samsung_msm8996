@@ -92,3 +92,6 @@ obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_FW_UPDATE) 	+= synaptics_fw_update.o
 obj-$(CONFIG_TOUCHSCREEN_GT9XX)		+= gt9xx/
 obj-$(CONFIG_TOUCHSCREEN_HIMAX_CHIPSET)	+= hxchipset/
 obj-$(CONFIG_TOUCHSCREEN_FTS)		+= focaltech_touch/
+obj-$(CONFIG_TOUCHSCREEN_SEC_TS)	+= sec_ts/
+obj-$(CONFIG_TOUCHSCREEN_STM)		+= stm/
+obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_DSX2) += synaptics_dsx2/

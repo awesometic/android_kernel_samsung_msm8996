@@ -3,6 +3,10 @@
 #
 
 obj-y                          := main.o version.o mounts.o
+ifeq ($(CONFIG_RKP_CFP), y)
+obj-y += rkp_cfp.o
+endif
+
 obj-y                          += noinitramfs.o
 obj-$(CONFIG_BLK_DEV_INITRD)   += initramfs.o
 obj-$(CONFIG_GENERIC_CALIBRATE_DELAY) += calibrate.o

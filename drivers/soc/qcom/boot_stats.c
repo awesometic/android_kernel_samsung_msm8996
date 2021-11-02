@@ -27,6 +27,13 @@
 #include <linux/types.h>
 #include <soc/qcom/boot_stats.h>
 
+#if defined(CONFIG_SEC_BSP)
+uint32_t bootloader_start;
+uint32_t bootloader_end;
+uint32_t bootloader_display;
+uint32_t bootloader_load_kernel;
+#endif
+
 static void __iomem *mpm_counter_base;
 static uint32_t mpm_counter_freq;
 struct boot_stats __iomem *boot_stats;
@@ -71,6 +78,12 @@ static int mpm_parse_dt(void)
 
 static void print_boot_stats(void)
 {
+#if defined(CONFIG_SEC_BSP)
+	bootloader_start = readl_relaxed(&boot_stats->bootloader_start);
+	bootloader_end = readl_relaxed(&boot_stats->bootloader_end);
+	bootloader_display = readl_relaxed(&boot_stats->bootloader_display);
+	bootloader_load_kernel = readl_relaxed(&boot_stats->bootloader_load_kernel);
+#endif
 	pr_info("KPI: Bootloader start count = %u\n",
 		readl_relaxed(&boot_stats->bootloader_start));
 	pr_info("KPI: Bootloader end count = %u\n",
@@ -121,6 +134,13 @@ unsigned long long int msm_timer_get_sclk_ticks(void)
 	return t1;
 }
 
+#if defined(CONFIG_SEC_BSP)
+unsigned int get_boot_stat_time(void)
+{
+	return readl_relaxed(mpm_counter_base);
+}
+#endif
+
 int boot_stats_init(void)
 {
 	int ret;
@@ -139,6 +159,8 @@ int boot_stats_init(void)
 int boot_stats_exit(void)
 {
 	iounmap(boot_stats);
+#if !defined(CONFIG_SEC_BSP)
 	iounmap(mpm_counter_base);
+#endif
 	return 0;
 }

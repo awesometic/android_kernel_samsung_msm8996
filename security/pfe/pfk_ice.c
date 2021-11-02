@@ -34,7 +34,11 @@
 #define TZ_ES_INVALIDATE_ICE_KEY 0x3
 
 /* index 0 and 1 is reserved for FDE */
+#ifdef CONFIG_CRYPTO_FDE_KEY_UPDATE
+#define MIN_ICE_KEY_INDEX 3
+#else
 #define MIN_ICE_KEY_INDEX 2
+#endif
 
 #define MAX_ICE_KEY_INDEX 31
 
@@ -44,19 +48,17 @@
 
 
 #define TZ_ES_INVALIDATE_ICE_KEY_ID \
-		TZ_SYSCALL_CREATE_SMC_ID(TZ_OWNER_SIP, \
-			TZ_SVC_ES, TZ_ES_INVALIDATE_ICE_KEY)
-
+	TZ_SYSCALL_CREATE_SMC_ID(TZ_OWNER_SIP, \
+		TZ_SVC_ES, TZ_ES_INVALIDATE_ICE_KEY)
 
 #define TZ_ES_SET_ICE_KEY_PARAM_ID \
-	TZ_SYSCALL_CREATE_PARAM_ID_5( \
-		TZ_SYSCALL_PARAM_TYPE_VAL, \
-		TZ_SYSCALL_PARAM_TYPE_BUF_RW, TZ_SYSCALL_PARAM_TYPE_VAL, \
-		TZ_SYSCALL_PARAM_TYPE_BUF_RW, TZ_SYSCALL_PARAM_TYPE_VAL)
+	TZ_SYSCALL_CREATE_PARAM_ID_6( \
+		TZ_SYSCALL_PARAM_TYPE_VAL, TZ_SYSCALL_PARAM_TYPE_BUF_RW, TZ_SYSCALL_PARAM_TYPE_VAL, \
+		TZ_SYSCALL_PARAM_TYPE_BUF_RW, TZ_SYSCALL_PARAM_TYPE_VAL, TZ_SYSCALL_PARAM_TYPE_VAL)
 
 #define TZ_ES_INVALIDATE_ICE_KEY_PARAM_ID \
-	TZ_SYSCALL_CREATE_PARAM_ID_1( \
-	TZ_SYSCALL_PARAM_TYPE_VAL)
+	TZ_SYSCALL_CREATE_PARAM_ID_2( \
+		TZ_SYSCALL_PARAM_TYPE_VAL, TZ_SYSCALL_PARAM_TYPE_VAL)
 
 #define ICE_KEY_SIZE 32
 #define ICE_SALT_SIZE 32
@@ -102,8 +104,17 @@ int qti_pfk_ice_set_key(uint32_t index, uint8_t *key, uint8_t *salt)
 	desc.args[2] = tzbuflen_key;
 	desc.args[3] = virt_to_phys(tzbuf_salt);
 	desc.args[4] = tzbuflen_salt;
+#ifdef CONFIG_SCSI_UFSHCD
+	desc.args[5] = 10;
+#else
+	desc.args[5] = 20;
+#endif
 
+#ifdef CONFIG_SCSI_UFSHCD
 	ret = qcom_ice_setup_ice_hw("ufs", true);
+#else
+	ret = qcom_ice_setup_ice_hw("sdcc", true);
+#endif
 	if (ret) {
 		pr_err("%s: could not enable clocks: 0x%x\n", __func__, ret);
 		return ret;
@@ -111,7 +122,11 @@ int qti_pfk_ice_set_key(uint32_t index, uint8_t *key, uint8_t *salt)
 
 	ret = scm_call2(smc_id, &desc);
 
+#ifdef CONFIG_SCSI_UFSHCD
 	qcom_ice_setup_ice_hw("ufs", false);
+#else
+	qcom_ice_setup_ice_hw("sdcc", false);
+#endif
 
 	pr_debug(" %s , ret = %d\n", __func__, ret);
 	if (ret) {
@@ -143,7 +158,11 @@ int qti_pfk_ice_invalidate_key(uint32_t index)
 	desc.arginfo = TZ_ES_INVALIDATE_ICE_KEY_PARAM_ID;
 	desc.args[0] = index;
 
+#ifdef CONFIG_SCSI_UFSHCD
 	ret = qcom_ice_setup_ice_hw("ufs", true);
+#else
+	ret = qcom_ice_setup_ice_hw("sdcc", true);
+#endif
 	if (ret) {
 		pr_err("%s: could not enable clocks: 0x%x\n", __func__, ret);
 		return ret;
@@ -151,7 +170,11 @@ int qti_pfk_ice_invalidate_key(uint32_t index)
 
 	ret = scm_call2(smc_id, &desc);
 
+#ifdef CONFIG_SCSI_UFSHCD
 	qcom_ice_setup_ice_hw("ufs", false);
+#else
+	qcom_ice_setup_ice_hw("sdcc", false);
+#endif
 
 	pr_debug(" %s , ret = %d\n", __func__, ret);
 	if (ret)

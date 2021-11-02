@@ -454,6 +454,23 @@ config REGULATOR_MAX77802
 	  Exynos5420/Exynos5800 SoCs to control various voltages.
 	  It includes support for control of voltage and ramp speed.
 
+config REGULATOR_MAX77838
+	tristate "Maxim 77838 regulator"
+	depends on I2C
+	help
+	  This driver provides support for the voltage regulators of the MAX77838.
+	  The MAX77838 is a companion power management IC for the smart phones.
+	  The Max77838 handles LDO and BUCK control
+
+config REGULATOR_ONSEMI_NCP6335D
+	tristate "OnSemi NCP6335D regulator support"
+	depends on I2C
+	help
+	 This driver supports the OnSemi NCP6335D switching voltage regulator
+	 (buck convertor). The regulator is controlled using an I2C interface
+	 and supports a programmable voltage range from 0.6V to 1.4V in steps
+	 of 6.25mV.
+
 config REGULATOR_MC13XXX_CORE
 	tristate
 
@@ -906,6 +923,19 @@ config REGULATOR_KRYO
 	  can be configured for use when certain power constraints are met.
 	  Say yes to support management of LDO and BHS modes for the clusters in the
 	  CPU subsystem.
+
+config REGULATOR_S2MPB02
+	tristate "Samsung S2MPB02 regulator"
+	depends on MFD_S2MPB02
+	help
+	  This driver controls a Samsung S2MPB02 regulator via I2C bus.
+
+config REGULATOR_S2MPB02_SUB
+	tristate "Samsung S2MPB02-SUB regulator"
+	depends on MFD_S2MPB02
+	default n
+	help
+	  This driver controls a Samsung S2MPB02-SUB regulator via I2C bus.
 
 endif
 

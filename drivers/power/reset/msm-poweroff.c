@@ -33,6 +33,12 @@
 #include <soc/qcom/restart.h>
 #include <soc/qcom/watchdog.h>
 
+#ifdef CONFIG_SEC_DEBUG
+#include <linux/qcom/sec_debug.h>
+#include <linux/notifier.h>
+#include <linux/ftrace.h>
+#endif
+
 #define EMERGENCY_DLOAD_MAGIC1    0x322A4F99
 #define EMERGENCY_DLOAD_MAGIC2    0xC67E4350
 #define EMERGENCY_DLOAD_MAGIC3    0x77777777
@@ -47,7 +53,18 @@
 
 
 static int restart_mode;
+
+#ifdef CONFIG_SEC_DEBUG
+/* This variable is updated in sec_debug
+ because device_initcall might be called too late to use this
+ when any expection occurs in the early stage of bootup.
+*/
+extern void *restart_reason;  
+#else
 static void *restart_reason;
+#endif
+static void *dload_type_addr;
+
 static bool scm_pmic_arbiter_disable_supported;
 static bool scm_deassert_ps_hold_supported;
 /* Download mode master kill-switch */
@@ -94,7 +111,7 @@ struct reset_attribute {
 
 module_param_call(download_mode, dload_set, param_get_int,
 			&download_mode, 0644);
-
+			
 static int panic_prep_restart(struct notifier_block *this,
 			      unsigned long event, void *ptr)
 {
@@ -129,7 +146,7 @@ int scm_set_dload_mode(int arg1, int arg2)
 				&desc);
 }
 
-static void set_dload_mode(int on)
+void set_dload_mode(int on)
 {
 	int ret;
 
@@ -145,13 +162,18 @@ static void set_dload_mode(int on)
 		pr_err("Failed to set secure DLOAD mode: %d\n", ret);
 
 	dload_mode_enabled = on;
+
+#ifdef CONFIG_SEC_DEBUG
+	pr_err("set_dload_mode <%d> ( %x )\n", on,
+			(unsigned int) CALLER_ADDR0);
+#endif	
 }
 
 static bool get_dload_mode(void)
 {
 	return dload_mode_enabled;
 }
-
+#if 0
 static void enable_emergency_dload_mode(void)
 {
 	int ret;
@@ -176,7 +198,7 @@ static void enable_emergency_dload_mode(void)
 	if (ret)
 		pr_err("Failed to set secure EDLOAD mode: %d\n", ret);
 }
-
+#endif
 static int dload_set(const char *val, struct kernel_param *kp)
 {
 	int ret;
@@ -267,7 +289,12 @@ static void halt_spmi_pmic_arbiter(void)
 static void msm_restart_prepare(const char *cmd)
 {
 	bool need_warm_reset = false;
+#ifdef CONFIG_SEC_DEBUG
+	unsigned long value;
+	int hard_reset_reason = 0xff;
+#endif
 
+#ifndef CONFIG_SEC_DEBUG
 #ifdef CONFIG_MSM_DLOAD_MODE
 
 	/* Write download mode flags if we're panic'ing
@@ -277,6 +304,23 @@ static void msm_restart_prepare(const char *cmd)
 
 	set_dload_mode(download_mode &&
 			(in_panic || restart_mode == RESTART_DLOAD));
+#endif
+#endif
+#ifdef CONFIG_SEC_DEBUG_LOW_LOG
+#ifdef CONFIG_MSM_DLOAD_MODE
+#ifdef CONFIG_SEC_DEBUG
+	if (sec_debug_is_enabled()
+	&& ((restart_mode == RESTART_DLOAD) || in_panic))
+		set_dload_mode(1);
+	else
+		set_dload_mode(0);
+#else
+	set_dload_mode(0);
+	set_dload_mode(in_panic);
+	if (restart_mode == RESTART_DLOAD)
+		set_dload_mode(1);
+#endif
+#endif
 #endif
 
 	if (qpnp_pon_check_hard_reset_stored()) {
@@ -300,42 +344,164 @@ static void msm_restart_prepare(const char *cmd)
 
 	if (cmd != NULL) {
 		if (!strncmp(cmd, "bootloader", 10)) {
+			hard_reset_reason = PON_RESTART_REASON_BOOTLOADER;
 			qpnp_pon_set_restart_reason(
-				PON_RESTART_REASON_BOOTLOADER);
-			__raw_writel(0x77665500, restart_reason);
+				hard_reset_reason);
 		} else if (!strncmp(cmd, "recovery", 8)) {
+			hard_reset_reason = PON_RESTART_REASON_RECOVERY;
 			qpnp_pon_set_restart_reason(
-				PON_RESTART_REASON_RECOVERY);
-			__raw_writel(0x77665502, restart_reason);
+				hard_reset_reason);
 		} else if (!strcmp(cmd, "rtc")) {
+			hard_reset_reason = PON_RESTART_REASON_RTC;
 			qpnp_pon_set_restart_reason(
-				PON_RESTART_REASON_RTC);
-			__raw_writel(0x77665503, restart_reason);
+				hard_reset_reason);
 		} else if (!strcmp(cmd, "dm-verity device corrupted")) {
+			hard_reset_reason = PON_RESTART_REASON_DMVERITY_CORRUPTED;
 			qpnp_pon_set_restart_reason(
-				PON_RESTART_REASON_DMVERITY_CORRUPTED);
-			__raw_writel(0x77665508, restart_reason);
+				hard_reset_reason);
 		} else if (!strcmp(cmd, "dm-verity enforcing")) {
+			hard_reset_reason = PON_RESTART_REASON_DMVERITY_ENFORCE;
 			qpnp_pon_set_restart_reason(
-				PON_RESTART_REASON_DMVERITY_ENFORCE);
-			__raw_writel(0x77665509, restart_reason);
+				hard_reset_reason);
 		} else if (!strcmp(cmd, "keys clear")) {
+			hard_reset_reason = PON_RESTART_REASON_KEYS_CLEAR;
 			qpnp_pon_set_restart_reason(
-				PON_RESTART_REASON_KEYS_CLEAR);
-			__raw_writel(0x7766550a, restart_reason);
+				hard_reset_reason);
+#ifdef CONFIG_SEC_PERIPHERAL_SECURE_CHK
+		} else if (!strncmp(cmd, "peripheral_hw_reset", 19)) {
+			hard_reset_reason = PON_RESTART_REASON_SECURE_CHECK_FAIL;
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+#endif
+#ifdef CONFIG_SEC_ENGINEER_MODE_CONTROL
+		} else if (!strncmp(cmd, "em_mode_force_user", 18)) {
+			hard_reset_reason = PON_RESTART_REASON_EM_FORCE_USER;
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+#endif			
 		} else if (!strncmp(cmd, "oem-", 4)) {
+#ifdef CONFIG_SEC_BSP
+			hard_reset_reason = PON_RESTART_REASON_UNKNOWN;
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+#else
 			unsigned long code;
 			int ret;
 			ret = kstrtoul(cmd + 4, 16, &code);
 			if (!ret)
-				__raw_writel(0x6f656d00 | (code & 0xff),
-					     restart_reason);
+				__raw_writel(0x6f656d00 | (code & 0xff),restart_reason);
+#endif
+#ifdef CONFIG_SEC_DEBUG
+		} else if (!strncmp(cmd, "sec_debug_hw_reset", 18)) {
+			__raw_writel(0x776655ee, restart_reason);
+		} else if (!strncmp(cmd, "download", 8)) {
+			hard_reset_reason = PON_RESTART_REASON_DOWNLOAD;
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+		} else if (!strncmp(cmd, "nvbackup", 8)) {
+			hard_reset_reason = PON_RESTART_REASON_NVBACKUP;
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+		} else if (!strncmp(cmd, "nvrestore", 9)) {
+			hard_reset_reason = PON_RESTART_REASON_NVRESTORE;
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+		} else if (!strncmp(cmd, "nverase", 7)) {
+			hard_reset_reason = PON_RESTART_REASON_NVERASE;
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+		} else if (!strncmp(cmd, "nvrecovery", 10)) {
+			hard_reset_reason = PON_RESTART_REASON_NVRECOVERY;
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+		} else if (!strncmp(cmd, "sud", 3) && !kstrtoul(cmd + 3, 0, &value)) {
+			hard_reset_reason = (PON_RESTART_REASON_RORY_START | value) ; 
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+		} else if (!strncmp(cmd, "debug", 5)
+					&& !kstrtoul(cmd + 5, 0, &value)) {
+			switch (value) {
+				case 0x4f4c:
+					hard_reset_reason = PON_RESTART_REASON_DBG_LOW;
+					break;
+				case 0x494d:
+					hard_reset_reason = PON_RESTART_REASON_DBG_MID;
+					break;
+				case 0x4948:
+					hard_reset_reason = PON_RESTART_REASON_DBG_HIGH;
+					break;
+				default:
+					hard_reset_reason = PON_RESTART_REASON_UNKNOWN;
+					break;
+			}
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+		} else if (!strncmp(cmd, "cpdebug", 7) /*  set cp debug level */
+					&& !kstrtoul(cmd + 7, 0, &value)) {
+			switch (value) {
+				case 0x5500:
+					hard_reset_reason = PON_RESTART_REASON_CP_DBG_ON;
+					break;
+				case 0x55ff:
+					hard_reset_reason = PON_RESTART_REASON_CP_DBG_OFF;
+					break;
+				default:
+					hard_reset_reason = PON_RESTART_REASON_UNKNOWN;
+					break;
+			}
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+		} else if (!strncmp(cmd, "cpmem_on", 8)) {
+			hard_reset_reason = PON_RESTART_REASON_CP_MEM_RESERVE_ON;
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+		} else if (!strncmp(cmd, "cpmem_off", 9)) {
+			hard_reset_reason = PON_RESTART_REASON_CP_MEM_RESERVE_OFF;
+			qpnp_pon_set_restart_reason(
+				hard_reset_reason);
+		} else if (strlen(cmd) == 0) {
+			printk(KERN_NOTICE "%s : value of cmd is NULL.\n", __func__);
+			hard_reset_reason = PON_RESTART_REASON_NORMALBOOT;
+			qpnp_pon_set_restart_reason(hard_reset_reason);
+		} else if (!strncmp(cmd, "adb", 3)) {
+			hard_reset_reason = PON_RESTART_REASON_NORMALBOOT;
+			qpnp_pon_set_restart_reason(hard_reset_reason);
+#endif
+#ifdef CONFIG_MUIC_SUPPORT_RUSTPROOF
+		} else if (!strncmp(cmd, "swsel", 5) /* set switch value */
+					&& !kstrtoul(cmd + 5, 0, &value)) {
+			value = (((value & 0x8) >> 1) | value) & 0x7;
+			hard_reset_reason = PON_RESTART_REASON_SWITCHSEL | value;
+			qpnp_pon_set_restart_reason(hard_reset_reason);
+#endif
+#if 0
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
+#endif
+		} else if (!strncmp(cmd, "fwup", 4)) {
+			hard_reset_reason = PON_RESTART_REASON_FIRMWAREUPDATE;
+			qpnp_pon_set_restart_reason(hard_reset_reason);
+		} else if (!strncmp(cmd, "GlobalActions restart", 21)){ 
+			hard_reset_reason = PON_RESTART_REASON_NORMALBOOT;
+			qpnp_pon_set_restart_reason(hard_reset_reason);
 		} else {
-			__raw_writel(0x77665501, restart_reason);
+			hard_reset_reason = PON_RESTART_REASON_UNKNOWN;
+			qpnp_pon_set_restart_reason(hard_reset_reason);
 		}
+#ifdef CONFIG_SEC_DEBUG
+		printk(KERN_NOTICE "%s : restart_reason = 0x%x(0x%x)\n",
+				__func__, __raw_readl(restart_reason), hard_reset_reason);
+		pr_err("%s : restart_reason = 0x%x(0x%x)\n",
+				__func__, __raw_readl(restart_reason), hard_reset_reason);
+#endif
 	}
+#ifdef CONFIG_SEC_DEBUG
+	else {
+		printk(KERN_NOTICE "%s: clear reset flag\n", __func__);
+		qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_NORMALBOOT);
+	}
+#endif
 
 	flush_cache_all();
 
@@ -370,7 +536,7 @@ static void deassert_ps_hold(void)
 	__raw_writel(0, msm_ps_hold);
 }
 
-static void do_msm_restart(enum reboot_mode reboot_mode, const char *cmd)
+void do_msm_restart(enum reboot_mode reboot_mode, const char *cmd)
 {
 	pr_notice("Going down for restart now\n");
 
@@ -409,6 +575,18 @@ static void do_msm_poweroff(void)
 	return;
 }
 
+#ifdef CONFIG_SEC_DEBUG
+static int dload_mode_normal_reboot_handler(struct notifier_block *nb,
+				unsigned long l, void *p)
+{
+	set_dload_mode(0);
+	return 0;
+}
+
+static struct notifier_block dload_reboot_block = {
+	.notifier_call = dload_mode_normal_reboot_handler
+};
+#endif
 #ifdef CONFIG_MSM_DLOAD_MODE
 static ssize_t attr_show(struct kobject *kobj, struct attribute *attr,
 				char *buf)
@@ -501,6 +679,9 @@ static int msm_restart_probe(struct platform_device *pdev)
 		scm_dload_supported = true;
 
 	atomic_notifier_chain_register(&panic_notifier_list, &panic_blk);
+#ifdef CONFIG_SEC_DEBUG
+	register_reboot_notifier(&dload_reboot_block);
+#endif
 	np = of_find_compatible_node(NULL, NULL, DL_MODE_PROP);
 	if (!np) {
 		pr_err("unable to find DT imem DLOAD mode node\n");

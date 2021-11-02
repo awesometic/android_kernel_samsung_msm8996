@@ -56,6 +56,10 @@
 
 #include "timekeeping.h"
 
+#ifdef CONFIG_SEC_DEBUG
+#include <linux/qcom/sec_debug.h>
+#endif
+
 /*
  * The timer bases:
  *
@@ -1224,7 +1228,13 @@ static void __run_hrtimer(struct hrtimer *timer, ktime_t *now)
 	 */
 	raw_spin_unlock(&cpu_base->lock);
 	trace_hrtimer_expire_entry(timer, now);
+#ifdef CONFIG_SEC_DEBUG
+	secdbg_msg("hrtimer %pS entry", fn);
+#endif
 	restart = fn(timer);
+#ifdef CONFIG_SEC_DEBUG
+	secdbg_msg("hrtimer %pS exit", fn);
+#endif
 	trace_hrtimer_expire_exit(timer);
 	raw_spin_lock(&cpu_base->lock);
 

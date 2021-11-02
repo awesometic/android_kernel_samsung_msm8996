@@ -11,56 +11,33 @@
  * GNU General Public License for more details.
  */
 
-#include <linux/cpu.h>
-#include <linux/pm_opp.h>
 #include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/notifier.h>
+#include <linux/cpufreq.h>
+#include <linux/cpu.h>
+#include <linux/sched.h>
+#include <linux/jiffies.h>
+#include <linux/kthread.h>
+#include <linux/moduleparam.h>
+#include <linux/slab.h>
+#include <linux/input.h>
+#include <linux/time.h>
+#include <linux/pm_opp.h>
 #include <soc/qcom/msm_cpu_voltage.h>
 
 #define MAX_FREQ_GAP_KHZ 200000
 
-static unsigned int cls0_max_freq;
-
-static unsigned int get_max_freq(struct device *dev)
-{
-	struct dev_pm_opp *opp = NULL;
-	unsigned long freq = ULONG_MAX;
-
-	if (!dev)
-		return 0;
-
-	opp = dev_pm_opp_find_freq_floor(dev, &freq);
-	if (IS_ERR(opp))
-		return 0;
-
-	freq /= 1000;
-
-	return freq;
-}
-
-/**
-  * msm_match_cpu_voltage_btol(): match voltage from a big to little cpu
-  *
-  * @input_freq - big cluster frequency (in kHz)
-  *
-  * Returns voltage equivalent little cluster frequency (in kHz)
-  * or 0 on any error.
-  *
-  * Function to get a voltage equivalent little cluster frequency
-  * for a particular big cluster frequency. Note that input_freq will
-  * be rounded up to nearest big cluster frequency. Returned frequency
-  * has some restrictions (e.g. can't be more than MAX_FREQ_GAP_KHZ
-  * kHz less than input_freq).
-  */
-unsigned int msm_match_cpu_voltage_btol(unsigned int input_freq)
+int msm_match_cpu_voltage(unsigned long input_freq)
 {
 	struct dev_pm_opp *opp = NULL;
 	struct device *cls0_dev = NULL;
 	struct device *cls1_dev = NULL;
 	unsigned long freq = 0;
 	unsigned long input_volt = 0;
-	unsigned int input_freq_actual = 0;
-	unsigned int target_freq = 0;
-	unsigned int temp_freq = 0;
+	unsigned long input_freq_actual = 0;
+	unsigned long target_freq = 0;
+	unsigned long temp_freq = 0;
 	unsigned long temp_volt = 0;
 	int i, max_opps_cls0 = 0;
 
@@ -75,9 +52,6 @@ unsigned int msm_match_cpu_voltage_btol(unsigned int input_freq)
 		return 0;
 	}
 
-	if (cls0_max_freq == 0)
-		cls0_max_freq = get_max_freq(cls0_dev);
-
 	/*
 	 * Parse Cluster 1 OPP table for closest freq to input_freq
 	 * and save its voltage
@@ -86,8 +60,7 @@ unsigned int msm_match_cpu_voltage_btol(unsigned int input_freq)
 	rcu_read_lock();
 	opp = dev_pm_opp_find_freq_ceil(cls1_dev, &freq);
 	if (IS_ERR(opp)) {
-		pr_err("Error: could not find freq close to input_freq: %u\n",
-				input_freq);
+		pr_err("Error: could not find freq close to input_freq: %lu\n", input_freq);
 		goto exit;
 	}
 	input_freq_actual = freq / 1000;
@@ -112,29 +85,27 @@ unsigned int msm_match_cpu_voltage_btol(unsigned int input_freq)
 		}
 		temp_freq = freq / 1000;
 		temp_volt = dev_pm_opp_get_voltage(opp);
-		if (temp_volt >= input_volt) {
-			/* Continue to next frequency if gap is too large */
-			if ((temp_freq + MAX_FREQ_GAP_KHZ) < input_freq_actual)
-				continue;
+		/* Compare voltage and continue to next frequency if gap is too large */
+		if ((target_freq == 0) && (temp_volt > input_volt)
+				&& ((temp_freq + MAX_FREQ_GAP_KHZ) >= input_freq_actual)) {
 			/* block freq higher than input_freq */
 			if (temp_freq > input_freq)
 				target_freq = input_freq;
 			else
 				target_freq = temp_freq;
-			break;
 		}
 	}
 
 	/*
 	 * If we didn't find a frequency, either input voltage is too high
-	 * or gap was too large (input frequency was too high). In either
-	 * case, return Cluster 0 Fmax as this is the best possible freq.
-	 * Also, if input_freq is > Cluster 0 Fmax, return Cluster 0 Fmax.
+	 * or gap was too large (input frequency was too high)
+	 * In either case, return Cluster 0 Fmax as this is the best possible freq
+	 * Also, if input_freq is > Cluster 0 Fmax, return Cluster 0 Fmax
 	 */
-	if (target_freq == 0 || input_freq > cls0_max_freq)
-		target_freq = cls0_max_freq;
+	if (target_freq == 0 || input_freq > temp_freq)
+		target_freq = temp_freq;
 exit:
 	rcu_read_unlock();
 	return target_freq;
 }
-EXPORT_SYMBOL(msm_match_cpu_voltage_btol);
+EXPORT_SYMBOL(msm_match_cpu_voltage);

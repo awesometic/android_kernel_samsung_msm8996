@@ -59,6 +59,8 @@ static DEFINE_MUTEX(misc_mtx);
 /*
  * Assigned numbers, used for dynamic minors
  */
+//#define DYNAMIC_MINORS 64 /* like dynamic majors */
+// W/A code sysfs: cannot create duplicate filename '/dev/char/10:1'
 #define DYNAMIC_MINORS 96 /* like dynamic majors */
 static DECLARE_BITMAP(misc_minors, DYNAMIC_MINORS);
 

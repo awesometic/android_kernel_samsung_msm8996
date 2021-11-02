@@ -1725,7 +1725,7 @@ n_tty_receive_buf_common(struct tty_struct *tty, const unsigned char *cp,
 		 * the consumer has loaded the data in read_buf up to the new
 		 * read_tail (so this producer will not overwrite unread data)
 		 */
-		size_t tail = ldata->read_tail;
+		size_t tail = smp_load_acquire(&ldata->read_tail);
 
 		room = N_TTY_BUF_SIZE - (ldata->read_head - tail);
 		if (I_PARMRK(tty))

@@ -26,6 +26,8 @@
 #include <asm/atomic.h>
 #include "diagfwd_bridge.h"
 
+#define THRESHOLD_CLIENT_LIMIT       50
+
 /* Size of the USB buffers used for read and write*/
 #define USB_MAX_OUT_BUF 4096
 #define APPS_BUF_SIZE	4096
@@ -443,6 +445,7 @@ struct diag_md_proc_info {
 	struct task_struct *socket_process;
 	struct task_struct *callback_process;
 	struct task_struct *mdlog_process;
+	struct task_struct *uart_process;
 };
 
 struct diag_feature_t {
@@ -469,14 +472,13 @@ struct diagchar_dev {
 	struct class *diagchar_class;
 	struct device *diag_dev;
 	int ref_count;
-	int mask_clear;
-	struct mutex diag_maskclear_mutex;
 	struct mutex diag_notifier_mutex;
 	struct mutex diagchar_mutex;
 	struct mutex diag_file_mutex;
 	wait_queue_head_t wait_q;
 	struct diag_client_map *client_map;
 	int *data_ready;
+	atomic_t data_ready_notif[THRESHOLD_CLIENT_LIMIT];
 	int num_clients;
 	int polling_reg_flag;
 	int use_device_tree;
@@ -605,6 +607,8 @@ struct diagchar_dev {
 #endif
 	int time_sync_enabled;
 	uint8_t uses_time_api;
+	/* pid for diag_mdlog(CP silent log app) */
+	struct pid *silent_log_pid;
 	struct platform_device *pdev;
 };
 

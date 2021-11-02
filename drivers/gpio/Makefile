@@ -63,6 +63,7 @@ obj-$(CONFIG_GPIO_MXS)		+= gpio-mxs.o
 obj-$(CONFIG_GPIO_OCTEON)	+= gpio-octeon.o
 obj-$(CONFIG_GPIO_OMAP)		+= gpio-omap.o
 obj-$(CONFIG_GPIO_PCA953X)	+= gpio-pca953x.o
+obj-$(CONFIG_GPIO_PCAL6416A)    += gpio-pcal6416a.o
 obj-$(CONFIG_GPIO_PCF857X)	+= gpio-pcf857x.o
 obj-$(CONFIG_GPIO_PCH)		+= gpio-pch.o
 obj-$(CONFIG_GPIO_PL061)	+= gpio-pl061.o
@@ -108,4 +109,7 @@ obj-$(CONFIG_GPIO_XTENSA)	+= gpio-xtensa.o
 obj-$(CONFIG_GPIO_ZEVIO)	+= gpio-zevio.o
 obj-$(CONFIG_GPIO_ZYNQ)		+= gpio-zynq.o
 obj-$(CONFIG_MSM_SMP2P)         += gpio-msm-smp2p.o
-obj-$(CONFIG_MSM_SMP2P_TEST)    += gpio-msm-smp2p-test.o
+
+# Debug and verify gpio configurations.
+obj-$(CONFIG_SEC_GPIO_DVS)      += secgpio_dvs.o
+obj-$(CONFIG_SEC_PM_DEBUG)      += sec-pinmux.o

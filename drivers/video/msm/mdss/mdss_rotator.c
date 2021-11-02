@@ -537,6 +537,14 @@ static int mdss_rotator_map_and_check_data(struct mdss_rot_entry *entry)
 	struct mdss_mdp_plane_sizes ps;
 	bool rotation;
 
+#if defined(CONFIG_SEC_GTS3LLTE_PROJECT) || defined(CONFIG_SEC_GTS3LWIFI_PROJECT)
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+	if (mdata->handoff_pending) {
+		pr_info("%s: (temp) force to set handoff_pending: %d->0",
+				__func__, mdata->handoff_pending);
+		mdata->handoff_pending = false;
+	}
+#endif
 	input = &entry->item.input;
 	output = &entry->item.output;
 
@@ -794,6 +802,7 @@ static void mdss_rotator_free_hw(struct mdss_rot_mgr *mgr,
 
 	mixer = hw->pipe->mixer_left;
 
+	MDSS_XLOG(hw->pipe->type, hw->pipe->num);
 	mdss_mdp_pipe_destroy(hw->pipe);
 
 	ctl = mdss_mdp_ctl_mixer_switch(mixer->ctl,
@@ -2004,6 +2013,8 @@ static int mdss_rotator_open_session(struct mdss_rot_mgr *mgr,
 		config.input.format, config.output.width, config.output.height,
 		config.output.format);
 
+	MDSS_XLOG(config.session_id, config.input.width, config.input.height,
+		config.input.format, config.output.width, config.output.height);
 	goto done;
 perf_err:
 	mdss_rotator_clk_ctrl(rot_mgr, false);
@@ -2042,7 +2053,7 @@ static int mdss_rotator_close_session(struct mdss_rot_mgr *mgr,
 	ATRACE_BEGIN(__func__);
 	mutex_lock(&perf->work_dis_lock);
 	if (mdss_rotator_is_work_pending(mgr, perf)) {
-		pr_debug("Work is still pending, offload free to wq\n");
+		pr_err("Work is still pending, offload free to wq\n");
 		mutex_lock(&mgr->bus_lock);
 		mgr->pending_close_bw_vote += perf->bw;
 		mutex_unlock(&mgr->bus_lock);
@@ -2062,6 +2073,7 @@ static int mdss_rotator_close_session(struct mdss_rot_mgr *mgr,
 	mdss_rotator_clk_ctrl(rot_mgr, false);
 done:
 	pr_debug("Closed session id:%u", id);
+	MDSS_XLOG(id);
 	ATRACE_END(__func__);
 	mutex_unlock(&mgr->lock);
 	return 0;

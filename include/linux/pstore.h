@@ -41,6 +41,7 @@ enum pstore_type_id {
 	PSTORE_TYPE_PPC_OF	= 5,
 	PSTORE_TYPE_PPC_COMMON	= 6,
 	PSTORE_TYPE_PMSG	= 7,
+	PSTORE_TYPE_PPC_OPAL	= 8,
 	PSTORE_TYPE_UNKNOWN	= 255
 };
 
@@ -81,6 +82,7 @@ struct pstore_info {
 
 #ifdef CONFIG_PSTORE
 extern int pstore_register(struct pstore_info *);
+extern void pstore_unregister(struct pstore_info *);
 extern bool pstore_cannot_block_path(enum kmsg_dump_reason reason);
 #else
 static inline int

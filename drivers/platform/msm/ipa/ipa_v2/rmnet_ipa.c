@@ -1205,16 +1205,10 @@ static void apps_ipa_packet_receive_notify(void *priv,
 	skb->dev = ipa_netdevs[0];
 	skb->protocol = htons(ETH_P_MAP);
 
-	if (dev->stats.rx_packets % IPA_WWAN_RX_SOFTIRQ_THRESH == 0) {
-		trace_rmnet_ipa_netifni(dev->stats.rx_packets);
-		result = netif_rx_ni(skb);
-	} else {
-		trace_rmnet_ipa_netifrx(dev->stats.rx_packets);
-		result = netif_rx(skb);
-	}
+	result = netif_rx_ni(skb);
 
 	if (result)	{
-		pr_err_ratelimited(DEV_NAME " %s:%d fail on netif_rx\n",
+		pr_err_ratelimited(DEV_NAME " %s:%d fail on netif_rx_ni\n",
 				__func__, __LINE__);
 		dev->stats.rx_dropped++;
 	}
@@ -1539,6 +1533,22 @@ static int ipa_wwan_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 			break;
 		case RMNET_IOCTL_SET_INGRESS_DATA_FORMAT:/*  Set IDF  */
 			IPAWANDBG("get RMNET_IOCTL_SET_INGRESS_DATA_FORMAT\n");
+
+			/* clean ipa ingress data path before init */
+			mutex_lock(&ipa_to_apps_pipe_handle_guard);
+			if (atomic_read(&is_ssr)) {
+				IPAWANERR("In SSR sequence/recovery\n");
+				mutex_unlock(&ipa_to_apps_pipe_handle_guard);
+				rc = -EFAULT;
+				break;
+			}
+			rc = ipa2_teardown_sys_pipe(ipa_to_apps_hdl);
+			if (rc < 0)
+				IPAWANERR("Failed to teardown IPA->APPS pipe\n");
+			else
+				ipa_to_apps_hdl = -1;
+			mutex_unlock(&ipa_to_apps_pipe_handle_guard);
+
 			if ((extend_ioctl_data.u.data) &
 					RMNET_IOCTL_INGRESS_FORMAT_CHECKSUM)
 				ipa_to_apps_ep_cfg.ipa_ep_cfg.cfg.

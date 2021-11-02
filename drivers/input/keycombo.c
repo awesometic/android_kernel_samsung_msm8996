@@ -200,8 +200,10 @@ static int keycombo_probe(struct platform_device *pdev)
 	}
 
 	state->wq = alloc_ordered_workqueue("keycombo", 0);
-	if (!state->wq)
+	if (!state->wq) {
+		kfree(state);
 		return -ENOMEM;
+	}
 
 	state->priv = pdata->priv;
 
@@ -224,6 +226,7 @@ static int keycombo_probe(struct platform_device *pdev)
 	state->input_handler.id_table = keycombo_ids;
 	ret = input_register_handler(&state->input_handler);
 	if (ret) {
+		destroy_workqueue(state->wq);
 		kfree(state);
 		return ret;
 	}

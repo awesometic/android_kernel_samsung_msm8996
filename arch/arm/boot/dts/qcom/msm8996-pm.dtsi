@@ -161,7 +161,7 @@
 						qcom,psci-cpu-mode = <4>;
 						qcom,latency-us = <80>;
 						qcom,ss-power = <196>;
-						qcom,energy-overhead = <62248>;
+						qcom,energy-overhead = <45300>;
 						qcom,time-overhead = <210>;
 						qcom,reset-level =
 							<LPM_RESET_LVL_PC>;
@@ -250,7 +250,7 @@
 						qcom,psci-cpu-mode = <4>;
 						qcom,latency-us = <80>;
 						qcom,ss-power = <196>;
-						qcom,energy-overhead = <62248>;
+						qcom,energy-overhead = <45300>;
 						qcom,time-overhead = <210>;
 						qcom,reset-level =
 							<LPM_RESET_LVL_PC>;
@@ -408,9 +408,11 @@
 			<0xff 330>, /* camss_irq4 */
 			<0xff 331>, /* camss_irq5 */
 			<0xff 332>, /* sps */
+			<0xff 336>, /* camss_irq13 */
 			<0xff 341>, /* camss_irq6 */
 			<0xff 346>, /* camss_irq8 */
 			<0xff 347>, /* camss_irq9 */
+			<0xff 348>, /* camss_irq10 */
 			<0xff 352>, /* mdss_mmu_cirpt[0] */
 			<0xff 353>, /* mdss_mmu_cirpt[1] */
 			<0xff 361>, /* ogpu_mmu_cirpt[0] */

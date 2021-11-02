@@ -504,6 +504,20 @@ config LEDS_BLINKM
 	  This option enables support for the BlinkM RGB LED connected
 	  through I2C. Say Y to enable support for the BlinkM LED.
 
+config LEDS_MAX77833_RGB
+	tristate "Led max77833 rgb"
+	depends on MFD_MAX77833 && LEDS_CLASS && I2C
+	help
+	  If you say yes here you will get support for
+	  for the MAX77833 RGB led chip.
+
+config LEDS_MAX77854_RGB
+	tristate "Led max77854 rgb"
+	depends on MFD_MAX77854 && LEDS_CLASS && I2C
+	help
+	  If you say yes here you will get support for
+	  for the MAX77854 RGB led chip.
+
 config LEDS_QPNP
 	tristate "Support for QPNP LEDs"
 	depends on LEDS_CLASS && MSM_SPMI && OF_SPMI
@@ -558,6 +572,26 @@ config LEDS_AW2013
 	help
 	  This option enables support for the AW2013 RGB LED connected
 	  through I2C. Say Y to enable support for the AW2013 LED.
+
+config LEDS_S2MPB02
+	bool "LED support for the S2MPB02"
+	depends on LEDS_CLASS
+	help
+	  This option enables support for the LEDs on the S2MPB02.
+
+config LEDS_SM5705
+	tristate "LED support for SM5705 Flashlight"
+	depends on I2C && MFD_SM5705
+	help
+	  This option enables support for on-chip LED driver on
+	  Silicon-mitus SM5705 includes Torch, Flash.
+
+config SAMSUNG_SECURE_CAMERA
+        tristate "Flash current for Secure camera"
+        depends on LEDS_CLASS
+        default n
+        help
+        Enables support for flash current for secure camera
 
 comment "LED Triggers"
 source "drivers/leds/trigger/Kconfig"

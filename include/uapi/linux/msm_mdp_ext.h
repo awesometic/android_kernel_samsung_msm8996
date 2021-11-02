@@ -454,6 +454,11 @@ struct mdp_layer_commit_v1 {
 	 */
 	int			retire_fence;
 
+	/* MULTI_RESOLUTION
+	 * 0 : WQHD, 1 : FHD, 2 : HD
+	 */
+	uint32_t		dsu_mode;
+
 	/*
 	 * Scaler data and control for setting up destination scaler.
 	 * A userspace pointer that points to a list of

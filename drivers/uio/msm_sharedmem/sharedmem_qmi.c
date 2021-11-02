@@ -24,6 +24,8 @@
 #include "sharedmem_qmi.h"
 #include "remote_filesystem_access_v01.h"
 
+#include <soc/qcom/subsystem_restart.h>
+
 #define RFSA_SERVICE_INSTANCE_NUM 1
 #define SHARED_ADDR_ENTRY_NAME_MAX_LEN 10
 
@@ -306,10 +308,36 @@ static int debug_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static int status_open(struct inode *inode, struct file *file)
+{
+	file->private_data = inode->i_private;
+	return 0;
+}
+
+static ssize_t status_read(struct file *file, char __user *buf,
+			  size_t count, loff_t *file_pos)
+{
+	int curr_status = subsys_shutdown_check();
+	pr_info("sys_shutdown_status: %d\n", curr_status);
+	return simple_read_from_buffer(buf, count, file_pos, &curr_status,
+					sizeof(curr_status));
+}
+
+static int status_close(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
 static const struct file_operations debug_ops = {
 	.read = debug_read,
 	.open = debug_open,
 	.release = debug_close,
+};
+
+static const struct file_operations status_ops = {
+	.read = status_read,
+	.open = status_open,
+	.release = status_close,
 };
 
 static int rfsa_increment(void *data, u64 val)
@@ -355,6 +383,12 @@ static void debugfs_init(void)
 	f_ent = debugfs_create_file("rmts", 0200, dir_ent, NULL, &rmts_fops);
 	if (IS_ERR(f_ent)) {
 		pr_err("Failed to create debug_fs rmts file\n");
+		return;
+	}
+
+	f_ent = debugfs_create_file("status", 0440, dir_ent, NULL, &status_ops);
+	if (IS_ERR(f_ent)) {
+		pr_err("Failed to create status_debug_fs info file\n");
 		return;
 	}
 }

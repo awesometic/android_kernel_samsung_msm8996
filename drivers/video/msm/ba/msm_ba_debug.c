@@ -182,6 +182,7 @@ static ssize_t inst_info_read(struct file *file, char __user *buf,
 								"BA device");
 	write_str(dbg_buf, "===============================");
 	write_str(dbg_buf, "dev: %pK", inst->dev_ctxt);
+
 	write_str(dbg_buf, "state: %d", inst->state);
 
 	size = simple_read_from_buffer(buf, count, ppos,

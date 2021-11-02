@@ -1098,6 +1098,7 @@ static void ecm_ipa_destory_rm_resource(struct ecm_ipa_dev *ecm_ipa_ctx)
 
 static int resource_request(struct ecm_ipa_dev *ecm_ipa_ctx)
 {
+	
 	return ipa_rm_inactivity_timer_request_resource(
 		IPA_RM_RESOURCE_STD_ECM_PROD);
 }
@@ -1305,7 +1306,6 @@ out:
 	return result;
 }
 
-/**
  * ecm_ipa_set_device_ethernet_addr() - set device etherenet address
  * @dev_ethaddr: device etherenet address
  *

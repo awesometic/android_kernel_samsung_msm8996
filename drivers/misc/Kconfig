@@ -324,6 +324,12 @@ config ISL29020
 	  This driver can also be built as a module.  If so, the module
 	  will be called isl29020.
 
+config KNOX_KAP
+       bool "Enable KNOX KAP mode"
+       default n
+       help 
+              Knox Active Protection mode
+
 config SENSORS_TSL2550
 	tristate "Taos TSL2550 ambient light sensor"
 	depends on I2C && SYSFS
@@ -374,6 +380,18 @@ config APDS9930
 
 	   To compile this driver as a module, choose M here: the
 	   module will be called apds9930. If unsure, say N here.
+
+config TIMA_LOG
+	tristate "Support for dumping TIMA log"
+	default y
+	help
+	  This option enables support for dumping TIMA log
+
+config TIMA_TEST
+	tristate "Tima Test Suite"
+	default n
+	help
+	  This option enables kernel component of tima test suite
 
 config HMC6352
 	tristate "Honeywell HMC6352 compass"
@@ -559,6 +577,13 @@ config UID_SYS_STATS
 	help
 	  Per UID based cpu time statistics exported to /proc/uid_cputime
 	  Per UID based io statistics exported to /proc/uid_io
+	  
+config TIMA_LOG
+	tristate "Support for dumping TIMA log"
+	depends on TIMA
+	default y
+	help
+		This option enables support for dumping TIMA log.
 
 config USB_EXT_TYPE_C_PERICOM
 	tristate "USB Type-C charger detection support using Pericom chip"
@@ -612,6 +637,17 @@ config MEMORY_STATE_TIME
 	depends on PROFILING
 	help
 	  Memory time statistics exported to /sys/kernel/memory_state_time
+
+config RT_REGMAP
+	bool "Richtek regmap"
+	default n
+	help
+	  Say Y to enable Richtek regmap"
+
+config AES_256_ICE
+	bool "Use AES-256 for inline crypto engine"
+	default n
+	depends on CRYPTO_DEV_QCOM_ICE
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"

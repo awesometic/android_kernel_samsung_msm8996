@@ -333,6 +333,7 @@ static int cpu_boost_init(void)
 		s->cpu = cpu;
 	}
 	cpufreq_register_notifier(&boost_adjust_nb, CPUFREQ_POLICY_NOTIFIER);
+
 	ret = input_register_handler(&cpuboost_input_handler);
 
 	return ret;

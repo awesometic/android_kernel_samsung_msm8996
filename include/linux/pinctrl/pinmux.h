@@ -16,6 +16,11 @@
 #include <linux/seq_file.h>
 #include <linux/pinctrl/pinctrl.h>
 
+#ifdef CONFIG_MST_LDO
+#define MST_GPIO_D_MINUS 85
+#define MST_GPIO_D_PLUS 86
+#endif
+
 #ifdef CONFIG_PINMUX
 
 struct pinctrl_dev;

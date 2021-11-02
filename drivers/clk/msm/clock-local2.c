@@ -125,7 +125,8 @@ static void rcg_update_config(struct rcg_clk *rcg)
 		udelay(1);
 	}
 
-	CLK_WARN(&rcg->c, count == 0, "rcg didn't update its configuration.");
+	if (count == 0)
+		panic("%s rcg didn't update its configuration.\n", rcg->c.dbg_name);
 }
 
 static void rcg_on_check(struct rcg_clk *rcg)
@@ -142,7 +143,8 @@ static void rcg_on_check(struct rcg_clk *rcg)
 			return;
 		udelay(1);
 	}
-	CLK_WARN(&rcg->c, count == 0, "rcg didn't turn on.");
+	if (count == 0)
+		panic("%s rcg didn't turn on.\n", rcg->c.dbg_name);
 }
 
 /* RCG set rate function for clocks with Half Integer Dividers. */
@@ -714,16 +716,16 @@ static void branch_clk_halt_check(struct clk *c, u32 halt_check,
 
 static unsigned long branch_clk_aggregate_rate(const struct clk *parent)
 {
-	struct clk *clk;
-	unsigned long rate = 0;
+       struct clk *clk;
+       unsigned long rate = 0;
 
-	list_for_each_entry(clk, &parent->children, siblings) {
-		struct branch_clk *v = to_branch_clk(clk);
+       list_for_each_entry(clk, &parent->children, siblings) {
+               struct branch_clk *v = to_branch_clk(clk);
 
-		if (v->is_prepared)
-			rate = max(clk->rate, rate);
-	}
-	return rate;
+               if (v->is_prepared)
+                       rate = max(clk->rate, rate);
+       }
+       return rate;
 }
 
 static int cbcr_set_flags(void * __iomem regaddr, unsigned flags)
@@ -901,30 +903,31 @@ static int branch_clk_set_rate(struct clk *c, unsigned long rate)
 	if (branch->has_sibling)
 		return -EPERM;
 
-	if (!branch->aggr_sibling_rates)
-		return clk_set_rate(c->parent, rate);
-
-	mutex_lock(&branch_clk_lock);
-	if (!branch->is_prepared) {
-		c->rate = rate;
-		goto exit;
-	}
-	/*
-	 * Get the aggregate rate without this clock's vote and update
-	 * if the new rate is different than the current rate.
-	 */
-	list_for_each_entry(clkp, &parent->children, siblings) {
-		clkh = to_branch_clk(clkp);
-		if (clkh->is_prepared && clkh != branch)
-			other_rate = max(clkp->rate, other_rate);
-	}
-	curr_rate = max(other_rate, c->rate);
-	new_rate = max(other_rate, rate);
-	if (new_rate != curr_rate) {
-		ret = clk_set_rate(parent, new_rate);
-		if (!ret)
-			c->rate = rate;
-	}
+       mutex_lock(&branch_clk_lock);
+       if (branch->aggr_sibling_rates) {
+               if (!branch->is_prepared) {
+                       c->rate = rate;
+                       goto exit;
+               }
+               /*
+                * Get the aggregate rate without this clock's vote and update
+                * if the new rate is different than the current rate.
+                */
+               list_for_each_entry(clkp, &parent->children, siblings) {
+                       clkh = to_branch_clk(clkp);
+                       if (clkh->is_prepared && clkh != branch)
+                               other_rate = max(clkp->rate, other_rate);
+               }
+               curr_rate = max(other_rate, c->rate);
+               new_rate = max(other_rate, rate);
+               if (new_rate != curr_rate) {
+                       ret = clk_set_rate(parent, new_rate);
+                       if (!ret)
+                               c->rate = rate;
+               }
+               goto exit;
+       }
+       ret = clk_set_rate(c->parent, rate);
 exit:
 	mutex_unlock(&branch_clk_lock);
 	return ret;

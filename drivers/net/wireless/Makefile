@@ -55,6 +55,18 @@ obj-$(CONFIG_WL_TI)	+= ti/
 
 obj-$(CONFIG_MWIFIEX)	+= mwifiex/
 
+ifneq ($(CONFIG_BCM4358),)
+obj-$(CONFIG_BCM4358)  += bcmdhd4358/
+obj-$(CONFIG_ARCH_MSM) += bcmdhd4358/dhd_custom_memprealloc.o
+obj-$(CONFIG_ARCH_MSM) += bcmdhd4358/dhd_custom_msm.o
+endif
+
+ifneq ($(CONFIG_BCM4359),)
+obj-$(CONFIG_BCM4359)  += bcmdhd4359/
+obj-$(CONFIG_ARCH_MSM) += bcmdhd4359/dhd_custom_memprealloc.o
+obj-$(CONFIG_ARCH_MSM) += bcmdhd4359/dhd_custom_msm.o
+endif
+
 obj-$(CONFIG_BRCMFMAC)	+= brcm80211/
 obj-$(CONFIG_BRCMSMAC)	+= brcm80211/
 
@@ -68,3 +80,4 @@ obj-$(CONFIG_CNSS2)	+= cnss2/
 obj-$(CONFIG_WCNSS_MEM_PRE_ALLOC) += cnss_prealloc/
 obj-$(CONFIG_CNSS_CRYPTO)	+= cnss_crypto/
 obj-$(CONFIG_CNSS_UTILS) += cnss_utils/
+obj-$(CONFIG_QCA_CLD_WLAN)  += qcacld-2.0/

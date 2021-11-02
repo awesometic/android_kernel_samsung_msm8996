@@ -58,6 +58,10 @@ int ion_system_secure_heap_unassign_sg(struct sg_table *sgt, int source_vmid)
 	if (ret) {
 		pr_err("%s: Not freeing memory since assign call failed. VMID %d\n",
 						__func__, source_vmid);
+		for_each_sg(sgt->sgl, sg, sgt->nents, i)
+			pr_err("%s: with sg[%d] addr/size = 0x%p/0x%x\n",
+				__func__, i,
+				(void*)page_to_phys(sg_page(sg)), sg->length);
 		return -ENXIO;
 	}
 
@@ -78,6 +82,10 @@ int ion_system_secure_heap_assign_sg(struct sg_table *sgt, int dest_vmid)
 	if (ret) {
 		pr_err("%s: Assign call failed. VMID %d\n",
 						__func__, dest_vmid);
+		for_each_sg(sgt->sgl, sg, sgt->nents, i)
+			pr_err("%s: with sg[%d] addr/size = 0x%p/0x%x\n",
+				__func__, i,
+				(void*)page_to_phys(sg_page(sg)), sg->length);
 		return -EINVAL;
 	}
 

@@ -226,6 +226,15 @@ static int __layer_param_check(struct msm_fb_data_type *mfd,
 		return -EINVAL;
 	}
 
+	/* fallback only in MSM 2.1v case */
+	if((fmt->alpha_enable)&&((layer->src_rect.w!=layer->dst_rect.w)||(layer->src_rect.h!=layer->dst_rect.h))){
+		MDSS_XLOG(mdata->mdp_rev, fmt->alpha_enable,layer->src_rect.w, layer->src_rect.h, layer->dst_rect.w,layer->dst_rect.h);
+		if (mdata->mdp_rev == MDSS_MDP_HW_REV_107_1) {
+			pr_err("[TEMP FALLBACK in case of alpha & scaling] src.w %d, src.h %d, dst.w %d, dst.h %d \n",layer->src_rect.w, layer->src_rect.h, layer->dst_rect.w,layer->dst_rect.h);
+			return -EINVAL;
+		}
+	}
+
 	if (layer->dst_rect.w < min_dst_size ||
 		layer->dst_rect.h < min_dst_size) {
 		pr_err("invalid destination resolution (%dx%d)",
@@ -1168,6 +1177,8 @@ static int __validate_secure_display(struct mdss_overlay_private *mdp5_data)
 	}
 	mutex_unlock(&mdp5_data->list_lock);
 
+	MDSS_XLOG(sd_pipes, nonsd_pipes); // tk
+
 	pr_debug("pipe count:: secure display:%d non-secure:%d\n",
 		sd_pipes, nonsd_pipes);
 
@@ -1913,6 +1924,11 @@ static int __validate_layers(struct msm_fb_data_type *mfd,
 		pr_debug("id:0x%x flags:0x%x dst_x:%d\n",
 			layer->pipe_ndx, layer->flags, layer->dst_rect.x);
 		layer->z_order -= MDSS_MDP_STAGE_0;
+		MDSS_XLOG(mfd->force_revalidate, pipe->ndx, pipe->mixer_stage,
+				pipe->src_split_req, pipe->is_right_blend);
+		MDSS_XLOG(pipe->src.x, pipe->src.y, pipe->src.w, pipe->src.h,
+				pipe->dst.x, pipe->dst.y, pipe->dst.w,
+				pipe->dst.h);
 	}
 
 	ret = mdss_mdp_perf_bw_check(mdp5_data->ctl, left_plist, left_cnt,
@@ -1924,10 +1940,11 @@ static int __validate_layers(struct msm_fb_data_type *mfd,
 
 validate_skip:
 	__handle_free_list(mdp5_data, validate_info_list, layer_count);
-
+	MDSS_XLOG(mfd->index, __LINE__);
 	ret = __validate_secure_display(mdp5_data);
 
 validate_exit:
+	mfd->force_revalidate = false;
 	pr_debug("err=%d total_layer:%d left:%d right:%d rec0_rel_ndx=0x%x rec1_rel_ndx=0x%x rec0_destroy_ndx=0x%x rec1_destroy_ndx=0x%x processed=%d\n",
 		ret, layer_count, left_lm_layers, right_lm_layers,
 		rec_release_ndx[0], rec_release_ndx[1],
@@ -1940,9 +1957,9 @@ validate_exit:
 	list_for_each_entry_safe(pipe, tmp, &mdp5_data->pipes_used, list) {
 		if (IS_ERR_VALUE(ret)) {
 			if (((pipe->ndx & rec_release_ndx[0]) &&
-						(pipe->multirect.num == 0)) ||
-					((pipe->ndx & rec_release_ndx[1]) &&
-					 (pipe->multirect.num == 1))) {
+					(pipe->multirect.num == 0)) ||
+				((pipe->ndx & rec_release_ndx[1]) &&
+					(pipe->multirect.num == 1))) {
 				mdss_mdp_smp_unreserve(pipe);
 				pipe->params_changed = 0;
 				pipe->dirty = true;
@@ -1952,7 +1969,7 @@ validate_exit:
 			} else if (((pipe->ndx & rec_destroy_ndx[0]) &&
 						(pipe->multirect.num == 0)) ||
 					((pipe->ndx & rec_destroy_ndx[1]) &&
-					 (pipe->multirect.num == 1))) {
+						(pipe->multirect.num == 1))) {
 				/*
 				 * cleanup/destroy list pipes should move back
 				 * to destroy list. Next/current kickoff cycle
@@ -1975,6 +1992,7 @@ end:
 
 	pr_debug("fb%d validated layers =%d\n", mfd->index, i);
 
+	MDSS_XLOG(mfd->index, i);
 	return ret;
 }
 
@@ -2050,6 +2068,7 @@ int mdss_mdp_layer_pre_commit(struct msm_fb_data_type *mfd,
 	/* handle null commit */
 	if (!layer_count) {
 		__handle_free_list(mdp5_data, NULL, layer_count);
+		MDSS_XLOG(mfd->index, __LINE__);
 		/* Check for secure state transition. */
 		return __validate_secure_display(mdp5_data);
 	}
@@ -2097,6 +2116,7 @@ int mdss_mdp_layer_pre_commit(struct msm_fb_data_type *mfd,
 	i = 0;
 
 	mutex_lock(&mdp5_data->list_lock);
+	MDSS_XLOG(mfd->index, __LINE__);
 	list_for_each_entry_safe(pipe, tmp, &mdp5_data->pipes_used, list) {
 		if (pipe->flags & MDP_SOLID_FILL) {
 			src_data[i] = NULL;
@@ -2199,10 +2219,10 @@ int mdss_mdp_layer_pre_commit_wfd(struct msm_fb_data_type *mfd,
 		output_layer = commit->output_layer;
 
 		if (output_layer->buffer.plane_count > MAX_PLANES) {
-			pr_err("Output buffer plane_count exceeds MAX_PLANES limit:%d\n",
-					output_layer->buffer.plane_count);
-			return -EINVAL;
-		}
+       		  pr_err("Output buffer plane_count exceeds MAX_PLANES limit:%d\n",
+              		 output_layer->buffer.plane_count);
+         	  return -EINVAL;
+      		}
 
 		data = mdss_mdp_wfd_add_data(wfd, output_layer);
 		if (IS_ERR_OR_NULL(data))

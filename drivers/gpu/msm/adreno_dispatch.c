@@ -2156,6 +2156,7 @@ static void adreno_dispatcher_work(struct kthread_work *work)
 	int count = 0;
 	unsigned int i = 0;
 
+	trace_printk("work:%p, %pF\n", work, __builtin_return_address(0));
 	mutex_lock(&dispatcher->mutex);
 
 	/*

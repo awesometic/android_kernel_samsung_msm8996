@@ -467,6 +467,7 @@ static inline int timestamp_cmp(unsigned int a, unsigned int b)
  */
 static inline void kgsl_schedule_work(struct work_struct *work)
 {
+	trace_printk("work:%p, %pF\n", work, __builtin_return_address(0));
 	queue_work(kgsl_driver.workqueue, work);
 }
 

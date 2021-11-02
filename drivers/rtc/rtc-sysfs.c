@@ -122,6 +122,27 @@ hctosys_show(struct device *dev, struct device_attribute *attr, char *buf)
 }
 static DEVICE_ATTR_RO(hctosys);
 
+#ifdef CONFIG_RTC_AUTO_PWRON
+extern int rtc_get_bootalarm(struct rtc_device *rtc, struct rtc_wkalrm *alarm);
+static ssize_t
+alarm_boot_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+	ssize_t retval;
+	struct rtc_wkalrm alm;
+
+	retval = rtc_get_bootalarm(to_rtc_device(dev), &alm);
+	if (retval) {
+		retval = sprintf(buf, "%d", alm.enabled);
+		pr_info("%s [SAPA] rtc_sysfs_show_wakealarm enabled? : %d\n",__func__,alm.enabled);
+		return retval;
+	}
+
+	return retval;
+}
+static DEVICE_ATTR_RO(alarm_boot);
+#endif
+
 static struct attribute *rtc_attrs[] = {
 	&dev_attr_name.attr,
 	&dev_attr_date.attr,
@@ -129,6 +150,9 @@ static struct attribute *rtc_attrs[] = {
 	&dev_attr_since_epoch.attr,
 	&dev_attr_max_user_freq.attr,
 	&dev_attr_hctosys.attr,
+#ifdef CONFIG_RTC_AUTO_PWRON
+	&dev_attr_alarm_boot.attr,
+#endif
 	NULL,
 };
 ATTRIBUTE_GROUPS(rtc);

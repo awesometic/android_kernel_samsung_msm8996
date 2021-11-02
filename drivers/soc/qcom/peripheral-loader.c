@@ -42,6 +42,10 @@
 
 #include "peripheral-loader.h"
 
+#ifdef CONFIG_SEC_PERIPHERAL_SECURE_CHK
+#include <linux/qcom/sec_debug.h>
+#endif
+
 #define pil_err(desc, fmt, ...)						\
 	dev_err(desc->dev, "%s: " fmt, desc->name, ##__VA_ARGS__)
 #define pil_info(desc, fmt, ...)					\
@@ -847,6 +851,33 @@ int pil_boot(struct pil_desc *desc)
 	if (ret) {
 		pil_err(desc, "Invalid firmware metadata\n");
 		subsys_set_error(desc->subsys_dev, firmware_error_msg);
+#ifdef CONFIG_SEC_PERIPHERAL_SECURE_CHK
+		if (ret == -EINVAL && ((!strcmp(desc->name, "mba")) || (!strcmp(desc->name, "modem")))) 
+		{
+			if (ret && desc->proxy_unvote_irq)
+				disable_irq(desc->proxy_unvote_irq);
+			pil_proxy_unvote(desc, ret);
+			release_firmware(fw);
+			up_read(&pil_pm_rwsem);
+			if (ret) {
+				if (priv->region) {
+					if (desc->subsys_vmid > 0 && !mem_protect &&
+							hyp_assign) {
+						pil_reclaim_mem(desc, priv->region_start,
+								(priv->region_end -
+								 priv->region_start),
+								VMID_HLOS);
+					}
+					dma_free_attrs(desc->dev, priv->region_size,
+							priv->region, priv->region_start,
+							&desc->attrs);
+					priv->region = NULL;
+				}
+				pil_release_mmap(desc);
+			}
+			sec_peripheral_secure_check_fail();
+		}
+#endif
 		goto err_boot;
 	}
 
@@ -892,6 +923,39 @@ int pil_boot(struct pil_desc *desc)
 	if (ret) {
 		pil_err(desc, "Failed to bring out of reset\n");
 		subsys_set_error(desc->subsys_dev, firmware_error_msg);
+#ifdef CONFIG_SEC_PERIPHERAL_SECURE_CHK
+		if (ret == -EINVAL && ((!strcmp(desc->name, "mba")) || (!strcmp(desc->name, "modem")))) {
+			if (ret && desc->subsys_vmid > 0) {
+				pil_assign_mem_to_linux(desc, priv->region_start,
+						(priv->region_end - priv->region_start));
+				mem_protect = true;
+			}
+			if (ret && desc->ops->deinit_image)
+				desc->ops->deinit_image(desc);
+			if (ret && desc->proxy_unvote_irq)
+				disable_irq(desc->proxy_unvote_irq);
+			pil_proxy_unvote(desc, ret);
+			release_firmware(fw);
+			up_read(&pil_pm_rwsem);
+			if (ret) {
+				if (priv->region) {
+					if (desc->subsys_vmid > 0 && !mem_protect &&
+							hyp_assign) {
+						pil_reclaim_mem(desc, priv->region_start,
+								(priv->region_end -
+								 priv->region_start),
+								VMID_HLOS);
+					}
+					dma_free_attrs(desc->dev, priv->region_size,
+							priv->region, priv->region_start,
+							&desc->attrs);
+					priv->region = NULL;
+				}
+				pil_release_mmap(desc);
+			}
+			sec_peripheral_secure_check_fail();
+		}
+#endif
 		goto err_auth_and_reset;
 	}
 	pil_info(desc, "Brought out of reset\n");

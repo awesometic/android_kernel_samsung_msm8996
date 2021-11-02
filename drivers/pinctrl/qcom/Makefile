@@ -1,4 +1,6 @@
 # Qualcomm pin control drivers
+ccflags-y += $(KBUILD_FP_SENSOR_CFLAGS)
+
 obj-$(CONFIG_PINCTRL_MSM)	+= pinctrl-msm.o
 obj-$(CONFIG_PINCTRL_MDM9640)	+= pinctrl-mdm9640.o
 obj-$(CONFIG_PINCTRL_APQ8064)	+= pinctrl-apq8064.o

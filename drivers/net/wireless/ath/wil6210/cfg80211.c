@@ -1369,8 +1369,7 @@ static int wil_cfg80211_stop_ap(struct wiphy *wiphy,
 }
 
 static int wil_cfg80211_del_station(struct wiphy *wiphy,
-				    struct net_device *dev,
-				    struct station_del_parameters *params)
+				    struct net_device *dev, const u8 *mac)
 {
 	struct wil6210_priv *wil = wiphy_to_wil(wiphy);
 

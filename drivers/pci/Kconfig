@@ -131,6 +131,14 @@ config PCI_MSM
 
 	  If unsure, say N.
 
+config SEC_BSP_PCIE_DEV
+	bool "PCIE debug feature for developers"
+	depends on PCI_MSM && SEC_BSP
+
+config SEC_BSP_PCIE_LINKFAIL_PANIC
+	bool "PCIE debug feature. Make panic when linkup failure after linkdown"
+	depends on PCI_MSM && SEC_BSP
+
 config PCI_LABEL
 	def_bool y if (DMI || ACPI)
 	select NLS

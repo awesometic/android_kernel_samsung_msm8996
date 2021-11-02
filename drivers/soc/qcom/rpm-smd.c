@@ -1173,7 +1173,7 @@ static int msm_rpm_glink_send_buffer(char *buf, uint32_t size, bool noirq)
 	do {
 		ret = glink_tx(glink_data->glink_handle, buf, buf,
 					size, GLINK_TX_SINGLE_THREADED);
-		if (ret == -EBUSY || ret == -ENOSPC) {
+		if (ret == -EBUSY || ret == -ENOSPC || ret == -ENOMEM) {
 			if (!noirq) {
 				spin_unlock_irqrestore(
 					&msm_rpm_data.smd_lock_write, flags);

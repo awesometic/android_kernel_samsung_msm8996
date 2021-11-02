@@ -127,6 +127,20 @@ static DEFINE_CLK_VOTER(scm_ce1_clk, &ce1_clk.c, 85710000);
 static DEFINE_CLK_VOTER(snoc_msmbus_clk, &snoc_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(snoc_msmbus_a_clk, &snoc_a_clk.c, LONG_MAX);
 
+#ifdef CONFIG_MSM_BUSPM_DEV 
+//ALRAN 
+static DEFINE_CLK_VOTER(pnoc_buspm_clk, &pnoc_clk.c, LONG_MAX); 
+static DEFINE_CLK_VOTER(snoc_buspm_clk, &snoc_clk.c, LONG_MAX); 
+static DEFINE_CLK_VOTER(cnoc_buspm_clk, &cnoc_clk.c, LONG_MAX); 
+ 
+static DEFINE_CLK_VOTER(pnoc_buspm_a_clk, &pnoc_a_clk.c, LONG_MAX); 
+static DEFINE_CLK_VOTER(snoc_buspm_a_clk, &snoc_a_clk.c, LONG_MAX); 
+static DEFINE_CLK_VOTER(cnoc_buspm_a_clk, &cnoc_a_clk.c, LONG_MAX); 
+ 
+static DEFINE_CLK_VOTER(bimc_buspm_clk, &bimc_clk.c, LONG_MAX); 
+static DEFINE_CLK_VOTER(bimc_buspm_a_clk, &bimc_a_clk.c, LONG_MAX); 
+#endif 
+
 static unsigned int soft_vote_gpll0;
 
 static struct pll_vote_clk gpll0 = {
@@ -886,6 +900,7 @@ static struct clk_freq_tbl ftbl_blsp2_qup3_spi_apps_clk_src[] = {
 	F(   9600000,         cxo_clk_src,    2,    0,     0),
 	F(  15000000, gpll0_out_main,   10,    1,     4),
 	F(  25000000, gpll0_out_main,   12,    1,     2),
+	F(  48000000, gpll0_out_main, 12.5,    0,     0),
 	F(  50000000, gpll0_out_main,   12,    0,     0),
 	F_END
 };
@@ -930,7 +945,9 @@ static struct clk_freq_tbl ftbl_blsp2_qup4_spi_apps_clk_src[] = {
 	F(   4800000,         cxo_clk_src,    4,    0,     0),
 	F(   9600000,         cxo_clk_src,    2,    0,     0),
 	F(  15000000, gpll0_out_main,   10,    1,     4),
+	F(  24000000, gpll0_out_main,    5,    1,     5),
 	F(  25000000, gpll0_out_main,   12,    1,     2),
+	F(  48000000, gpll0_out_main, 12.5,    0,     0),
 	F(  50000000, gpll0_out_main,   12,    0,     0),
 	F_END
 };
@@ -3323,6 +3340,18 @@ static struct mux_clk gcc_debug_mux_v2 = {
 };
 
 static struct clk_lookup msm_clocks_rpm_8996[] = {
+#ifdef CONFIG_MSM_BUSPM_DEV 
+//ALRAN 
+ CLK_LOOKUP("snoc_clk", snoc_buspm_clk.c, "msm-buspm"), 
+ CLK_LOOKUP("pnoc_clk", pnoc_buspm_clk.c, "msm-buspm"), 
+ CLK_LOOKUP("cnoc_clk", cnoc_buspm_clk.c, "msm-buspm"), 
+ CLK_LOOKUP("bimc_clk", bimc_buspm_clk.c, "msm-buspm"), 
+ 
+ CLK_LOOKUP("snoc_a_clk", snoc_buspm_a_clk.c, "msm-buspm"), 
+ CLK_LOOKUP("pnoc_a_clk", pnoc_buspm_a_clk.c, "msm-buspm"), 
+ CLK_LOOKUP("cnoc_a_clk", cnoc_buspm_a_clk.c, "msm-buspm"), 
+ CLK_LOOKUP("bimc_a_clk", bimc_buspm_a_clk.c, "msm-buspm"), 
+#endif 
 	CLK_LIST(cxo_clk_src),
 	CLK_LIST(pnoc_a_clk),
 	CLK_LIST(pnoc_clk),

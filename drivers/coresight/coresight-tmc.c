@@ -1587,6 +1587,7 @@ out:
 		__func__, len, (int) (drvdata->size - *ppos));
 
 	mutex_unlock(&drvdata->usb_lock);
+	mutex_lock(&drvdata->usb_lock);
 	return len;
 }
 

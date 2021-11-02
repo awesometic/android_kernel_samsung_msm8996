@@ -25,6 +25,10 @@
 #include <linux/cpu_pm.h>
 #include <linux/smp.h>
 
+#ifdef CONFIG_SEC_DEBUG
+#include <linux/qcom/sec_debug.h>
+#endif
+
 #include <soc/qcom/kryo-l2-accessors.h>
 
 /* Instruction cache */
@@ -242,6 +246,12 @@ static void msm_l2_erp_local_handler(void *force)
 	bool parity_ue, parity_ce, misc_ue;
 	int cpu;
 
+#ifdef CONFIG_USER_RESET_DEBUG
+	static unsigned int l2_err_cnt[3][CONFIG_NR_CPUS] = {{0,},{0,},{0,}};
+	int i;
+	char buf[96] = {0,};
+	int offset = 0;
+#endif
 	spin_lock_irqsave(&local_handler_lock, flags);
 
 	esr0 = get_l2_indirect_reg(L2ESR0_IA);
@@ -267,6 +277,19 @@ static void msm_l2_erp_local_handler(void *force)
 		pr_alert("CPU%d: L2EAR0 0x%llx, L2EAR1 0x%llx\n", cpu,
 			get_l2_indirect_reg(L2EAR0_IA),
 			get_l2_indirect_reg(L2EAR1_IA));
+#ifdef CONFIG_USER_RESET_DEBUG
+		if (parity_ue)
+			l2_err_cnt[0][cpu]++;
+		if (parity_ce)
+			l2_err_cnt[1][cpu]++;
+		if (misc_ue)
+			l2_err_cnt[2][cpu]++;
+		for (i = 0; i < CONFIG_NR_CPUS; i++) {
+			offset += snprintf((char *)buf + offset, 96 - offset,
+					"CPU%d[%d,%d,%d]", i, l2_err_cnt[0][i], l2_err_cnt[1][i], l2_err_cnt[2][i]);
+		}
+		sec_debug_store_additional_dbg(DBG_0_L2_ERR, 0, "%s", buf);
+#endif
 	} else {
 		pr_info("CPU%d: No L2 error detected in L2ESR0 0x%llx, L2ESR1 0x%llx)\n",
 			cpu, esr0, esr1);

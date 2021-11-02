@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -29,23 +29,20 @@
 #include <media/videobuf2-dma-contig.h>
 #include <media/msmb_camera.h>
 
-/* Setting MAX timeout to 10seconds considering
+/* Setting MAX timeout to 6.5seconds considering
  * backend will operate @ .6fps in certain usecases
  * like Long exposure usecase and isp needs max of 2 frames
  * to stop the hardware which will be around 3 seconds*/
-#define MSM_POST_EVT_TIMEOUT 10000
+#define MSM_POST_EVT_TIMEOUT 10000  //temporarily changing it to 10secs to avoid v4l2 timeout at boottime
 #define MSM_POST_EVT_NOTIMEOUT 0xFFFFFFFF
 #define MSM_CAMERA_STREAM_CNT_BITS  32
 
 #define CAMERA_DISABLE_PC_LATENCY 100
 #define CAMERA_ENABLE_PC_LATENCY PM_QOS_DEFAULT_VALUE
 
-extern bool is_daemon_status;
-
 struct msm_video_device {
 	struct video_device *vdev;
 	atomic_t opened;
-	struct mutex video_drvdata_mutex;
 };
 
 struct msm_queue_head {
@@ -111,15 +108,11 @@ struct msm_session {
 	struct mutex lock;
 	struct mutex lock_q;
 	struct mutex close_lock;
-	rwlock_t stream_rwlock;
+	rwlock_t	stream_rwlock;
 };
 
-static inline bool msm_is_daemon_present(void)
-{
-	return is_daemon_status;
-}
-
 void msm_pm_qos_update_request(int val);
+
 int msm_post_event(struct v4l2_event *event, int timeout);
 int  msm_create_session(unsigned int session, struct video_device *vdev);
 int msm_destroy_session(unsigned int session_id);
