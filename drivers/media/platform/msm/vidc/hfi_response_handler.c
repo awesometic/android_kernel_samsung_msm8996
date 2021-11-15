@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017,2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1125,12 +1125,6 @@ enum vidc_status hfi_process_sys_init_done_prop_read(
 			"hfi_msg_sys_init_done: Invalid input\n");
 		return VIDC_ERR_FAIL;
 	}
-	if (pkt->size < sizeof(struct hfi_msg_sys_init_done_packet)) {
-		dprintk(VIDC_ERR, "%s: bad packet size: %d\n",
-			__func__, pkt->size);
-		return VIDC_ERR_FAIL;
-	}
-
 	if (pkt->size < sizeof(struct hfi_msg_sys_init_done_packet)) {
 		dprintk(VIDC_ERR, "%s: bad packet size: %d\n",
 			__func__, pkt->size);
