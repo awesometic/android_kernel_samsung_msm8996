@@ -1154,6 +1154,7 @@ int subsystem_restart_dev(struct subsys_device *dev)
 
 	name = dev->desc->name;
 
+#ifdef COFNIG_SEC_DEBUG_SUMMARY
 	if ((sec_debug_is_modem_seperate_debug_ssr() == SEC_DEBUG_MODEM_SEPERATE_EN)
 		&& strcmp(name, "slpi")) {
 		pr_info("SSR seperated by cp magic!!\n");
@@ -1183,6 +1184,11 @@ int subsystem_restart_dev(struct subsys_device *dev)
  * 
  */
 #endif
+
+#else
+	dev->restart_level = RESET_SUBSYS_COUPLED;
+#endif // end of CONFIG_SEC_DEBUG_SUMMARY
+
 
 	/* move from subsystem_crash(), clear force stop gpio and silent ssr flag */
 	if (dev->desc->force_stop_gpio)
