@@ -545,7 +545,6 @@ static long msm_buf_mngr_subdev_ioctl(struct v4l2_subdev *sd,
 				return -EINVAL;
 			if (!k_ioctl.ioctl_ptr)
 				return -EINVAL;
-
 			if (!is_compat_task()) {
 				MSM_CAM_GET_IOCTL_ARG_PTR(&tmp,
 					&k_ioctl.ioctl_ptr, sizeof(tmp));

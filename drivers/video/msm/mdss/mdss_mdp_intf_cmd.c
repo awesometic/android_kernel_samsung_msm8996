@@ -2019,6 +2019,7 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 			} else
 #endif
 			pr_err("cmd kickoff timed out (%d) ctl=%d\n", rc, ctl->num);
+			MDSS_XLOG(0xbad);
 		} else if (ctx->pp_timeout_report_cnt == MAX_RECOVERY_TRIALS) {
 			MDSS_XLOG(0xbad2);
 			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",

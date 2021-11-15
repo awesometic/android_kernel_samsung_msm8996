@@ -211,7 +211,6 @@ static int q6lsm_callback(struct apr_client_data *data, void *priv)
 			if (data->payload_size < 2 * sizeof(payload[0])) {
 				pr_err("%s: payload has invalid size[%d]\n",
 					__func__, data->payload_size);
-				return -EINVAL;
 			}
 			client->cmd_err_code = payload[1];
 			if (client->cmd_err_code)
@@ -1432,7 +1431,7 @@ static int q6lsm_mmapcallback(struct apr_client_data *data, void *priv)
 	if (client->cb)
 		client->cb(data->opcode, data->token,
 			   data->payload, data->payload_size,
-			   client->priv);
+			client->priv);
 	return 0;
 }
 

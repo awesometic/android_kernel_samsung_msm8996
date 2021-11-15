@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -451,7 +451,7 @@ static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry)
 
 	spin_unlock(&entry->priv->mem_lock);
 
-	kgsl_mmu_put_gpuaddr(&entry->memdesc);		
+	kgsl_mmu_put_gpuaddr(&entry->memdesc);
 	
 	kgsl_process_private_put(entry->priv);
 
@@ -528,7 +528,7 @@ int kgsl_context_init(struct kgsl_device_private *dev_priv,
 	 */
 	spin_lock(&proc_priv->ctxt_count_lock);
 	if (atomic_read(&proc_priv->ctxt_count) > KGSL_MAX_CONTEXTS_PER_PROC) {
-		KGSL_DRV_ERR(device,
+		KGSL_DRV_ERR_RATELIMIT(device,
 			"Per process context limit reached for pid %u",
 			dev_priv->process_priv->pid);
 		spin_unlock(&proc_priv->ctxt_count_lock);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -541,7 +541,7 @@ static int diagchar_close(struct inode *inode, struct file *file)
 {
 	int ret;
 	DIAG_LOG(DIAG_DEBUG_USERSPACE, "diag: %s process exit with pid = %d\n",
-		current->comm, current->tgid);		
+		current->comm, current->tgid);
 	ret = diag_remove_client_entry(file);
 
 	return ret;
@@ -2260,10 +2260,6 @@ long diagchar_compat_ioctl(struct file *filp,
 				   sizeof(mode_param)))
 			return -EFAULT;
 		diag_switch_logging_clear_mask(&mode_param, current->tgid);
-		/*
-		 * Get a pid of diag_mdlog(app) and save it.
-		 */
-		driver->silent_log_pid = get_pid(task_pid(current));
 		mutex_lock(&driver->diagchar_mutex);
 		result = diag_switch_logging(&mode_param);
 		mutex_unlock(&driver->diagchar_mutex);
@@ -2400,10 +2396,6 @@ long diagchar_ioctl(struct file *filp,
 				   sizeof(mode_param)))
 			return -EFAULT;
 		diag_switch_logging_clear_mask(&mode_param, current->tgid);
-		/*
-		 * Get a pid of diag_mdlog(app) and save it.
-		 */
-		driver->silent_log_pid = get_pid(task_pid(current));
 		mutex_lock(&driver->diagchar_mutex);
 		result = diag_switch_logging(&mode_param);
 		mutex_unlock(&driver->diagchar_mutex);
@@ -2971,26 +2963,6 @@ static int diag_user_process_apps_data(const char __user *buf, int len,
 	return 0;
 }
 
-/*
- * silent_log_panic_handler()
- * If the silent log is enabled for CP and CP is in
- * trouble, diag_mdlog (APP) should be terminated before
- * a panic occurs, since it can flush logs to SD card
- * when it is over. So, please use this function to termimate it.
- */
-int silent_log_panic_handler(void)
-{
-	int ret = 0;
-	if(driver->silent_log_pid) {
-		pr_info("%s: killing slient log...\n", __func__);
-		kill_pid(driver->silent_log_pid, SIGTERM, 1);
-		driver->silent_log_pid = NULL;
-		ret = 1;
-	}
-	return ret;
-}
-EXPORT_SYMBOL(silent_log_panic_handler);
-
 static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 			  loff_t *ppos)
 {
@@ -3019,9 +2991,9 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 		pr_err("diag: bad address from user side\n");
 		return -EFAULT;
 	}
-	wait_event_interruptible(driver->wait_q, 
-			atomic_read(&driver->data_ready_notif[index])  > 0);
- 
+	wait_event_interruptible(driver->wait_q,
+			atomic_read(&driver->data_ready_notif[index]) > 0);
+
 	mutex_lock(&driver->diagchar_mutex);
 
 	if ((driver->data_ready[index] & USER_SPACE_DATA_TYPE) &&

@@ -1625,33 +1625,11 @@ static ssize_t fwu_sysfs_store_image(struct file *data_file,
 		struct kobject *kobj, struct bin_attribute *attributes,
 		char *buf, loff_t pos, size_t count)
 {
-<<<<<<< HEAD
-	ssize_t retval;
-
-	if (!mutex_trylock(&dsx_fwu_sysfs_mutex))
-		return -EBUSY;
-
-	if (count > (fwu->image_size - fwu->data_pos)) {
-		dev_err(fwu->rmi4_data->pdev->dev.parent,
-				"%s: Not enough space in buffer\n",
-				__func__);
-		retval = -EINVAL;
-		goto exit;
-	}
-
-	if (!fwu->ext_data_source) {
-		dev_err(fwu->rmi4_data->pdev->dev.parent,
-				"%s: Need to set imagesize\n",
-				__func__);
-		retval = -EINVAL;
-		goto exit;
-=======
 	if (count > fwu->image_size - fwu->data_pos) {
 		dev_err(fwu->rmi4_data->pdev->dev.parent,
 				"%s: Not enough space in buffer\n",
 				__func__);
 		return -EINVAL;
->>>>>>> 17d1c3594c1c... upsync SS N //TASK/LEGACY/NOUGAT/Combination/MSM8996/kernel/... @12304742
 	}
 
 	memcpy((void *)(&fwu->ext_data_source[fwu->data_pos]),
@@ -1862,16 +1840,6 @@ static ssize_t fwu_sysfs_image_name_show(struct device *dev,
 static ssize_t fwu_sysfs_image_name_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-<<<<<<< HEAD
-	ssize_t retval;
-
-	if (!mutex_trylock(&dsx_fwu_sysfs_mutex))
-		return -EBUSY;
-	retval = sscanf(buf, "%49s", fwu->image_name);
-	mutex_unlock(&dsx_fwu_sysfs_mutex);
-
-	if (retval != 1)
-=======
 	if (!buf || count > MAX_IMAGE_NAME_LEN) {
 		dev_err(fwu->rmi4_data->pdev->dev.parent,
 				"%s: Failed to copy image file name\n",
@@ -1880,7 +1848,6 @@ static ssize_t fwu_sysfs_image_name_store(struct device *dev,
 	}
 
 	if (sscanf(buf, "%s", fwu->image_name) != 1)
->>>>>>> 17d1c3594c1c... upsync SS N //TASK/LEGACY/NOUGAT/Combination/MSM8996/kernel/... @12304742
 		return -EINVAL;
 
 	return count;

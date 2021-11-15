@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, 2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -443,7 +443,6 @@ static int fifo_read(struct edge_info *einfo, void *_data, int len)
 
 	if (read_index >= fifo_size || write_index >= fifo_size)
 		return 0;
-
 	while (len) {
 		ptr = einfo->rx_fifo + read_index;
 		if (read_index <= write_index)
@@ -489,7 +488,6 @@ static uint32_t fifo_write_body(struct edge_info *einfo, const void *_data,
 
 	if (read_index >= fifo_size || *write_index >= fifo_size)
 		return 0;
-
 	while (len) {
 		ptr = einfo->tx_fifo + *write_index;
 		if (*write_index < read_index) {
@@ -899,6 +897,7 @@ static void __rx_worker(struct edge_info *einfo, bool atomic_ctx)
 			cmd_data = d_cmd->data;
 			kfree(d_cmd);
 		} else {
+			memset(&cmd, 0, sizeof(cmd));
 			fifo_read(einfo, &cmd, sizeof(cmd));
 			cmd_data = NULL;
 		}
@@ -1001,6 +1000,7 @@ static void __rx_worker(struct edge_info *einfo, bool atomic_ctx)
 								cmd_data)->size;
 					kfree(cmd_data);
 				} else {
+					memset(&intent, 0, sizeof(intent));
 					fifo_read(einfo, &intent,
 								sizeof(intent));
 				}
