@@ -675,6 +675,12 @@
 #define INTREPID_NEOVI_PID	0x0701
 
 /*
+ * WICED USB UART
+ */
+#define WICED_VID		0x0A5C
+#define WICED_USB20706V2_PID	0x6422
+
+/*
  * Definitions for ID TECH (www.idt-net.com) devices
  */
 #define IDTECH_VID		0x0ACD	/* ID TECH Vendor ID */
@@ -872,6 +878,14 @@
  */
 #define NOVITUS_VID			0x1a28
 #define NOVITUS_BONO_E_PID		0x6010
+
+/*
+ * ICPDAS I-756*U devices
+ */
+#define ICPDAS_VID			0x1b5c
+#define ICPDAS_I7560U_PID		0x0103
+#define ICPDAS_I7561U_PID		0x0104
+#define ICPDAS_I7563U_PID		0x0105
 
 /*
  * RT Systems programming cables for various ham radios
