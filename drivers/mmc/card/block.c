@@ -3959,16 +3959,26 @@ static void mmc_blk_cmdq_err_handle(struct mmc_host *host, u32 status, int err)
 	u32 red_err_info = 0;
 	struct mmc_request *err_mrq = NULL;
 
-	if (host->cmdq_ops->err_info && host->cmdq_ops->get_mrq_by_tag)
-		host->cmdq_ops->err_info(host, &err_info, mrq);
-	else
-		return;
-
-	if (mrq->cmdq_req->resp_arg & CQ_RED) {
-		red_err_info = mrq->cmdq_req->resp_arg;
-	} else if (status & CQ_RED) {
-		red_err_info = status;
-		err_info.timedout = true;
+	/*
+	 * Argument for each entry of packed group
+	 */
+	list_for_each_entry(prq, &packed->list, queuelist) {
+		do_rel_wr = mmc_req_rel_wr(prq) && (md->flags & MMC_BLK_REL_WR);
+		do_data_tag = (card->ext_csd.data_tag_unit_size) &&
+			(prq->cmd_flags & REQ_META) &&
+			(rq_data_dir(prq) == WRITE) &&
+			blk_rq_bytes(prq) >= card->ext_csd.data_tag_unit_size;
+		/* Argument of CMD23 */
+		packed_cmd_hdr[(i * 2)] = cpu_to_le32(
+			(do_rel_wr ? MMC_CMD23_ARG_REL_WR : 0) |
+			(do_data_tag ? MMC_CMD23_ARG_TAG_REQ : 0) |
+			blk_rq_sectors(prq));
+		/* Argument of CMD18 or CMD25 */
+		packed_cmd_hdr[((i * 2)) + 1] = cpu_to_le32(
+			mmc_card_blockaddr(card) ?
+			blk_rq_pos(prq) : blk_rq_pos(prq) << 9);
+		packed->blocks += blk_rq_sectors(prq);
+		i++;
 	}
 
 	if (red_err_info & CQ_RED) {
