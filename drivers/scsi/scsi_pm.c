@@ -291,7 +291,7 @@ static int scsi_runtime_resume(struct device *dev)
 
 	/* Insert hooks here for targets, hosts, and transport classes */
 
-	return errdo_scsi_runtime_suspend;
+	return err;
 }
 
 static int scsi_runtime_idle(struct device *dev)
