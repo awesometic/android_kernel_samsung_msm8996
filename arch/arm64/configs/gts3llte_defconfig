@@ -4781,7 +4781,7 @@ CONFIG_DEBUG_SET_MODULE_RONX=y
 # PowerManagement Feature
 #
 CONFIG_SEC_PM=y
-# CONFIG_SEC_PM_DEBUG is not set
+CONFIG_SEC_PM_DEBUG=y
 
 #
 # Samsung Rooting Restriction Feature
