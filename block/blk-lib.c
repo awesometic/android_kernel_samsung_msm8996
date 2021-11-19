@@ -26,27 +26,15 @@ static void bio_batch_end_io(struct bio *bio, int err)
 	bio_put(bio);
 }
 
-static struct bio *next_bio(struct bio *bio, unsigned int nr_pages,
-		int type, gfp_t gfp)
-{
-	struct bio *new = bio_alloc(gfp, nr_pages);
-
-	if (bio) {
-		bio_chain(bio, new);
-		submit_bio(type, bio);
-	}
-
-	return new;
-}
-
+/* copied from block/blk-lib.c in 4.10-rc1 */
 int __blkdev_issue_discard(struct block_device *bdev, sector_t sector,
 		sector_t nr_sects, gfp_t gfp_mask, unsigned long flags,
 		struct bio **biop)
 {
 	struct request_queue *q = bdev_get_queue(bdev);
 	struct bio *bio = *biop;
-	int type = REQ_WRITE | REQ_DISCARD | REQ_PRIO;
-	unsigned int max_discard_sectors, granularity;
+	unsigned int granularity;
+	int op = REQ_WRITE | REQ_DISCARD;
 	int alignment;
 	sector_t bs_mask;
 
@@ -56,39 +44,26 @@ int __blkdev_issue_discard(struct block_device *bdev, sector_t sector,
 	if (!blk_queue_discard(q))
 		return -EOPNOTSUPP;
 
+	if (flags & BLKDEV_DISCARD_SECURE) {
+		if (!blk_queue_secdiscard(q))
+			return -EOPNOTSUPP;
+		op |= REQ_SECURE;
+	}
+
 	bs_mask = (bdev_logical_block_size(bdev) >> 9) - 1;
 	if ((sector | nr_sects) & bs_mask)
 		return -EINVAL;
 
-	/* Zero-sector (unknown) and one-sector granularities are the same. */
+	/* Zero-sector (unknown) and one-sector granularities are the same.  */
 	granularity = max(q->limits.discard_granularity >> 9, 1U);
 	alignment = (bdev_discard_alignment(bdev) >> 9) % granularity;
-
-	/*
-	 * Ensure that max_discard_sectors is of the proper
-	 * granularity, so that requests stay aligned after a split.
-	 */
-	max_discard_sectors = min(q->limits.max_discard_sectors, UINT_MAX >> 9);
-	max_discard_sectors -= max_discard_sectors % granularity;
-	if (unlikely(!max_discard_sectors)) {
-		/* Avoid infinite loop below. Being cautious never hurts. */
-		return -EOPNOTSUPP;
-	}
-
-	if (flags & BLKDEV_DISCARD_SECURE) {
-		if (!blk_queue_secdiscard(q))
-			return -EOPNOTSUPP;
-		type |= REQ_SECURE;
-	}
-
-	if (flags & BLKDEV_DISCARD_SYNC)
-		type |= REQ_SYNC;
 
 	while (nr_sects) {
 		unsigned int req_sects;
 		sector_t end_sect, tmp;
 
-		req_sects = min_t(sector_t, nr_sects, max_discard_sectors);
+		/* Make sure bi_size doesn't overflow */
+		req_sects = min_t(sector_t, nr_sects, UINT_MAX >> 9);
 
 		/**
 		 * If splitting a request, and the next starting sector would be
@@ -104,9 +79,17 @@ int __blkdev_issue_discard(struct block_device *bdev, sector_t sector,
 			req_sects = end_sect - sector;
 		}
 
-		bio = next_bio(bio, 1, type, gfp_mask);
+		if (bio) {
+			int ret = submit_bio_wait(op, bio);
+			bio_put(bio);
+			if (ret)
+				return ret;
+		}
+
+		bio = bio_alloc(GFP_NOIO | __GFP_NOFAIL, 1);
 		bio->bi_iter.bi_sector = sector;
 		bio->bi_bdev = bdev;
+		bio->bi_rw = op | 0;
 
 		bio->bi_iter.bi_size = req_sects << 9;
 		nr_sects -= req_sects;
