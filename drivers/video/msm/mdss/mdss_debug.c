@@ -435,12 +435,12 @@ static bool mdss_debug_base_is_valid_range(u32 off, u32 cnt)
 
 	list_for_each_entry(base, &mdd->base_list, head) {
 		list_for_each_entry(node, &base->dump_list, head) {
-		pr_debug("%s: start=0x%x end=0x%x\n", node->range_name,
-		node->offset.start, node->offset.end);
+			pr_debug("%s: start=0x%x end=0x%x\n", node->range_name,
+			node->offset.start, node->offset.end);
 
-		if (node->offset.start <= off
-				&& off <= node->offset.end
-				&& off + cnt <= node->offset.end) {
+			if (node->offset.start <= off
+					&& off <= node->offset.end
+					&& off + cnt <= node->offset.end) {
 				pr_debug("valid range requested\n");
 				return true;
 			}

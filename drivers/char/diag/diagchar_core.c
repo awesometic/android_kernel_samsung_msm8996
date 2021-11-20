@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -541,7 +541,7 @@ static int diagchar_close(struct inode *inode, struct file *file)
 {
 	int ret;
 	DIAG_LOG(DIAG_DEBUG_USERSPACE, "diag: %s process exit with pid = %d\n",
-		current->comm, current->tgid);		
+		current->comm, current->tgid);
 	ret = diag_remove_client_entry(file);
 
 	return ret;
@@ -3019,9 +3019,9 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 		pr_err("diag: bad address from user side\n");
 		return -EFAULT;
 	}
-	wait_event_interruptible(driver->wait_q, 
-			atomic_read(&driver->data_ready_notif[index])  > 0);
- 
+	wait_event_interruptible(driver->wait_q,
+			atomic_read(&driver->data_ready_notif[index]) > 0);
+
 	mutex_lock(&driver->diagchar_mutex);
 
 	if ((driver->data_ready[index] & USER_SPACE_DATA_TYPE) &&

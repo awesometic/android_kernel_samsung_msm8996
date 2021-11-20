@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2017,2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1377,7 +1377,7 @@ static ssize_t iommu_debug_atos_read(struct file *file, char __user *ubuf,
 		snprintf(buf, 100, "%pa\n", &phys);
 	}
 
-	buflen = strlen(buf);
+	buflen = min(count, strlen(buf));
 	if (copy_to_user(ubuf, buf, buflen)) {
 		pr_err("Couldn't copy_to_user\n");
 		retval = -EFAULT;

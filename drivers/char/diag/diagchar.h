@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -26,7 +26,7 @@
 #include <asm/atomic.h>
 #include "diagfwd_bridge.h"
 
-#define THRESHOLD_CLIENT_LIMIT       50
+#define THRESHOLD_CLIENT_LIMIT	50
 
 /* Size of the USB buffers used for read and write*/
 #define USB_MAX_OUT_BUF 4096

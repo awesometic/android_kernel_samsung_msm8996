@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -182,7 +182,7 @@ static ssize_t audio_output_latency_dbgfs_write(struct file *file,
 {
 	char *temp;
 
-	if (count > 2*sizeof(char)) {
+	if (count != 2*sizeof(char)) {
 		pr_err("%s: err count is more %zd\n", __func__, count);
 		return -EINVAL;
 	} else {
@@ -239,7 +239,7 @@ static ssize_t audio_input_latency_dbgfs_write(struct file *file,
 {
 	char *temp;
 
-	if (count > 2*sizeof(char)) {
+	if (count != 2*sizeof(char)) {
 		pr_err("%s: err count is more %zd\n", __func__, count);
 		return -EINVAL;
 	} else {
@@ -1527,7 +1527,7 @@ static int32_t q6asm_srvc_callback(struct apr_client_data *data, void *priv)
 				wake_up(&ac->mem_wait);
 			if (data->payload_size >= 2 * sizeof(uint32_t))
 				dev_vdbg(ac->dev, "%s: Payload = [0x%x] status[0x%x]\n",
- 					__func__, payload[0], payload[1]);
+					__func__, payload[0], payload[1]);
 			else
 				dev_vdbg(ac->dev, "%s: Payload size of %d is less than expected.\n",
 					__func__, data->payload_size);
@@ -1545,6 +1545,13 @@ static int32_t q6asm_srvc_callback(struct apr_client_data *data, void *priv)
 	}
 
 	dir = (data->token & 0x0F);
+	if (dir != IN && dir != OUT) {
+		pr_err("%s: Invalid audio port index: %d\n", __func__, dir);
+		if ((sid > 0 && sid <= SESSION_MAX))
+			spin_unlock_irqrestore(
+				&(session[sid].session_lock), flags);
+		return 0;
+	}
 	port = &ac->port[dir];
 
 	switch (data->opcode) {
@@ -1737,6 +1744,7 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 		data->dest_port);
 	if ((data->opcode != ASM_DATA_EVENT_RENDERED_EOS) &&
 	    (data->opcode != ASM_DATA_EVENT_EOS) &&
+	    (data->opcode != ASM_SESSION_EVENTX_OVERFLOW) &&
 	    (data->opcode != ASM_SESSION_EVENT_RX_UNDERFLOW)) {
 		if (payload == NULL) {
 			pr_err("%s: payload is null\n", __func__);
@@ -1924,6 +1932,17 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 				return -EINVAL;
 			}
 			spin_lock_irqsave(&port->dsp_lock, dsp_flags);
+			if (data->token < 0 ||
+					data->token >= port->max_buf_cnt) {
+				pr_debug("%s: Invalid token buffer index %u\n",
+					__func__, data->token);
+				spin_unlock_irqrestore(&port->dsp_lock,
+						dsp_flags);
+				spin_unlock_irqrestore(
+					&(session[session_id].session_lock),
+					flags);
+				return -EINVAL;
+			}
 			if (data->payload_size >= 2 * sizeof(uint32_t) &&
 				(lower_32_bits(port->buf[data->token].phys) !=
 				payload[0] ||
@@ -1931,11 +1950,11 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 					port->buf[data->token].phys) !=
 						payload[1])) {
 				pr_debug("%s: Expected addr %pK\n",
-				__func__, &port->buf[data->token].phys);
+					__func__, &port->buf[data->token].phys);
 				pr_err("%s: rxedl[0x%x] rxedu [0x%x]\n",
 					__func__, payload[0], payload[1]);
 				spin_unlock_irqrestore(&port->dsp_lock,
-								dsp_flags);
+						dsp_flags);
 				spin_unlock_irqrestore(
 					&(session[session_id].session_lock),
 					flags);
@@ -2035,6 +2054,16 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 			}
 			spin_lock_irqsave(&port->dsp_lock, dsp_flags);
 			token = data->token;
+			if (token < 0 || token >= port->max_buf_cnt) {
+				pr_debug("%s: Invalid token buffer index %u\n",
+					__func__, token);
+				spin_unlock_irqrestore(&port->dsp_lock,
+								dsp_flags);
+				spin_unlock_irqrestore(
+					&(session[session_id].session_lock),
+					flags);
+				return -EINVAL;
+			}
 			port->buf[token].used = 0;
 			if (lower_32_bits(port->buf[token].phys) !=
 			payload[READDONE_IDX_BUFADD_LSW] ||
@@ -3349,6 +3378,12 @@ int q6asm_open_shared_io(struct audio_client *ac,
 	if (!ac || !config)
 		return -EINVAL;
 
+	if (config->channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
+		pr_err("%s: Invalid channel count %d\n", __func__,
+			config->channels);
+		return -EINVAL;
+	}
+
 	bufsz = config->bufsz;
 	bufcnt = config->bufcnt;
 	num_watermarks = 0;
@@ -3813,6 +3848,13 @@ int q6asm_set_encdec_chan_map(struct audio_client *ac,
 	int rc = 0;
 	pr_debug("%s: Session %d, num_channels = %d\n",
 			 __func__, ac->session, num_channels);
+
+	if (num_channels > MAX_CHAN_MAP_CHANNELS) {
+		pr_err("%s: Invalid channel count %d\n", __func__,
+				num_channels);
+		return -EINVAL;
+	}
+
 	q6asm_add_hdr(ac, &chan_map.hdr, sizeof(chan_map), TRUE);
 	atomic_set(&ac->cmd_state, -1);
 	chan_map.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
@@ -3887,6 +3929,12 @@ int q6asm_enc_cfg_blk_pcm_v4(struct audio_client *ac,
 	if (!use_default_chmap && (channel_map == NULL)) {
 		pr_err("%s: No valid chan map and can't use default\n",
 				__func__);
+		rc = -EINVAL;
+		goto fail_cmd;
+	}
+
+	if (channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
+		pr_err("%s: Invalid channel count %d\n", __func__, channels);
 		rc = -EINVAL;
 		goto fail_cmd;
 	}
@@ -3990,6 +4038,12 @@ int q6asm_enc_cfg_blk_pcm_v3(struct audio_client *ac,
 		goto fail_cmd;
 	}
 
+	if (channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
+		pr_err("%s: Invalid channel count %d\n", __func__, channels);
+		rc = -EINVAL;
+		goto fail_cmd;
+	}
+
 	pr_debug("%s: session[%d]rate[%d]ch[%d]bps[%d]wordsize[%d]\n", __func__,
 		 ac->session, rate, channels,
 		 bits_per_sample, sample_word_size);
@@ -4069,6 +4123,11 @@ int q6asm_enc_cfg_blk_pcm_v2(struct audio_client *ac,
 	if (!use_default_chmap && (channel_map == NULL)) {
 		pr_err("%s: No valid chan map and can't use default\n",
 				__func__);
+		return -EINVAL;
+	}
+
+	if (channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
+		pr_err("%s: Invalid channel count %d\n", __func__, channels);
 		return -EINVAL;
 	}
 
@@ -4227,8 +4286,12 @@ int q6asm_enc_cfg_blk_pcm_native(struct audio_client *ac,
 	struct asm_multi_channel_pcm_enc_cfg_v2  enc_cfg;
 	u8 *channel_mapping;
 	u32 frames_per_buf = 0;
-
 	int rc = 0;
+
+	if (channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
+		pr_err("%s: Invalid channel count %d\n", __func__, channels);
+		return -EINVAL;
+	}
 
 	pr_debug("%s: Session %d, rate = %d, channels = %d\n", __func__,
 			 ac->session, rate, channels);
@@ -4716,6 +4779,11 @@ static int __q6asm_media_format_block_pcm(struct audio_client *ac,
 	u8 *channel_mapping;
 	int rc = 0;
 
+	if (channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
+		pr_err("%s: Invalid channel count %d\n", __func__, channels);
+		return -EINVAL;
+	}
+
 	pr_debug("%s: session[%d]rate[%d]ch[%d]\n", __func__, ac->session, rate,
 		channels);
 
@@ -4793,6 +4861,11 @@ static int __q6asm_media_format_block_pcm_v3(struct audio_client *ac,
 	struct asm_multi_channel_pcm_fmt_blk_param_v3 fmt;
 	u8 *channel_mapping;
 	int rc;
+
+	if (channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
+		pr_err("%s: Invalid channel count %d\n", __func__, channels);
+		return -EINVAL;
+	}
 
 	pr_debug("%s: session[%d]rate[%d]ch[%d]bps[%d]wordsize[%d]\n", __func__,
 		 ac->session, rate, channels,
@@ -4876,6 +4949,11 @@ static int __q6asm_media_format_block_pcm_v4(struct audio_client *ac,
 	struct asm_multi_channel_pcm_fmt_blk_param_v4 fmt;
 	u8 *channel_mapping;
 	int rc;
+
+	if (channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
+		pr_err("%s: Invalid channel count %d\n", __func__, channels);
+		return -EINVAL;
+	}
 
 	pr_debug("%s: session[%d]rate[%d]ch[%d]bps[%d]wordsize[%d]\n", __func__,
 		 ac->session, rate, channels,
@@ -5065,6 +5143,11 @@ static int __q6asm_media_format_block_multi_ch_pcm(struct audio_client *ac,
 	u8 *channel_mapping;
 	int rc = 0;
 
+	if (channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
+		pr_err("%s: Invalid channel count %d\n", __func__, channels);
+		return -EINVAL;
+	}
+
 	pr_debug("%s: session[%d]rate[%d]ch[%d]\n", __func__, ac->session, rate,
 		channels);
 
@@ -5131,6 +5214,11 @@ static int __q6asm_media_format_block_multi_ch_pcm_v3(struct audio_client *ac,
 	struct asm_multi_channel_pcm_fmt_blk_param_v3 fmt;
 	u8 *channel_mapping;
 	int rc;
+
+	if (channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
+		pr_err("%s: Invalid channel count %d\n", __func__, channels);
+		return -EINVAL;
+	}
 
 	pr_debug("%s: session[%d]rate[%d]ch[%d]bps[%d]wordsize[%d]\n", __func__,
 		 ac->session, rate, channels,
@@ -5202,6 +5290,11 @@ static int __q6asm_media_format_block_multi_ch_pcm_v4(struct audio_client *ac,
 	struct asm_multi_channel_pcm_fmt_blk_param_v4 fmt;
 	u8 *channel_mapping;
 	int rc;
+
+	if (channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
+		pr_err("%s: Invalid channel count %d\n", __func__, channels);
+		return -EINVAL;
+	}
 
 	pr_debug("%s: session[%d]rate[%d]ch[%d]bps[%d]wordsize[%d]\n", __func__,
 		 ac->session, rate, channels,
