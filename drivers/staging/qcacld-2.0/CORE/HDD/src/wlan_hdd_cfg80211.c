@@ -1780,8 +1780,10 @@ __wlan_hdd_cfg80211_get_supported_features(struct wiphy *wiphy,
     fset |= WIFI_FEATURE_RSSI_MONITOR;
     fset |= WIFI_FEATURE_TX_TRANSMIT_POWER;
 
+#if 0
     if (hdd_link_layer_stats_supported())
         fset |= WIFI_FEATURE_LINK_LAYER_STATS;
+#endif
 
     if (hdd_roaming_supported(pHddCtx))
         fset |= WIFI_FEATURE_CONTROL_ROAMING;
