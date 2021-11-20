@@ -7157,15 +7157,6 @@ void mdss_samsung_fence_dump(char *intf, struct sync_fence *fence)
 #include "../../../../staging/android/ion/ion_priv.h"
 #include "../../../../staging/android/ion/ion.h"
 
-struct ion_handle {
-	struct kref ref;
-	struct ion_client *client;
-	struct ion_buffer *buffer;
-	struct rb_node node;
-	unsigned int kmap_cnt;
-	int id;
-};
-
 static int WIDTH_COMPRESS_RATIO = 1;
 static int HEIGHT_COMPRESS_RATIO = 1;
 
