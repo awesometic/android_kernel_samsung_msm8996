@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -79,6 +79,8 @@ typedef struct sAddBaCandidate
     tSirMacAddr staAddr;
     tAddBaInfo baInfo[STACFG_MAX_TC];
 }tAddBaCandidate, *tpAddBaCandidate;
+
+#define MGMT_RX_PACKETS_THRESHOLD 200
 
 #ifdef WLAN_FEATURE_11W
 typedef union uPmfSaQueryTimerId
@@ -246,43 +248,43 @@ static inline int limSelectCBMode(tDphHashNode *pStaDs, tpPESession psessionEntr
         if ( channel== 36 || channel == 52 || channel == 100 ||
              channel == 116 || channel == 149 )
         {
-           return PHY_QUADRUPLE_CHANNEL_20MHZ_LOW_40MHZ_LOW - 1;
+           return PHY_QUADRUPLE_CHANNEL_20MHZ_LOW_40MHZ_LOW;
         }
         else if ( channel == 40 || channel == 56 || channel == 104 ||
              channel == 120 || channel == 153 )
         {
-           return PHY_QUADRUPLE_CHANNEL_20MHZ_HIGH_40MHZ_LOW - 1;
+           return PHY_QUADRUPLE_CHANNEL_20MHZ_HIGH_40MHZ_LOW;
         }
         else if ( channel == 44 || channel == 60 || channel == 108 ||
                   channel == 124 || channel == 157 )
         {
-           return PHY_QUADRUPLE_CHANNEL_20MHZ_LOW_40MHZ_HIGH -1;
+           return PHY_QUADRUPLE_CHANNEL_20MHZ_LOW_40MHZ_HIGH;
         }
         else if ( channel == 48 || channel == 64 || channel == 112 ||
              channel == 128 || channel == 161 )
         {
-            return PHY_QUADRUPLE_CHANNEL_20MHZ_HIGH_40MHZ_HIGH - 1;
+            return PHY_QUADRUPLE_CHANNEL_20MHZ_HIGH_40MHZ_HIGH;
         }
         else if ( channel == 165 )
         {
             return PHY_SINGLE_CHANNEL_CENTERED;
         }
-    }
-    else if ( pStaDs->mlmStaContext.htCapability )
-    {
+    } else if (pStaDs->mlmStaContext.htCapability &&
+	     psessionEntry->htSupportedChannelWidthSet >
+	     eHT_CHANNEL_WIDTH_20MHZ) {
         if ( channel== 40 || channel == 48 || channel == 56 ||
              channel == 64 || channel == 104 || channel == 112 ||
              channel == 120 || channel == 128 || channel == 136 ||
              channel == 144 || channel == 153 || channel == 161 )
         {
-           return PHY_DOUBLE_CHANNEL_LOW_PRIMARY;
+           return PHY_DOUBLE_CHANNEL_HIGH_PRIMARY;
         }
         else if ( channel== 36 || channel == 44 || channel == 52 ||
              channel == 60 || channel == 100 || channel == 108 ||
              channel == 116 || channel == 124 || channel == 132 ||
              channel == 140 || channel == 149 || channel == 157 )
         {
-           return PHY_DOUBLE_CHANNEL_HIGH_PRIMARY;
+           return PHY_DOUBLE_CHANNEL_LOW_PRIMARY;
         }
         else if ( channel == 165 )
         {
@@ -651,4 +653,16 @@ void lim_send_chan_switch_action_frame(tpAniSirGlobal mac_ctx,
 bool lim_check_if_vendor_oui_match(tpAniSirGlobal mac_ctx,
                 uint8_t *oui, uint8_t oui_len,
                 uint8_t *ie, uint8_t ie_len);
+
+/**
+ * lim_decrement_pending_mgmt_count: Decrement mgmt frame count
+ * @mac_ctx: Pointer to global MAC structure
+ *
+ * This function is used to decrement pe mgmt count once frame
+ * removed from queue
+ *
+ * Return: None
+ */
+void lim_decrement_pending_mgmt_count(tpAniSirGlobal mac_ctx);
+
 #endif /* __LIM_UTILS_H */

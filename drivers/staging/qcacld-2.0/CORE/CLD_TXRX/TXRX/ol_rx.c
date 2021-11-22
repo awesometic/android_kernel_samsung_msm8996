@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -66,6 +66,9 @@
 #ifdef HTT_RX_RESTORE
 #include "vos_cnss.h"
 #endif
+
+#include <htt_ppdu_stats.h>
+#include "if_smart_antenna.h"
 
 #ifdef OSIF_NEED_RX_PEER_ID
 #define OL_RX_OSIF_DELIVER(vdev, peer, msdus) \
@@ -299,6 +302,164 @@ ol_rx_mon_indication_handler(
 		ol_txrx_peer_unref_delete(peer);
 }
 
+/*
+ * ol_rx_mon_mac_header_handler() - htt rx mac header msg handler
+ * @pdev: pointer to struct ol_txrx_pdev_handle
+ * @rx_ind_msg: htt rx indication message
+ */
+void
+ol_rx_mon_mac_header_handler(
+	ol_txrx_pdev_handle pdev,
+	adf_nbuf_t rx_ind_msg)
+{
+	adf_nbuf_t head_msdu = NULL;
+	adf_nbuf_t tail_msdu = NULL;
+	adf_nbuf_t next;
+	htt_pdev_handle htt_pdev;
+
+	htt_pdev = pdev->htt_pdev;
+
+	/* only if the rx callback is ready */
+	if (NULL == pdev->osif_rx_mon_cb)
+	    return;
+
+	htt_rx_mac_header_mon_process(htt_pdev,
+				      rx_ind_msg,
+				      &head_msdu,
+				      &tail_msdu);
+
+	if (head_msdu) {
+	   if (pdev->osif_rx_mon_cb) {
+	       pdev->osif_rx_mon_cb(head_msdu);
+	   } else {
+	      while (head_msdu) {
+		next = adf_nbuf_next(head_msdu);
+		adf_nbuf_free(head_msdu);
+		head_msdu = next;
+		}
+	   }
+	}
+}
+
+#ifdef WLAN_SMART_ANTENNA_FEATURE
+static inline void ol_fill_legacy_rate(uint8_t legacy_rate,
+				       uint8_t legacy_rate_sel,
+				       enum legacy_rate *rate)
+{
+	switch (legacy_rate) {
+	case 0x8:
+		*rate = legacy_rate_sel ? CCK_11M_LONG_PREAMBLE : OFDM_48M;
+		break;
+	case 0x9:
+		*rate = legacy_rate_sel ? CCK_5_5M_LONG_PREAMBLE : OFDM_24M;
+		break;
+        case 0xA:
+		*rate = legacy_rate_sel ? CCK_2M_LONG_PREAMBLE : OFDM_12M;
+		break;
+	case 0xB:
+		*rate = legacy_rate_sel ? CCK_1M_LONG_PREAMBLE : OFDM_6M;
+		break;
+	case 0xC:
+		*rate = legacy_rate_sel ? CCK_11M_SHORT_PREAMBLE : OFDM_54M;
+		break;
+        case 0xD:
+		*rate = legacy_rate_sel ? CCK_5_5M_SHORT_PREAMBLE : OFDM_36M;
+		break;
+	case 0xE:
+		*rate = legacy_rate_sel ? CCK_2M_SHORT_PREAMBLE : OFDM_18M;
+		break;
+        case 0xF:
+		*rate = OFDM_9M;
+		break;
+        default:
+		*rate = INVALID_LEGACY_RATE;
+		break;
+        }
+}
+
+static void ol_pop_rx_stats(htt_pdev_handle htt_pdev,
+			    adf_nbuf_t rx_ind_msg,
+			    int pkt_num,
+			    struct sa_rx_mpdu_stats *fb)
+{
+	uint8_t legacy_rate, legacy_rate_sel, preamble_type, subms;
+	uint32_t vht_sig1, vht_sig2, ms;
+	int i;
+
+	if (!fb)
+		return;
+
+	htt_rx_ind_sig(htt_pdev, rx_ind_msg, &vht_sig1,
+		       &vht_sig2, &preamble_type);
+	fb->magic = (vht_sig2 & 0xff000000) >> 24;
+	if (preamble_type == 0x4) {
+		htt_rx_ind_legacy_rate(htt_pdev, rx_ind_msg,
+				       &legacy_rate, &legacy_rate_sel);
+		fb->rate.type = LEGACY_RATE;
+		ol_fill_legacy_rate(legacy_rate,
+				    legacy_rate_sel, &fb->rate.rate.legacy_rate);
+	} else if (preamble_type != -1) {
+		uint8_t bw = 0;
+		fb->rate.type = HT_VHT_RATE;
+		fb->rate.rate.mcs.mcs_index = vht_sig1 & 0x7f;
+		fb->rate.rate.mcs.nss = (vht_sig2 >> 8) &0x3;
+		bw |= ((vht_sig1 >> 7) & 0x1) ?
+			SMART_ANT_BW_40MHZ : SMART_ANT_BW_20MHZ;
+		if ((preamble_type == 0xC) || (preamble_type == 0xD))
+			bw |= SMART_ANT_NODE_VHT;
+		else
+			bw |= SMART_ANT_NODE_HT;
+		fb->rate.rate.mcs.bw = bw;
+	} else {
+		/* Both legacy and VHT are invalid*/
+		fb->rate.type = LEGACY_RATE;
+		fb->rate.rate.legacy_rate = INVALID_LEGACY_RATE;
+	}
+	fb->tid = htt_rx_ind_ext_tid(htt_pdev, rx_ind_msg);
+	fb->pkt_num = pkt_num;
+	for (i = 0; i < SA_MAX_CHAIN_NUM; i++) {
+		fb->rx_rssi[i] = htt_rx_ind_rssi_dbm_chain(htt_pdev,
+							  rx_ind_msg,
+							  i);
+		fb->rx_nf[i] = htt_rx_ind_noise_floor_chain(htt_pdev,
+							   rx_ind_msg,
+							   i);
+	}
+	htt_rx_ind_timestamp(htt_pdev, rx_ind_msg, &ms, &subms);
+	fb->timestamp_microsec = ms;
+	fb->timestamp_submicrosec = (uint32_t)subms;
+}
+
+static struct sa_rx_stats_feedback *ol_rx_feedback_alloc(uint32_t mpdu_num)
+{
+	struct sa_rx_stats_feedback *fb;
+
+	if (!sa_get_handle())
+		return NULL;
+
+	fb = adf_os_mem_alloc(NULL,
+			      sizeof(struct sa_rx_stats_feedback) +
+			      mpdu_num * sizeof(struct sa_rx_mpdu_stats));
+
+	if (fb)
+		fb->mpdu_count = mpdu_num;
+	return fb;
+}
+#else
+static inline void ol_pop_rx_stats(htt_pdev_handle htt_pdev,
+				   adf_nbuf_t rx_ind_msg,
+				   uint32_t pkt_num,
+				   struct sa_rx_mpdu_stats *fb)
+{
+}
+
+static inline
+struct sa_rx_stats_feedback *ol_rx_feedback_alloc(uint32_t mpdu_num)
+{
+	return NULL;
+}
+#endif
+
 void
 ol_rx_indication_handler(
     ol_txrx_pdev_handle pdev,
@@ -318,6 +479,7 @@ ol_rx_indication_handler(
     uint16_t chan2;
     uint8_t phymode;
     a_bool_t ret;
+    struct sa_rx_stats_feedback *fb;
 
     htt_pdev = pdev->htt_pdev;
     peer = ol_txrx_peer_find_by_id(pdev, peer_id);
@@ -391,6 +553,11 @@ ol_rx_indication_handler(
         pdev->htt_pdev->rx_ring.sw_rd_idx.msdu_payld;
 #endif
 
+    if (peer && num_mpdu_ranges)
+        fb = ol_rx_feedback_alloc(num_mpdu_ranges);
+    else
+        fb = NULL;
+
     for (mpdu_range = 0; mpdu_range < num_mpdu_ranges; mpdu_range++) {
         enum htt_rx_status status;
         int i, num_mpdus;
@@ -403,6 +570,9 @@ ol_rx_indication_handler(
 
         htt_rx_ind_mpdu_range_info(
             pdev->htt_pdev, rx_ind_msg, mpdu_range, &status, &num_mpdus);
+	if (fb)
+            ol_pop_rx_stats(htt_pdev, rx_ind_msg,
+                            num_mpdus, &fb->mpdu_stats[mpdu_range]);
         if ((status == htt_rx_status_ok) && peer) {
             TXRX_STATS_ADD(pdev, priv.rx.normal.mpdus, num_mpdus);
             /* valid frame - deposit it into the rx reordering buffer */
@@ -437,7 +607,7 @@ ol_rx_indication_handler(
 #ifdef HTT_RX_RESTORE
                 if (htt_pdev->rx_ring.rx_reset) {
                     ol_rx_trigger_restore(htt_pdev, head_msdu, tail_msdu);
-                    return;
+                    goto exit;
                 }
 #endif
                 rx_mpdu_desc =
@@ -561,7 +731,7 @@ ol_rx_indication_handler(
 #ifdef HTT_RX_RESTORE
                 if (htt_pdev->rx_ring.rx_reset) {
                     ol_rx_trigger_restore(htt_pdev, msdu, tail_msdu);
-                    return;
+                    goto exit;
                 }
 #endif
                 /* pull the MPDU desc off the desc queue */
@@ -632,6 +802,13 @@ ol_rx_indication_handler(
     if (pdev->rx.flags.defrag_timeout_check) {
         ol_rx_defrag_waitlist_flush(pdev);
     }
+#ifdef HTT_RX_RESTORE
+exit:
+#endif
+    if (peer && fb)
+        smart_antenna_update_rx_stats(peer->mac_addr.raw, fb);
+    if (fb)
+        adf_os_mem_free(fb);
 }
 
 void
@@ -815,7 +992,7 @@ void
 ol_rx_offload_deliver_ind_handler(
     ol_txrx_pdev_handle pdev,
     adf_nbuf_t msg,
-    int msdu_cnt)
+    u_int16_t msdu_cnt)
 {
     int vdev_id, peer_id, tid;
     adf_nbuf_t head_buf, tail_buf, buf;
@@ -823,6 +1000,17 @@ ol_rx_offload_deliver_ind_handler(
     struct ol_txrx_vdev_t *vdev = NULL;
     u_int8_t fw_desc;
     htt_pdev_handle htt_pdev = pdev->htt_pdev;
+
+    if (msdu_cnt > htt_rx_offload_msdu_cnt(htt_pdev)) {
+        TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
+            "%s: invalid msdu_cnt=%u\n",
+            __func__,
+            msdu_cnt);
+        if (pdev->cfg.is_high_latency)
+            htt_rx_desc_frame_free(htt_pdev, msg);
+
+        return;
+    }
 
     while (msdu_cnt) {
         if (!htt_rx_offload_msdu_pop(
@@ -1012,6 +1200,47 @@ static inline void ol_rx_timestamp(ol_pdev_handle pdev,
 }
 #endif
 
+/**
+ * ol_convert_ieee80211_to_8023() - handle data header transition.
+ * @msdu - Received packet.
+ *
+ * This function try to convert the IEEE80211 data frame to 802.3 frame.
+ * When DSRC OCB interface works in RAW mode, driver received data frame
+ * started with IEEE802.11 header, before this packet is delivered to
+ * network stack, it is needed to do transition. But for QCOM specific
+ * frame, this function do nothing change.
+ */
+static A_STATUS ol_convert_ieee80211_to_8023(adf_nbuf_t msdu)
+{
+	int hdr_size;
+	uint16_t epd_hdr_type;
+	struct ether_header eth_hdr;
+	struct ieee80211_frame *wh;
+
+	wh = (struct ieee80211_frame *)adf_nbuf_data(msdu);
+	if (!IEEE80211_IS_DATA(wh))
+		return A_ERROR;
+
+	hdr_size = ol_txrx_ieee80211_hdrsize(wh);
+	if (adf_nbuf_len(msdu) < (hdr_size + sizeof(epd_hdr_type)))
+		return A_ERROR;
+
+	epd_hdr_type = *(uint16_t *)(adf_nbuf_data(msdu) + hdr_size);
+	if (epd_hdr_type == adf_os_htons(ETHERTYPE_WSMP))
+		return A_ENOTSUP;
+
+	adf_os_mem_zero(&eth_hdr, sizeof(struct ether_header));
+	adf_os_mem_copy(eth_hdr.ether_dhost, wh->i_addr1, IEEE80211_ADDR_LEN);
+	adf_os_mem_copy(eth_hdr.ether_shost, wh->i_addr2, IEEE80211_ADDR_LEN);
+	eth_hdr.ether_type = epd_hdr_type;
+
+	adf_nbuf_pull_head(msdu, hdr_size + sizeof(epd_hdr_type));
+	adf_nbuf_push_head(msdu, sizeof(eth_hdr));
+	adf_os_mem_copy(adf_nbuf_data(msdu), &eth_hdr, sizeof(eth_hdr));
+
+	return A_OK;
+}
+
 void
 ol_rx_deliver(
     struct ol_txrx_vdev_t *vdev,
@@ -1100,13 +1329,31 @@ DONE:
                 int i;
                 struct ol_txrx_ocb_chan_info *chan_info = 0;
                 int packet_freq = peer->last_pkt_center_freq;
+                bool need_rx_stats_hdr = false;
+
                 for (i = 0; i < vdev->ocb_channel_count; i++) {
                     if (vdev->ocb_channel_info[i].chan_freq == packet_freq) {
                         chan_info = &vdev->ocb_channel_info[i];
                         break;
                     }
                 }
-                if (!chan_info || !chan_info->disable_rx_stats_hdr) {
+
+                if (NULL != chan_info)
+                    need_rx_stats_hdr = !chan_info->disable_rx_stats_hdr;
+
+                if (vdev->ocb_config_flags & OCB_CONFIG_FLAG_80211_FRAME_MODE) {
+                    /*
+                     * When DSRC OCB interface works in raw mode,
+                     * and received packets started with 802.11 data header,
+                     * it is required to driver convert the header to
+                     * 802.3 header, except specific WSMP data frame.
+                     */
+                    A_STATUS status = ol_convert_ieee80211_to_8023(msdu);
+                    if (A_SUCCESS(status))
+                        need_rx_stats_hdr = false;
+                }
+
+                if (need_rx_stats_hdr) {
                     struct ether_header eth_header = { {0} };
                     struct ocb_rx_stats_hdr_t rx_header = {0};
 
@@ -1254,8 +1501,7 @@ ol_rx_peer_init(struct ol_txrx_pdev_t *pdev, struct ol_txrx_peer_t *peer)
         peer->security[txrx_sec_mcast].sec_type = htt_sec_type_none;
     peer->keyinstalled = 0;
     peer->last_assoc_rcvd = 0;
-    peer->last_disassoc_rcvd = 0;
-    peer->last_deauth_rcvd = 0;
+    peer->last_disassoc_deauth_rcvd = 0;
 
     adf_os_atomic_init(&peer->fw_pn_check);
 }
@@ -1265,8 +1511,7 @@ ol_rx_peer_cleanup(struct ol_txrx_vdev_t *vdev, struct ol_txrx_peer_t *peer)
 {
     peer->keyinstalled = 0;
     peer->last_assoc_rcvd = 0;
-    peer->last_disassoc_rcvd = 0;
-    peer->last_deauth_rcvd = 0;
+    peer->last_disassoc_deauth_rcvd = 0;
     ol_rx_reorder_peer_cleanup(vdev, peer);
     adf_os_mem_free(peer->reorder_history);
     peer->reorder_history = NULL;
@@ -1651,3 +1896,112 @@ void ol_ath_add_vow_extstats(htt_pdev_handle pdev, adf_nbuf_t msdu)
 }
 
 #endif
+
+#define HTT_TLV_HDR_LEN HTT_T2H_EXT_STATS_CONF_TLV_HDR_SIZE
+#ifdef WLAN_SMART_ANTENNA_FEATURE
+/**
+ * ol_pop_user_common_array_tlv() - populate user common array tlv
+ * @pdev: ol pdev handle
+ * @tag_buf: tlv buffer
+ */
+static void ol_pop_user_common_array_tlv(ol_txrx_pdev_handle pdev,
+					 uint32_t *tag_buf,
+					 uint32_t buf_len)
+{
+	uint8_t *ppdu_info;
+	uint32_t i, len, tlv_len, peer_id, ppdu_num;
+	struct ol_txrx_peer_t *peer;
+	struct sa_tx_stats_feedback ppdu_stats;
+
+	if (!sa_get_handle())
+		return;
+
+	tag_buf++;
+	ppdu_num = *tag_buf;
+	tag_buf++;
+	ppdu_info = (uint8_t *)tag_buf;
+	len = sizeof(htt_ppdu_stats_usr_common_array_tlv_v);
+
+	for (i = 0; i < ppdu_num && len < buf_len; i++) {
+		tlv_len = HTT_STATS_TLV_LENGTH_GET(*tag_buf) +
+			  sizeof(htt_tlv_hdr_t);
+		ppdu_info += tlv_len;
+		len += tlv_len;
+
+		tag_buf += 4;
+		peer_id = HTT_PPDU_STATS_ARRAY_ITEM_TLV_PEERID_GET(*tag_buf);
+		peer = ol_txrx_peer_find_by_id(pdev, peer_id);
+		if (!peer) {
+			VOS_TRACE(VOS_MODULE_ID_TXRX, VOS_TRACE_LEVEL_ERROR,
+				  "Invalid peer. Current word 0x%08x",
+				  *tag_buf);
+			/* next tlv */
+			tag_buf = (uint32_t *)ppdu_info;
+			continue;
+		}
+		ppdu_stats.tx_rate =
+			HTT_PPDU_STATS_ARRAY_ITEM_TLV_TX_RATE_GET(*tag_buf);
+		tag_buf++;
+		ppdu_stats.tx_success_msdus =
+			HTT_PPDU_STATS_ARRAY_ITEM_TLV_TX_SUCC_MSDUS_GET(*tag_buf);
+		ppdu_stats.tx_retry_msdus =
+			HTT_PPDU_STATS_ARRAY_ITEM_TLV_TX_RETRY_MSDUS_GET(*tag_buf);
+		tag_buf++;
+		ppdu_stats.tx_failed_msdus =
+			HTT_PPDU_STATS_ARRAY_ITEM_TLV_TX_FAILED_MSDUS_GET(*tag_buf);
+		tag_buf += 3;
+		ppdu_stats.ack_rssi[0] = (*tag_buf) & 0xff;
+		ppdu_stats.ack_rssi[1] = ((*tag_buf) & 0xff00) >> 8;
+		tag_buf += 2;
+		ppdu_stats.time_stamp = *tag_buf;
+		tag_buf++;
+		ppdu_stats.magic = (*tag_buf) & 0xff;
+		ppdu_stats.tid = ((*tag_buf) & 0xff00) >> 8;
+		ppdu_stats.pkt_num = ppdu_stats.tx_success_msdus +
+					ppdu_stats.tx_retry_msdus +
+					ppdu_stats.tx_failed_msdus;
+		smart_antenna_update_tx_stats(peer->mac_addr.raw, &ppdu_stats);
+
+		/* next tlv */
+		tag_buf = (uint32_t *)ppdu_info;
+	}
+}
+#else
+static inline
+void ol_pop_user_common_array_tlv(ol_txrx_pdev_handle pdev,
+				  uint32_t *tag_buf,
+				  uint32_t buf_len)
+{
+}
+#endif
+
+/**
+ * ol_ppdu_stats_ind_handler() - Handler for HTT_T2H_MSG_TYPE_PPDU_STATS_IND
+ * @pdev: ol pdev handle
+ * @rx_msg: htt message
+ *
+ */
+void ol_ppdu_stats_ind_handler(ol_txrx_pdev_handle pdev, adf_nbuf_t rx_msg)
+{
+        uint32_t *msg_word;
+	uint8_t tlv_type;
+	uint32_t length;
+
+	msg_word = (uint32_t *) adf_nbuf_data(rx_msg);
+
+	/* Point to the htt ppdu stats tlv */
+	msg_word = msg_word + 1;
+	length = HTT_STATS_TLV_LENGTH_GET(*msg_word);
+	tlv_type = HTT_STATS_TLV_TAG_GET(*msg_word);
+	VOS_TRACE(VOS_MODULE_ID_TXRX, VOS_TRACE_LEVEL_INFO,
+		  "received HTT_T2H_MSG_TYPE_PPDU_STATS_IND tag=%d, len=%d",
+		  tlv_type, length);
+
+        switch (tlv_type) {
+	case HTT_PPDU_STATS_USR_COMMON_ARRAY_TLV:
+		ol_pop_user_common_array_tlv(pdev, msg_word, length);
+		break;
+	default:
+		break;
+	}
+}

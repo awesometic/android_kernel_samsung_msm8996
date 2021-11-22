@@ -375,7 +375,7 @@ wmitlv_check_and_pad_tlvs(
     wmitlv_cmd_param_info *cmd_param_tlvs_ptr = NULL;
     A_UINT32  remaining_expected_tlvs=0xFFFFFFFF;
     A_UINT32 len_wmi_cmd_struct_buf;
-	A_UINT32 free_buf_len;
+    A_UINT32 free_buf_len;
 
     /* Get the number of TLVs for this command/event */
     if (wmitlv_get_attributes(is_cmd_id, wmi_cmd_event_id, WMITLV_GET_ATTRIB_NUM_TLVS, &attr_struct_ptr) != 0)
@@ -426,12 +426,12 @@ wmitlv_check_and_pad_tlvs(
         A_UINT32 curr_tlv_tag = WMITLV_GET_TLVTAG(WMITLV_GET_HDR(buf_ptr));
         A_UINT32 curr_tlv_len = WMITLV_GET_TLVLEN(WMITLV_GET_HDR(buf_ptr));
         int      num_padding_bytes = 0;
-		
+
         free_buf_len = param_buf_len - (buf_idx + WMI_TLV_HDR_SIZE);
         if (curr_tlv_len > free_buf_len) {
             wmi_tlv_print_error("%s: TLV length overflow", __func__);
             goto Error_wmitlv_check_and_pad_tlvs;
-        }		
+        }
 
         /* Get the attributes of the TLV with the given order in "tlv_index" */
         wmi_tlv_OS_MEMZERO(&attr_struct_ptr,sizeof(wmitlv_attributes_struc));
@@ -493,7 +493,7 @@ wmitlv_check_and_pad_tlvs(
                         wmi_tlv_print_error("%s: Invalid in_tlv_len=%d",
                                             __func__, in_tlv_len);
                         goto Error_wmitlv_check_and_pad_tlvs;
-                    }					
+                    }
                     tlv_size_diff = in_tlv_len - attr_struct_ptr.tag_struct_size;
                     num_of_elems = curr_tlv_len/in_tlv_len;
                     wmi_tlv_print_verbose("%s: WARN: TLV array of structures in_tlv_len=%d struct_size:%d diff:%d num_of_elems=%d \n",
@@ -581,6 +581,7 @@ wmitlv_check_and_pad_tlvs(
                      * Incoming structure size is smaller than expected size
                      * then this needs padding for each element in the array
                      */
+
                     /* Find amount of bytes to be padded for one element */
                     num_padding_bytes = tlv_size_diff * -1;
 
@@ -608,8 +609,8 @@ wmitlv_check_and_pad_tlvs(
                      * Move subsequent elements of array down by number of bytes
                      * to be padded for one element and alse set padding bytes
                      * to zero
-                     */                    
-					tlv_buf_ptr = buf_ptr;
+                     */
+                    tlv_buf_ptr = buf_ptr;
                     for (i = 0; i < num_of_elems - 1; i++)
                     {
                         src_addr = tlv_buf_ptr + in_tlv_len;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -475,6 +475,7 @@ enum htt_h2t_msg_type {
     HTT_H2T_MSG_TYPE_AGGR_CFG_EX           = 0xa, /* per vdev amsdu subfrm limit */
     HTT_H2T_MSG_TYPE_SRING_SETUP           = 0xb,
     HTT_H2T_MSG_TYPE_RX_RING_SELECTION_CFG = 0xc,
+    HTT_H2T_MSG_TYPE_CHAN_CALDATA      = 0x14,
     /* keep this last */
     HTT_H2T_NUM_MSGS
 };
@@ -493,6 +494,11 @@ enum htt_h2t_msg_type {
     } while (0)
 #define HTT_H2T_MSG_TYPE_GET(word) \
     (((word) & HTT_H2T_MSG_TYPE_M) >> HTT_H2T_MSG_TYPE_S)
+
+#define HTT_H2T_MSG_TYPE_CLR(word)           \
+    do {       \
+        (word) &= ~(HTT_H2T_MSG_TYPE_M);\
+    } while (0)
 
 /**
  * @brief target -> host version number request message definition
@@ -4068,6 +4074,9 @@ enum htt_t2h_msg_type {
     HTT_T2H_MSG_TYPE_FLOW_POOL_MAP            = 0x18,
     HTT_T2H_MSG_TYPE_FLOW_POOL_UNMAP          = 0x19,
     HTT_T2H_MSG_TYPE_SRING_SETUP_DONE         = 0x1a,
+    HTT_T2H_MSG_TYPE_PPDU_STATS_IND           = 0x1d,
+    HTT_T2H_MSG_TYPE_MONITOR_MAC_HEADER_IND   = 0x20,
+    HTT_T2H_MSG_TYPE_CHAN_CALDATA      = 0x26,
 
     HTT_T2H_MSG_TYPE_TEST,
     /* keep this last */
@@ -5287,6 +5296,14 @@ struct htt_rx_ind_hl_rx_desc_t {
             udp: 1,
             reserved: 1;
     } flags;
+    /* sa_ant_matrix
+     * For cases where a single rx chain has options to be connected to
+     * different rx antennas, show which rx antennas were in use during
+     * receipt of a given PPDU.
+     * This sa_ant_matrix provides a bitmask of the antennas used while
+     * receiving this frame.
+     */
+    A_UINT8 sa_ant_matrix;
 };
 
 #define HTT_RX_IND_HL_RX_DESC_VER_OFFSET \
@@ -5301,6 +5318,10 @@ struct htt_rx_ind_hl_rx_desc_t {
 #define HTT_RX_IND_HL_FLAG_OFFSET \
     (HTT_RX_IND_HL_RX_DESC_BASE_OFFSET \
      + offsetof(struct htt_rx_ind_hl_rx_desc_t, flags))
+
+#define HTT_RX_IND_HL_SA_ANT_MATRIX_OFFSET \
+    (HTT_RX_IND_HL_RX_DESC_BASE_OFFSET \
+     + offsetof(struct htt_rx_ind_hl_rx_desc_t, sa_ant_matrix))
 
 #define HTT_RX_IND_HL_FLAG_FIRST_MSDU   (0x01 << 0)
 #define HTT_RX_IND_HL_FLAG_LAST_MSDU    (0x01 << 1)
@@ -8186,6 +8207,517 @@ enum htt_ring_setup_status {
     do { \
         HTT_CHECK_SET_VAL(HTT_SRING_SETUP_DONE_STATUS, _val); \
         ((_var) |= ((_val) << HTT_SRING_SETUP_DONE_STATUS_S)); \
+    } while (0)
+
+/**
+ * @brief target -> host monitor mac header indication message
+ *
+ * @details
+ * The following diagram shows the format of the monitor mac header message
+ * sent from the target to the host, while enable rx filter promiscuous.
+ *
+ *          |31          24|23           16|15            8|7            0|
+ *          |-------------------------------------------------------------|
+ *          |            peer_id           |    reserved0  |    msg_type  |
+ *          |-------------------------------------------------------------|
+ *          |            reserved1         |           num_mpdu           |
+ *          |-------------------------------------------------------------|
+ *          |                       struct hw_rx_desc                     |
+ *          |                      (see wal_rx_desc.h)                    |
+ *          |-------------------------------------------------------------|
+ *          |                   struct ieee80211_frame_addr4              |
+ *          |                      (see ieee80211_defs.h)                 |
+ *          |                            ......                           |
+ *          |-------------------------------------------------------------|
+ *
+ * Header fields:
+ *  - msg_type
+ *    Bits 7:0
+ *    Purpose: Identifies this is a monitor mac header indication
+ *             message.
+ *    Value: 0x20
+ *   - reserved0
+ *     Bits 15:8
+ *     Purpose:
+ *     value:
+ *  - peer_id
+ *    Bits 31:16
+ *    Purpose: Software peer id given by host during association,
+               in this case it should be set to invalid(0xFF)
+ *    Value:
+ *  - num_mpdu
+ *    Bits 15:0
+ *    Purpose: numbers of mpdu mac header (struct ieee80211_frame_addr4) per rx ppdu
+ *             the maximum num_mpdu is limited to 32.
+ *    Value:
+ *   - reserved1
+ *     Bits 31:16
+ *     Purpose:
+ *     value:
+ */
+#define HTT_T2H_MONITOR_MAC_HEADER_IND_HDR_SIZE       8
+
+#define HTT_T2H_MONITOR_MAC_HEADER_PEER_ID_M          0xFFFF0000
+#define HTT_T2H_MONITOR_MAC_HEADER_PEER_ID_S          16
+
+#define HTT_T2H_MONITOR_MAC_HEADER_NUM_MPDU_M         0x0000FFFF
+#define HTT_T2H_MONITOR_MAC_HEADER_NUM_MPDU_S         0
+
+#define HTT_T2H_MONITOR_MAC_HEADER_PEER_ID_SET(word, value)             \
+    do {                                                         \
+        HTT_CHECK_SET_VAL(HTT_T2H_MONITOR_MAC_HEADER_PEER_ID, value);   \
+        (word) |= (value)  << HTT_T2H_MONITOR_MAC_HEADER_PEER_ID_S;     \
+    } while (0)
+#define HTT_T2H_MONITOR_MAC_HEADER_PEER_ID_GET(word) \
+    (((word) & HTT_T2H_MONITOR_MAC_HEADER_PEER_ID_M) >> \
+    HTT_T2H_MONITOR_MAC_HEADER_PEER_ID_S)
+
+#define HTT_T2H_MONITOR_MAC_HEADER_NUM_MPDU_SET(word, value)             \
+    do {                                                         \
+        HTT_CHECK_SET_VAL(HTT_T2H_MONITOR_MAC_HEADER_NUM_MPDU, value);   \
+        (word) |= (value)  << HTT_T2H_MONITOR_MAC_HEADER_NUM_MPDU_S;     \
+    } while (0)
+#define HTT_T2H_MONITOR_MAC_HEADER_NUM_MPDU_GET(word) \
+    (((word) & HTT_T2H_MONITOR_MAC_HEADER_NUM_MPDU_M) >> \
+    HTT_T2H_MONITOR_MAC_HEADER_NUM_MPDU_S)
+
+/** 2 word representation of MAC addr */
+typedef struct {
+    /** upper 4 bytes of  MAC address */
+    A_UINT32 mac_addr31to0;
+    /** lower 2 bytes of  MAC address */
+    A_UINT32 mac_addr47to32;
+} htt_mac_addr;
+
+/** macro to convert MAC address from char array to HTT word format */
+#define HTT_CHAR_ARRAY_TO_MAC_ADDR(c_macaddr, phtt_mac_addr)  do { \
+    (phtt_mac_addr)->mac_addr31to0 = \
+       (((c_macaddr)[0] <<  0) | \
+        ((c_macaddr)[1] <<  8) | \
+        ((c_macaddr)[2] << 16) | \
+        ((c_macaddr)[3] << 24)); \
+    (phtt_mac_addr)->mac_addr47to32 = ((c_macaddr)[4] | ((c_macaddr)[5] << 8));\
+   } while (0)
+
+/**
+ * @brief target -> host ppdu stats upload
+ *
+ * @details
+ * The following field definitions describe the format of the HTT target
+ * to host ppdu stats indication message.
+ *
+ *
+ * |31                         16|15   12|11   10|9      8|7            0 |
+ * |----------------------------------------------------------------------|
+ * |    payload_size             | rsvd  |pdev_id|mac_id  |    msg type   |
+ * |----------------------------------------------------------------------|
+ * |                          ppdu_id                                     |
+ * |----------------------------------------------------------------------|
+ * |                        Timestamp in us                               |
+ * |----------------------------------------------------------------------|
+ * |                          reserved                                    |
+ * |----------------------------------------------------------------------|
+ * |                    type-specific stats info                          |
+ * |                     (see htt_ppdu_stats.h) qdf_flush_work            |
+ * |----------------------------------------------------------------------|
+ * Header fields:
+ *  - MSG_TYPE
+ *    Bits 7:0
+ *    Purpose: Identifies this is a PPDU STATS indication
+ *             message.
+ *    Value: 0x1d
+ *  - mac_id
+ *    Bits 9:8
+ *    Purpose: mac_id of this ppdu_id
+ *    Value: 0-3
+ *  - pdev_id
+ *    Bits 11:10
+ *    Purpose: pdev_id of this ppdu_id
+ *    Value: 0-3
+ *     0 (for rings at SOC level),
+ *     1/2/3 PDEV -> 0/1/2
+ *  - payload_size
+ *    Bits 31:16
+ *    Purpose: total tlv size
+ *    Value: payload_size in bytes
+ */
+#define HTT_T2H_PPDU_STATS_IND_HDR_SIZE       16
+
+#define HTT_T2H_PPDU_STATS_MAC_ID_M           0x00000300
+#define HTT_T2H_PPDU_STATS_MAC_ID_S           8
+
+#define HTT_T2H_PPDU_STATS_PDEV_ID_M          0x00000C00
+#define HTT_T2H_PPDU_STATS_PDEV_ID_S          10
+
+#define HTT_T2H_PPDU_STATS_PAYLOAD_SIZE_M     0xFFFF0000
+#define HTT_T2H_PPDU_STATS_PAYLOAD_SIZE_S     16
+
+#define HTT_T2H_PPDU_STATS_PPDU_ID_M          0xFFFFFFFF
+#define HTT_T2H_PPDU_STATS_PPDU_ID_S          0
+
+#define HTT_T2H_PPDU_STATS_MAC_ID_SET(word, value)             \
+    do {                                                         \
+        HTT_CHECK_SET_VAL(HTT_T2H_PPDU_STATS_MAC_ID, value);   \
+        (word) |= (value)  << HTT_T2H_PPDU_STATS_MAC_ID_S;     \
+    } while (0)
+#define HTT_T2H_PPDU_STATS_MAC_ID_GET(word) \
+    (((word) & HTT_T2H_PPDU_STATS_MAC_ID_M) >> \
+    HTT_T2H_PPDU_STATS_MAC_ID_S)
+
+#define HTT_T2H_PPDU_STATS_PDEV_ID_SET(word, value)             \
+    do {                                                        \
+        HTT_CHECK_SET_VAL(HTT_T2H_PPDU_STATS_PDEV_ID, value);   \
+        (word) |= (value)  << HTT_T2H_PPDU_STATS_PDEV_ID_S;     \
+    } while (0)
+#define HTT_T2H_PPDU_STATS_PDEV_ID_GET(word) \
+    (((word) & HTT_T2H_PPDU_STATS_PDEV_ID_M) >> \
+    HTT_T2H_PPDU_STATS_PDEV_ID_S)
+
+#define HTT_T2H_PPDU_STATS_PAYLOAD_SIZE_SET(word, value)             \
+    do {                                                         \
+        HTT_CHECK_SET_VAL(HTT_T2H_PPDU_STATS_PAYLOAD_SIZE, value);   \
+        (word) |= (value)  << HTT_T2H_PPDU_STATS_PAYLOAD_SIZE_S;     \
+    } while (0)
+#define HTT_T2H_PPDU_STATS_PAYLOAD_SIZE_GET(word) \
+    (((word) & HTT_T2H_PPDU_STATS_PAYLOAD_SIZE_M) >> \
+    HTT_T2H_PPDU_STATS_PAYLOAD_SIZE_S)
+
+#define HTT_T2H_PPDU_STATS_PPDU_ID_SET(word, value)             \
+    do {                                                         \
+        HTT_CHECK_SET_VAL(HTT_T2H_PPDU_STATS_PPDU_ID, value);   \
+        (word) |= (value)  << HTT_T2H_PPDU_STATS_PPDU_ID_S;     \
+    } while (0)
+#define HTT_T2H_PPDU_STATS_PPDU_ID_GET(word) \
+    (((word) & HTT_T2H_PPDU_STATS_PPDU_ID_M) >> \
+    HTT_T2H_PPDU_STATS_PPDU_ID_S)
+
+/**
+ * @brief target -> host extended statistics upload
+ *
+ * @details
+ * The following field definitions describe the format of the HTT target
+ * to host stats upload confirmation message.
+ * The message contains a cookie echoed from the HTT host->target stats
+ * upload request, which identifies which request the confirmation is
+ * for, and a single stats can span over multiple HTT stats indication
+ * due to the HTT message size limitation so every HTT ext stats indication
+ * will have tag-length-value stats information elements.
+ * The tag-length header for each HTT stats IND message also includes a
+ * status field, to indicate whether the request for the stat type in
+ * question was fully met, partially met, unable to be met, or invalid
+ * (if the stat type in question is disabled in the target).
+ * A Done bit 1's indicate the end of the of stats info elements.
+ *
+ *
+ * |31                         16|15    12|11|10 8|7   5|4       0|
+ * |--------------------------------------------------------------|
+ * |                   reserved                   |    msg type   |
+ * |--------------------------------------------------------------|
+ * |                         cookie LSBs                          |
+ * |--------------------------------------------------------------|
+ * |                         cookie MSBs                          |
+ * |--------------------------------------------------------------|
+ * |      stats entry length     | rsvd   | D|  S |   stat type   |
+ * |--------------------------------------------------------------|
+ * |                   type-specific stats info                   |
+ * |                      (see htt_stats.h)                       |
+ * |--------------------------------------------------------------|
+ * Header fields:
+ *  - MSG_TYPE
+ *    Bits 7:0
+ *    Purpose: Identifies this is a extended statistics upload confirmation
+ *             message.
+ *    Value: 0x1c
+ *  - COOKIE_LSBS
+ *    Bits 31:0
+ *    Purpose: Provide a mechanism to match a target->host stats confirmation
+ *        message with its preceding host->target stats request message.
+ *    Value: LSBs of the opaque cookie specified by the host-side requestor
+ *  - COOKIE_MSBS
+ *    Bits 31:0
+ *    Purpose: Provide a mechanism to match a target->host stats confirmation
+ *        message with its preceding host->target stats request message.
+ *    Value: MSBs of the opaque cookie specified by the host-side requestor
+ *
+ * Stats Information Element tag-length header fields:
+ *  - STAT_TYPE
+ *    Bits 7:0
+ *    Purpose: identifies the type of statistics info held in the
+ *        following information element
+ *    Value: htt_dbg_ext_stats_type
+ *  - STATUS
+  *    Bits 10:8
+ *    Purpose: indicate whether the requested stats are present
+ *    Value: htt_dbg_ext_stats_status
+ *  - DONE
+ *    Bits 11
+ *    Purpose:
+ *        Indicates the completion of the stats entry, this will be the last
+ *        stats conf HTT segment for the requested stats type.
+ *    Value:
+ *        0 -> the stats retrieval is ongoing
+ *        1 -> the stats retrieval is complete
+ *  - LENGTH
+ *    Bits 31:16
+ *    Purpose: indicate the stats information size
+ *    Value: This field specifies the number of bytes of stats information
+ *       that follows the element tag-length header.
+ *       It is expected but not required that this length is a multiple of
+ *       4 bytes.
+ */
+#define HTT_T2H_EXT_STATS_COOKIE_SIZE         8
+
+#define HTT_T2H_EXT_STATS_CONF_HDR_SIZE       4
+
+#define HTT_T2H_EXT_STATS_CONF_TLV_HDR_SIZE   4
+
+#define HTT_T2H_EXT_STATS_CONF_TLV_TYPE_M     0x000000ff
+#define HTT_T2H_EXT_STATS_CONF_TLV_TYPE_S     0
+#define HTT_T2H_EXT_STATS_CONF_TLV_STATUS_M   0x00000700
+#define HTT_T2H_EXT_STATS_CONF_TLV_STATUS_S   8
+#define HTT_T2H_EXT_STATS_CONF_TLV_DONE_M     0x00000800
+#define HTT_T2H_EXT_STATS_CONF_TLV_DONE_S     11
+#define HTT_T2H_EXT_STATS_CONF_TLV_LENGTH_M   0xffff0000
+#define HTT_T2H_EXT_STATS_CONF_TLV_LENGTH_S   16
+
+#define HTT_T2H_EXT_STATS_CONF_TLV_TYPE_SET(word, value)             \
+    do {                                                         \
+        HTT_CHECK_SET_VAL(HTT_T2H_EXT_STATS_CONF_TLV_TYPE, value);   \
+        (word) |= (value)  << HTT_T2H_EXT_STATS_CONF_TLV_TYPE_S;     \
+    } while (0)
+#define HTT_T2H_EXT_STATS_CONF_TLV_TYPE_GET(word) \
+    (((word) & HTT_T2H_EXT_STATS_CONF_TLV_TYPE_M) >> \
+    HTT_T2H_EXT_STATS_CONF_TLV_TYPE_S)
+
+#define HTT_T2H_EXT_STATS_CONF_TLV_STATUS_SET(word, value)             \
+    do {                                                         \
+        HTT_CHECK_SET_VAL(HTT_T2H_EXT_STATS_CONF_TLV_STATUS, value);   \
+        (word) |= (value)  << HTT_T2H_EXT_STATS_CONF_TLV_STATUS_S;     \
+    } while (0)
+#define HTT_T2H_EXT_STATS_CONF_TLV_STATUS_GET(word) \
+    (((word) & HTT_T2H_EXT_STATS_CONF_TLV_STATUS_M) >> \
+    HTT_T2H_EXT_STATS_CONF_TLV_STATUS_S)
+
+#define HTT_T2H_EXT_STATS_CONF_TLV_DONE_SET(word, value)             \
+    do {                                                         \
+        HTT_CHECK_SET_VAL(HTT_T2H_EXT_STATS_CONF_TLV_DONE, value);   \
+        (word) |= (value)  << HTT_T2H_EXT_STATS_CONF_TLV_DONE_S;     \
+    } while (0)
+#define HTT_T2H_EXT_STATS_CONF_TLV_DONE_GET(word) \
+    (((word) & HTT_T2H_EXT_STATS_CONF_TLV_DONE_M) >> \
+    HTT_T2H_EXT_STATS_CONF_TLV_DONE_S)
+
+#define HTT_T2H_EXT_STATS_CONF_TLV_LENGTH_SET(word, value)             \
+    do {                                                         \
+        HTT_CHECK_SET_VAL(HTT_T2H_EXT_STATS_CONF_TLV_LENGTH, value);   \
+        (word) |= (value)  << HTT_T2H_EXT_STATS_CONF_TLV_LENGTH_S;     \
+    } while (0)
+#define HTT_T2H_EXT_STATS_CONF_TLV_LENGTH_GET(word) \
+    (((word) & HTT_T2H_EXT_STATS_CONF_TLV_LENGTH_M) >> \
+    HTT_T2H_EXT_STATS_CONF_TLV_LENGTH_S)
+
+/**
+ * @brief target -> host channel calibration data message
+ * @brief host -> target channel calibration data message
+ *
+ * @details
+ * The following field definitions describe the format of the channel
+ * calibration data message sent from the target to the host when
+ * MSG_TYPE is HTT_T2H_MSG_TYPE_CHAN_CALDATA, and sent from the host
+ * to the target when MSG_TYPE is HTT_H2T_MSG_TYPE_CHAN_CALDATA.
+ * The message is defined as htt_chan_caldata_msg followed by a variable
+ * number of 32-bit character values.
+ *
+ * |31              21|20|19   16|15  13|  12|11      8|7            0|
+ * |------------------------------------------------------------------|
+ * |       rsv        | A| frag  | rsv  |ck_v| sub_type|   msg type   |
+ * |------------------------------------------------------------------|
+ * |        payload size         |               mhz                  |
+ * |------------------------------------------------------------------|
+ * |      center frequency 2     |          center frequency 1        |
+ * |------------------------------------------------------------------|
+ * |                              check sum                           |
+ * |------------------------------------------------------------------|
+ * |                              payload                             |
+ * |------------------------------------------------------------------|
+ * message info field:
+ *   - MSG_TYPE
+ *     Bits 7:0
+ *     Purpose: identifies this as a channel calibration data message
+ *     Value: HTT_T2H_MSG_TYPE_CHAN_CALDATA (0x15) or
+ *            HTT_H2T_MSG_TYPE_CHAN_CALDATA (0xb)
+ *   - SUB_TYPE
+ *     Bits 11:8
+ *     Purpose: T2H: indicates whether target is providing chan cal data
+ *                   to the host to store, or requesting that the host
+ *                   download previously-stored data.
+ *              H2T: indicates whether the host is providing the requested
+ *                   channel cal data, or if it is rejecting the data
+ *                   request because it does not have the requested data.
+ *     Value: see HTT_T2H_MSG_CHAN_CALDATA_xxx defs
+ *   - CHKSUM_VALID
+ *     Bit 12
+ *     Purpose: indicates if the checksum field is valid
+ *     value:
+ *   - FRAG
+ *     Bit 19:16
+ *     Purpose: indicates the fragment index for message
+ *     value: 0 for first fragment, 1 for second fragment, ?...
+ *   - APPEND
+ *     Bit 20
+ *     Purpose: indicates if this is the last fragment
+ *     value: 0 = final fragment, 1 = more fragments will be appended
+ *
+ * channel and payload size field
+ *   - MHZ
+ *     Bits 15:0
+ *     Purpose: indicates the channel primary frequency
+ *     Value:
+ *   - PAYLOAD_SIZE
+ *     Bits 31:16
+ *     Purpose: indicates the bytes of calibration data in payload
+ *     Value:
+ *
+ * center frequency field
+ *   - CENTER FREQUENCY 1
+ *     Bits 15:0
+ *     Purpose: indicates the channel center frequency
+ *     Value: channel center frequency, in MHz units
+ *   - CENTER FREQUENCY 2
+ *     Bits 31:16
+ *     Purpose: indicates the secondary channel center frequency,
+ *              only for 11acvht 80plus80 mode
+ *     Value:  secondary channel center frequeny, in MHz units, if applicable
+ *
+ * checksum field
+ *   - CHECK_SUM
+ *     Bits 31:0
+ *     Purpose: check the payload data, it is just for this fragment.
+ *              This is intended for the target to check that the channel
+ *              calibration data returned by the host is the unmodified data
+ *              that was previously provided to the host by the target.
+ *     value: checksum of fragment payload
+ */
+PREPACK struct htt_chan_caldata_msg {
+    /* DWORD 0: message info */
+    A_UINT32
+        msg_type : 8,
+        sub_type : 4,
+        chksum_valid : 1, /** 1:valid, 0:invalid  */
+        reserved1 : 3,
+        frag_idx : 4,     /** fragment index for calibration data */
+        appending : 1,    /** 0: no fragment appending,
+                           *  1: extra fragment appending */
+        reserved2 : 11;
+
+    /* DWORD 1: channel and payload size */
+    A_UINT32
+        mhz : 16,          /** primary 20 MHz channel frequency in mhz */
+        payload_size : 16; /** unit: bytes */
+
+    /* DWORD 2: center frequency */
+    A_UINT32
+        band_center_freq1 : 16, /** Center frequency 1 in MHz */
+        band_center_freq2 : 16; /** Center frequency 2 in MHz,
+                                 *  valid only for 11acvht 80plus80 mode */
+
+    /* DWORD 3: check sum */
+    A_UINT32 chksum;
+
+    /* variable length for calibration data */
+    A_UINT32   payload[1/* or more */];
+} POSTPACK;
+
+/* T2H SUBTYPE */
+#define HTT_T2H_MSG_CHAN_CALDATA_REQ     0
+#define HTT_T2H_MSG_CHAN_CALDATA_UPLOAD  1
+
+/* H2T SUBTYPE */
+#define HTT_H2T_MSG_CHAN_CALDATA_REJ       0
+#define HTT_H2T_MSG_CHAN_CALDATA_DOWNLOAD  1
+
+#define HTT_CHAN_CALDATA_MSG_SUB_TYPE_S    8
+#define HTT_CHAN_CALDATA_MSG_SUB_TYPE_M    0x00000f00
+#define HTT_CHAN_CALDATA_MSG_SUB_TYPE_GET(_var) \
+    (((_var) & HTT_CHAN_CALDATA_MSG_SUB_TYPE_M) >> HTT_CHAN_CALDATA_MSG_SUB_TYPE_S)
+#define HTT_CHAN_CALDATA_MSG_SUB_TYPE_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_CHAN_CALDATA_MSG_SUB_TYPE, _val);  \
+        ((_var) |= ((_val) << HTT_CHAN_CALDATA_MSG_SUB_TYPE_S)); \
+    } while (0)
+#define HTT_CHAN_CALDATA_MSG_SUB_TYPE_CLR(word)           \
+    do {	\
+        (word) &= ~(HTT_CHAN_CALDATA_MSG_SUB_TYPE_M);\
+    } while (0)
+
+#define HTT_CHAN_CALDATA_MSG_CHKSUM_V_S    12
+#define HTT_CHAN_CALDATA_MSG_CHKSUM_V_M    0x00001000
+#define HTT_CHAN_CALDATA_MSG_CHKSUM_V_GET(_var) \
+    (((_var) & HTT_CHAN_CALDATA_MSG_CHKSUM_V_M) >> HTT_CHAN_CALDATA_MSG_CHKSUM_V_S)
+#define HTT_CHAN_CALDATA_MSG_CHKSUM_V_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_CHAN_CALDATA_MSG_CHKSUM_V, _val);  \
+        ((_var) |= ((_val) << HTT_CHAN_CALDATA_MSG_CHKSUM_V_S)); \
+    } while (0)
+
+#define HTT_CHAN_CALDATA_MSG_FRAG_IDX_S    16
+#define HTT_CHAN_CALDATA_MSG_FRAG_IDX_M    0x000f0000
+#define HTT_CHAN_CALDATA_MSG_FRAG_IDX_GET(_var) \
+    (((_var) & HTT_CHAN_CALDATA_MSG_FRAG_IDX_M) >> HTT_CHAN_CALDATA_MSG_FRAG_IDX_S)
+#define HTT_CHAN_CALDATA_MSG_FRAG_IDX_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_CHAN_CALDATA_MSG_FRAG_IDX, _val);  \
+        ((_var) |= ((_val) << HTT_CHAN_CALDATA_MSG_FRAG_IDX_S)); \
+    } while (0)
+
+#define HTT_CHAN_CALDATA_MSG_APPENDING_S    20
+#define HTT_CHAN_CALDATA_MSG_APPENDING_M    0x00100000
+#define HTT_CHAN_CALDATA_MSG_APPENDING_GET(_var) \
+    (((_var) & HTT_CHAN_CALDATA_MSG_APPENDING_M) >> HTT_CHAN_CALDATA_MSG_APPENDING_S)
+#define HTT_CHAN_CALDATA_MSG_APPENDING_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_CHAN_CALDATA_MSG_APPENDING, _val);  \
+        ((_var) |= ((_val) << HTT_CHAN_CALDATA_MSG_APPENDING_S)); \
+    } while (0)
+
+#define HTT_CHAN_CALDATA_MSG_MHZ_S    0
+#define HTT_CHAN_CALDATA_MSG_MHZ_M    0x0000ffff
+#define HTT_CHAN_CALDATA_MSG_MHZ_GET(_var) \
+    (((_var) & HTT_CHAN_CALDATA_MSG_MHZ_M) >> HTT_CHAN_CALDATA_MSG_MHZ_S)
+#define HTT_CHAN_CALDATA_MSG_MHZ_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_CHAN_CALDATA_MSG_MHZ, _val);  \
+        ((_var) |= ((_val) << HTT_CHAN_CALDATA_MSG_MHZ_S)); \
+    } while (0)
+
+#define HTT_CHAN_CALDATA_MSG_PLD_SIZE_S    16
+#define HTT_CHAN_CALDATA_MSG_PLD_SIZE_M    0xffff0000
+#define HTT_CHAN_CALDATA_MSG_PLD_SIZE_GET(_var) \
+    (((_var) & HTT_CHAN_CALDATA_MSG_PLD_SIZE_M) >> HTT_CHAN_CALDATA_MSG_PLD_SIZE_S)
+#define HTT_CHAN_CALDATA_MSG_PLD_SIZE_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_CHAN_CALDATA_MSG_PLD_SIZE, _val);  \
+        ((_var) |= ((_val) << HTT_CHAN_CALDATA_MSG_PLD_SIZE_S)); \
+    } while (0)
+
+#define HTT_CHAN_CALDATA_MSG_FREQ1_S    0
+#define HTT_CHAN_CALDATA_MSG_FREQ1_M    0x0000ffff
+#define HTT_CHAN_CALDATA_MSG_FREQ1_GET(_var) \
+    (((_var) & HTT_CHAN_CALDATA_MSG_FREQ1_M) >> HTT_CHAN_CALDATA_MSG_FREQ1_S)
+#define HTT_CHAN_CALDATA_MSG_FREQ1_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_CHAN_CALDATA_MSG_FREQ1, _val);  \
+        ((_var) |= ((_val) << HTT_CHAN_CALDATA_MSG_FREQ1_S)); \
+    } while (0)
+
+#define HTT_CHAN_CALDATA_MSG_FREQ2_S    16
+#define HTT_CHAN_CALDATA_MSG_FREQ2_M    0xffff0000
+#define HTT_CHAN_CALDATA_MSG_FREQ2_GET(_var) \
+    (((_var) & HTT_CHAN_CALDATA_MSG_FREQ2_M) >> HTT_CHAN_CALDATA_MSG_FREQ2_S)
+#define HTT_CHAN_CALDATA_MSG_FREQ2_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_CHAN_CALDATA_MSG_FREQ2, _val);  \
+        ((_var) |= ((_val) << HTT_CHAN_CALDATA_MSG_FREQ2_S)); \
     } while (0)
 
 #endif

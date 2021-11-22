@@ -71,20 +71,20 @@ __adf_os_mutex_acquire(adf_os_device_t osdev, struct semaphore *m)
 }
 
 /**
- * __adf_semaphore_acquire_timeout() - Take the semaphore before timeout
+ * __adf_os_mutex_acquire_timeout() - Take the semaphore before timeout
  * @osdev: os layer device handle
  * @m: semaphore to take
  * @timeout: maximum time to try to take the semaphore. unit in ms.
  *
- * Return: int
+ * Return: 0 for success, others for timeout
  */
-static inline int __adf_semaphore_acquire_timeout(adf_os_device_t osdev,
-                                                 struct semaphore *m,
-                                                 long timeout)
+static inline int __adf_os_mutex_acquire_timeout(adf_os_device_t osdev,
+						 struct semaphore *m,
+						 long timeout)
 {
-       long jiffie_val = msecs_to_jiffies(timeout);
+	long jiffie_val = msecs_to_jiffies(timeout);
 
-       return down_timeout(m, jiffie_val);
+	return down_timeout(m, jiffie_val);
 }
 
 static inline void
@@ -102,31 +102,14 @@ __adf_os_spinlock_init(__adf_os_spinlock_t *lock)
     return A_STATUS_OK;
 }
 
+#define __adf_os_raw_spin_lock(_lock) spin_lock(_lock)
+#define __adf_os_raw_spin_unlock(_lock) spin_unlock(_lock)
+#define __adf_os_raw_spin_lock_bh(_lock) spin_lock_bh(_lock)
+#define __adf_os_raw_spin_unlock_bh(_lock) spin_unlock_bh(_lock)
+#define  __adf_os_raw_spin_lock_irqsave(_lock, flag) spin_lock_irqsave(_lock, flag)
+#define __adf_os_raw_spin_unlock_irqrestore(_lock, flag) spin_unlock_irqrestore(_lock, flag)
+
 #define __adf_os_spinlock_destroy(lock)
-/**
- * @brief Acquire a Spinlock (SMP) & disable Preemption (Preemptive)
- *
- * @param lock      (Lock object)
- * @param flags     (Current IRQ mask)
- */
-static inline void
-__adf_os_spin_lock(__adf_os_spinlock_t *lock)
-{
-    spin_lock(&lock->spinlock);
-}
-
-/**
- * @brief Unlock the spinlock and enables the Preemption
- *
- * @param lock
- * @param flags
- */
-static inline void
-__adf_os_spin_unlock(__adf_os_spinlock_t *lock)
-{
-    spin_unlock(&lock->spinlock);
-}
-
 /**
  * @brief Acquire a Spinlock (SMP) & disable Preemption (Preemptive)
  *        Disable IRQs
@@ -181,6 +164,45 @@ __adf_os_spin_unlock_bh(__adf_os_spinlock_t *lock)
 	} else
 		spin_unlock(&lock->spinlock);
 }
+
+/**
+ * @brief Acquire a Spinlock (SMP) & disable Preemption (Preemptive)
+ *
+ * @param lock      (Lock object)
+ * @param flags     (Current IRQ mask)
+ */
+#ifdef CONFIG_SMP
+static inline void
+__adf_os_spin_lock(__adf_os_spinlock_t *lock)
+{
+	__adf_os_spin_lock_bh(lock);
+}
+
+static inline void
+__adf_os_spin_unlock(__adf_os_spinlock_t *lock)
+{
+	__adf_os_spin_unlock_bh(lock);
+}
+
+#else
+static inline void
+__adf_os_spin_lock(__adf_os_spinlock_t *lock)
+{
+    spin_lock(&lock->spinlock);
+}
+
+/**
+ * @brief Unlock the spinlock and enables the Preemption
+ *
+ * @param lock
+ * @param flags
+ */
+static inline void
+__adf_os_spin_unlock(__adf_os_spinlock_t *lock)
+{
+    spin_unlock(&lock->spinlock);
+}
+#endif
 
 static inline a_bool_t
 __adf_os_spinlock_irq_exec(adf_os_handle_t  hdl,

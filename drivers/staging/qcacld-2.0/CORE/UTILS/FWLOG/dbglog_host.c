@@ -190,6 +190,8 @@ const char *dbglog_get_module_str(A_UINT32 module_id)
         return "NAN20";
     case WLAN_MODULE_QBOOST:
         return "QBOOST";
+    case WLAN_MODULE_HPCS_PULSE:
+        return "HPCS";
     default:
         return "UNKNOWN";
     }
@@ -1628,6 +1630,68 @@ char * DBG_MSG_ARR[WLAN_MODULE_ID_MAX][MAX_DBG_MSGS] =
         DBG_STRING(WLAN_MODULE_QBOOST_DBGID_WLAN_PEER_NOT_FOUND),
         DBG_STRING(WLAN_MODULE_QBOOST_DEFINITION_END),
     },
+    {
+        /* WLAN_MODULE_P2P_LISTEN_OFFLOAD */
+        ""
+    },
+    {
+        /* WLAN_MODULE_HALPHY */
+        ""
+    },
+    {
+        /* WAL_MODULE_ENQ */
+        ""
+    },
+    {
+        /* WLAN_MODULE_GNSS */
+        ""
+    },
+    {
+        /* WLAN_MODULE_WAL_MEM */
+        ""
+    },
+    {
+        /* WLAN_MODULE_SCHED_ALGO */
+        ""
+    },
+    {
+        /* WLAN_MODULE_TX */
+        ""
+    },
+    {
+        /* WLAN_MODULE_RX */
+        ""
+    },
+    {
+        /* WLAN_MODULE_WLM */
+        ""
+    },
+    {
+         /* WLAN_MODULE_RU_ALLOCATOR */
+        ""
+    },
+    {
+        /* WLAN_MODULE_11K_OFFLOAD */
+        ""
+    },
+    {
+        /* WLAN_MODULE_STA_TWT */
+        ""
+    },
+    {
+        /* WLAN_MODULE_AP_TWT */
+        ""
+    },
+    {
+         /* WLAN_MODULE_UL_OFDMA */
+        ""
+    },
+    {
+        DBG_STRING(HPCS_PULSE_START),
+        DBG_STRING(HPCS_PULSE_LF_TIMER),
+        DBG_STRING(HPCS_PULSE_HF_TIMER),
+        DBG_STRING(HPCS_PULSE_POWER_SAVE),
+    },
 
 };
 
@@ -1892,7 +1956,7 @@ dbglog_print_raw_data(A_UINT32 *buffer, A_UINT32 length)
     char parseArgsString[DBGLOG_PARSE_ARGS_STRING_LENGTH];
     char *dbgidString;
 
-    while ((count + 1) < length) {
+    while (count + 1 < length) {
 
         debugid = DBGLOG_GET_DBGID(buffer[count + 1]);
         moduleid = DBGLOG_GET_MODULEID(buffer[count + 1]);
@@ -1912,6 +1976,7 @@ dbglog_print_raw_data(A_UINT32 *buffer, A_UINT32 length)
                 writeLen = snprintf(parseArgsString + totalWriteLen, DBGLOG_PARSE_ARGS_STRING_LENGTH - totalWriteLen, "%x ", buffer[count + 2 + curArgs]);
                 totalWriteLen += writeLen;
             }
+
 skip_args_processing:
             if (debugid < MAX_DBG_MSGS){
                 dbgidString = DBG_MSG_ARR[moduleid][debugid];
@@ -1976,7 +2041,7 @@ dbglog_debugfs_raw_data(wmi_unified_t wmi_handle, const u_int8_t *buf, A_UINT32 
     /* Need to pad each record to fixed length ATH6KL_FWLOG_PAYLOAD_SIZE */
     memset(slot->payload + length, 0, ATH6KL_FWLOG_PAYLOAD_SIZE - length);
 
-    spin_lock(&fwlog->fwlog_queue.lock);
+    adf_os_raw_spin_lock(&fwlog->fwlog_queue.lock);
 
     __skb_queue_tail(&fwlog->fwlog_queue, skb);
 
@@ -1989,7 +2054,7 @@ dbglog_debugfs_raw_data(wmi_unified_t wmi_handle, const u_int8_t *buf, A_UINT32 
         kfree_skb(skb);
     }
 
-    spin_unlock(&fwlog->fwlog_queue.lock);
+    adf_os_raw_spin_unlock(&fwlog->fwlog_queue.lock);
 
     return TRUE;
 }
@@ -2122,6 +2187,9 @@ send_diag_netlink_data(const u_int8_t *buffer, A_UINT32 len, A_UINT32 cmd)
         slot->dropped = get_version;
         memcpy(slot->payload, buffer, len);
 
+        /* Need to pad each record to fixed length ATH6KL_FWLOG_PAYLOAD_SIZE */
+        memset(slot->payload + len, 0, ATH6KL_FWLOG_PAYLOAD_SIZE - len);
+
         res = nl_srv_bcast_fw_logs(skb_out);
         if ((res < 0) && (res != -ESRCH)) {
             AR_DEBUG_PRINTF(ATH_DEBUG_RSVD1,
@@ -2183,6 +2251,9 @@ dbglog_process_netlink_data(wmi_unified_t wmi_handle, const u_int8_t *buffer,
         slot->length = cpu_to_le32(len);
         slot->dropped = cpu_to_le32(dropped);
         memcpy(slot->payload, buffer, len);
+
+        /* Need to pad each record to fixed length ATH6KL_FWLOG_PAYLOAD_SIZE */
+        memset(slot->payload + len, 0, ATH6KL_FWLOG_PAYLOAD_SIZE - len);
 
         res = nl_srv_bcast_fw_logs(skb_out);
         if ((res < 0) && (res != -ESRCH))
@@ -2303,19 +2374,22 @@ diag_fw_handler(ol_scn_t scn, u_int8_t *data, u_int32_t datalen)
 static int
 process_fw_diag_event_data(uint8_t *datap, uint32_t num_data)
 {
-	uint32_t i;
 	uint32_t diag_type;
 	uint32_t nl_data_len; /* diag hdr + payload */
 	uint32_t diag_data_len; /* each fw diag payload */
 	struct wlan_diag_data *diag_data;
 
-	for (i = 0; i < num_data; i++) {
+	while (num_data > 0) {
 		diag_data = (struct wlan_diag_data *)datap;
 		diag_type = WLAN_DIAG_0_TYPE_GET(diag_data->word0);
 		diag_data_len = WLAN_DIAG_0_LEN_GET(diag_data->word0);
 		/* Length of diag struct and len of payload */
 		nl_data_len = sizeof(struct wlan_diag_data) + diag_data_len;
-
+		if (nl_data_len > num_data) {
+			AR_DEBUG_PRINTF(ATH_DEBUG_INFO,
+					("processed all the messages\n"));
+			return 0;
+		}
 		switch (diag_type) {
 		case DIAG_TYPE_FW_EVENT:
 			return send_fw_diag_nl_data(datap, nl_data_len,
@@ -2328,6 +2402,7 @@ process_fw_diag_event_data(uint8_t *datap, uint32_t num_data)
 		}
 		/* Move to the next event and send to cnss-diag */
 		datap += nl_data_len;
+		num_data -= nl_data_len;
 	}
 
 	return 0;
@@ -2399,7 +2474,7 @@ dbglog_parse_debug_logs(ol_scn_t scn, u_int8_t *data, u_int32_t datalen)
 
     if (len < sizeof(dropped)) {
         AR_DEBUG_PRINTF(ATH_DEBUG_ERR, ("Invalid length\n"));
-        return A_ERROR;
+        return -1;
     }
 
     dropped = *((A_UINT32 *)datap);
@@ -4287,13 +4362,13 @@ static ssize_t dbglog_block_read(struct file *file,
     if (!buf)
        return -ENOMEM;
 
-    spin_lock_bh(&fwlog->fwlog_queue.lock);
+    adf_os_raw_spin_lock_bh(&fwlog->fwlog_queue.lock);
 
     if (skb_queue_len(&fwlog->fwlog_queue) == 0) {
        /* we must init under queue lock */
        init_completion(&fwlog->fwlog_completion);
 
-       spin_unlock_bh(&fwlog->fwlog_queue.lock);
+       adf_os_raw_spin_unlock_bh(&fwlog->fwlog_queue.lock);
 
        ret = wait_for_completion_interruptible(
                     &fwlog->fwlog_completion);
@@ -4302,7 +4377,7 @@ static ssize_t dbglog_block_read(struct file *file,
                return ret;
        }
 
-       spin_lock_bh(&fwlog->fwlog_queue.lock);
+       adf_os_raw_spin_lock_bh(&fwlog->fwlog_queue.lock);
     }
 
     while ((skb = __skb_dequeue(&fwlog->fwlog_queue))) {
@@ -4318,7 +4393,7 @@ static ssize_t dbglog_block_read(struct file *file,
        kfree_skb(skb);
     }
 
-    spin_unlock_bh(&fwlog->fwlog_queue.lock);
+    adf_os_raw_spin_unlock_bh(&fwlog->fwlog_queue.lock);
 
     /* FIXME: what to do if len == 0? */
     not_copied = copy_to_user(user_buf, buf, len);

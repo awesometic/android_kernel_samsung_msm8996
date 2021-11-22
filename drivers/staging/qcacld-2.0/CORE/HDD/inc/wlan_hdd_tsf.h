@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015,2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015,2018-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -33,6 +33,7 @@
   -------------------------------------------------------------------------*/
 #include <wlan_hdd_includes.h>
 #include "wlan_hdd_cfg.h"
+#include <ol_txrx_htt_api.h>
 
 /*---------------------------------------------------------------------------
   Preprocessor definitions and constants
@@ -43,6 +44,11 @@
   -------------------------------------------------------------------------*/
 
 #ifdef WLAN_FEATURE_TSF
+
+#define REG_TSF1_L 0x1054
+#define REG_TSF1_H 0x1058
+#define REG_TSF2_L 0x10d4
+#define REG_TSF2_H 0x10d8
 
 /**
  * wlan_hdd_tsf_init() - set gpio and callbacks for
@@ -91,6 +97,7 @@ int hdd_capture_tsf(hdd_adapter_t *adapter, uint32_t *buf, int len);
  * Return: Describe the execute result of this routine
  */
 int hdd_indicate_tsf(hdd_adapter_t *adapter, uint32_t *buf, int len);
+
 #else
 static inline void
 wlan_hdd_tsf_init(hdd_context_t *hdd_ctx)
@@ -140,6 +147,22 @@ hdd_capture_tsf(hdd_adapter_t *adapter, uint32_t *buf, int len)
 	CFG_SET_TSF_DBG_FS))
 
 /**
+ * hdd_create_tsf_file() - create tsf file node
+ * @adapter: pointer to adapter
+ *
+ * Return: NULL
+ */
+void hdd_create_tsf_file(hdd_adapter_t *adapter);
+
+/**
+ * hdd_remove_tsf_file() - remove tsf file node
+ * @adapter: pointer to adapter
+ *
+ * Return: NULL
+ */
+void hdd_remove_tsf_file(hdd_adapter_t *adapter);
+
+/**
  * hdd_start_tsf_sync() - start tsf sync
  * @adapter: pointer to adapter
  *
@@ -185,7 +208,7 @@ void hdd_tsf_notify_wlan_state_change(hdd_adapter_t *adapter,
  *
  * Return: Describe the execute result of this routine
  */
-int hdd_tx_timestamp(adf_nbuf_t netbuf, uint64_t target_time);
+int hdd_tx_timestamp(int32_t status, adf_nbuf_t netbuf, uint64_t target_time);
 
 /**
  * hdd_rx_timestamp() - time stamp RX netbuf
@@ -214,6 +237,16 @@ int hdd_rx_timestamp(adf_nbuf_t netbuf, uint64_t target_time);
 void
 hdd_tsf_record_sk_for_skb(hdd_context_t *hdd_ctx, adf_nbuf_t nbuf);
 #else
+static inline void hdd_create_tsf_file(hdd_adapter_t *adapter)
+{
+	return;
+}
+
+static inline void hdd_remove_tsf_file(hdd_adapter_t *adapter)
+{
+	return;
+}
+
 static inline int hdd_start_tsf_sync(hdd_adapter_t *adapter)
 {
 	return -ENOTSUPP;
@@ -232,7 +265,7 @@ void hdd_tsf_notify_wlan_state_change(hdd_adapter_t *adapter,
 }
 
 static inline
-int hdd_tx_timestamp(adf_nbuf_t netbuf, uint64_t target_time)
+int hdd_tx_timestamp(int32_t status, adf_nbuf_t netbuf, uint64_t target_time)
 {
 	return -ENOTSUPP;
 }
@@ -247,6 +280,17 @@ static inline void
 hdd_tsf_record_sk_for_skb(hdd_context_t *hdd_ctx, adf_nbuf_t nbuf)
 {
 }
+#endif
+
+#ifdef WLAN_FEATURE_TSF_PTP
+/**
+ * wlan_get_ts_info() - return ts info to uplayer
+ * @dev: pointer to net_device
+ * @info: pointer to ethtool_ts_info
+ *
+ * Return: Describe the execute result of this routine
+ */
+int wlan_get_ts_info(struct net_device *dev, struct ethtool_ts_info *info);
 #endif
 
 #endif

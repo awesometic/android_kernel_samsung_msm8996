@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -217,11 +217,10 @@ struct hdd_ipa_uc_rx_hdr {
 #define HDD_IPA_DP_LOG(LVL, fmt, args...) VOS_TRACE(VOS_MODULE_ID_HDD_DATA, LVL, \
 					"%s:%d: "fmt, __func__, __LINE__, ## args)
 
-
 #define HDD_IPA_DBG_DUMP(_lvl, _prefix, _buf, _len) \
 	do {\
-		VOS_TRACE(VOS_MODULE_ID_HDD, _lvl, "%s:", _prefix); \
-		VOS_TRACE_HEX_DUMP(VOS_MODULE_ID_HDD, _lvl, _buf, _len); \
+		VOS_TRACE(VOS_MODULE_ID_HDD_DATA, _lvl, "%s:", _prefix); \
+		VOS_TRACE_HEX_DUMP(VOS_MODULE_ID_HDD_DATA, _lvl, _buf, _len); \
 	} while(0)
 
 #define DBG_DUMP_RX_LEN 32
@@ -432,7 +431,7 @@ struct hdd_ipa_priv {
 
 	uint32_t pending_hw_desc_cnt;
 	uint32_t hw_desc_cnt;
-	spinlock_t q_lock;
+	adf_os_spinlock_t q_lock;
 	uint32_t freeq_cnt;
 	struct list_head free_desc_head;
 
@@ -596,7 +595,7 @@ static struct ipa_tx_data_desc *hdd_ipa_alloc_data_desc(
 {
 	struct ipa_tx_data_desc *desc = NULL;
 
-	spin_lock_bh(&hdd_ipa->q_lock);
+	adf_os_spin_lock_bh(&hdd_ipa->q_lock);
 
 	/* Keep the descriptors for priority alloc which can be used for
 	 * anchor nodes
@@ -616,7 +615,7 @@ static struct ipa_tx_data_desc *hdd_ipa_alloc_data_desc(
 	}
 
 end:
-	spin_unlock_bh(&hdd_ipa->q_lock);
+	adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 
 	return desc;
 }
@@ -627,10 +626,10 @@ static void hdd_ipa_free_data_desc(struct hdd_ipa_priv *hdd_ipa,
 	desc->priv = NULL;
 	desc->pyld_buffer = NULL;
 	desc->pyld_len = 0;
-	spin_lock_bh(&hdd_ipa->q_lock);
+	adf_os_spin_lock_bh(&hdd_ipa->q_lock);
 	list_add_tail(&desc->link, &hdd_ipa->free_desc_head);
 	hdd_ipa->freeq_cnt++;
-	spin_unlock_bh(&hdd_ipa->q_lock);
+	adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 }
 
 static struct iphdr * hdd_ipa_get_ip_pkt(void *data, uint16_t *eth_type)
@@ -2532,12 +2531,12 @@ static int hdd_ipa_rm_try_release(struct hdd_ipa_priv *hdd_ipa)
 		return -EAGAIN;
 
 #ifndef IPA_UC_STA_OFFLOAD
-	spin_lock_bh(&hdd_ipa->q_lock);
+	adf_os_spin_lock_bh(&hdd_ipa->q_lock);
 	if (hdd_ipa->pending_hw_desc_cnt || hdd_ipa->pend_q_cnt) {
-		spin_unlock_bh(&hdd_ipa->q_lock);
+		adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 		return -EAGAIN;
 	}
-	spin_unlock_bh(&hdd_ipa->q_lock);
+	adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 #endif
 
 	adf_os_spin_lock_bh(&hdd_ipa->pm_lock);
@@ -2613,11 +2612,11 @@ static void hdd_ipa_send_pkt_to_ipa(struct hdd_ipa_priv *hdd_ipa)
 
 	INIT_LIST_HEAD(&send_desc_head->link);
 
-	spin_lock_bh(&hdd_ipa->q_lock);
+	adf_os_spin_lock_bh(&hdd_ipa->q_lock);
 
 	if (hdd_ipa->pending_hw_desc_cnt >= hdd_ipa->hw_desc_cnt) {
 		hdd_ipa->stats.num_rx_ipa_hw_maxed_out++;
-		spin_unlock_bh(&hdd_ipa->q_lock);
+		adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 		hdd_ipa_free_data_desc(hdd_ipa, send_desc_head);
 		return;
 	}
@@ -2625,7 +2624,7 @@ static void hdd_ipa_send_pkt_to_ipa(struct hdd_ipa_priv *hdd_ipa)
 	pend_q_cnt = hdd_ipa->pend_q_cnt;
 
 	if (pend_q_cnt == 0) {
-		spin_unlock_bh(&hdd_ipa->q_lock);
+		adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 		hdd_ipa_free_data_desc(hdd_ipa, send_desc_head);
 		return;
 	}
@@ -2659,7 +2658,7 @@ static void hdd_ipa_send_pkt_to_ipa(struct hdd_ipa_priv *hdd_ipa)
 	}
 
 	hdd_ipa->pending_hw_desc_cnt += cur_send_cnt;
-	spin_unlock_bh(&hdd_ipa->q_lock);
+	adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 
 	if (ipa_tx_dp_mul(hdd_ipa->prod_client, send_desc_head) != 0) {
 		HDD_IPA_LOG(VOS_TRACE_LEVEL_ERROR,
@@ -2677,9 +2676,9 @@ static void hdd_ipa_send_pkt_to_ipa(struct hdd_ipa_priv *hdd_ipa)
 
 ipa_tx_failed:
 
-	spin_lock_bh(&hdd_ipa->q_lock);
+	adf_os_spin_lock_bh(&hdd_ipa->q_lock);
 	hdd_ipa->pending_hw_desc_cnt -= cur_send_cnt;
-	spin_unlock_bh(&hdd_ipa->q_lock);
+	adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 
 	list_for_each_entry_safe(desc, tmp, &send_desc_head->link, link) {
 		list_del(&desc->link);
@@ -3002,7 +3001,7 @@ static void hdd_ipa_destory_rm_resource(struct hdd_ipa_priv *hdd_ipa)
 static void hdd_ipa_send_skb_to_network(adf_nbuf_t skb, hdd_adapter_t *adapter)
 {
 	int result;
-#ifndef QCA_CONFIG_SMP
+#if !defined(QCA_CONFIG_SMP) || defined(HDD_IPA_RX_SOFTIRQ_THRESH)
 	struct iphdr* ip_h;
 	static atomic_t softirq_mitigation_cntr =
 		ATOMIC_INIT(IPA_WLAN_RX_SOFTIRQ_THRESH);
@@ -3032,7 +3031,7 @@ static void hdd_ipa_send_skb_to_network(adf_nbuf_t skb, hdd_adapter_t *adapter)
 	cpu_index = wlan_hdd_get_cpu();
 
 	++adapter->hdd_stats.hddTxRxStats.rxPackets[cpu_index];
-#ifdef QCA_CONFIG_SMP
+#if defined(QCA_CONFIG_SMP) && !defined(HDD_IPA_RX_SOFTIRQ_THRESH)
 	result = netif_rx_ni(skb);
 #else
 	ip_h = (struct iphdr*)((uint8_t*)skb->data);
@@ -3058,7 +3057,9 @@ static void hdd_ipa_send_skb_to_network(adf_nbuf_t skb, hdd_adapter_t *adapter)
 		++adapter->hdd_stats.hddTxRxStats.rxRefused[cpu_index];
 
 	HDD_IPA_INCREASE_NET_SEND_COUNT(hdd_ipa);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0))
 	adapter->dev->last_rx = jiffies;
+#endif
 }
 
 VOS_STATUS hdd_ipa_process_rxt(v_VOID_t *vosContext, adf_nbuf_t rx_buf_list,
@@ -3126,10 +3127,10 @@ VOS_STATUS hdd_ipa_process_rxt(v_VOID_t *vosContext, adf_nbuf_t rx_buf_list,
 		send_desc->priv = buf;
 		send_desc->pyld_buffer = buf->data;
 		send_desc->pyld_len = buf->len;
-		spin_lock_bh(&hdd_ipa->q_lock);
+		adf_os_spin_lock_bh(&hdd_ipa->q_lock);
 		list_add_tail(&send_desc->link, &hdd_ipa->pend_desc_head);
 		hdd_ipa->pend_q_cnt++;
-		spin_unlock_bh(&hdd_ipa->q_lock);
+		adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 		cur_cnt++;
 		buf = next_buf;
 	}
@@ -3392,9 +3393,9 @@ static void hdd_ipa_w2i_cb(void *priv, enum ipa_dp_evt_type evt,
 			buf = done_desc->priv;
 			adf_nbuf_free(buf);
 			hdd_ipa_free_data_desc(hdd_ipa, done_desc);
-			spin_lock_bh(&hdd_ipa->q_lock);
+			adf_os_spin_lock_bh(&hdd_ipa->q_lock);
 			hdd_ipa->pending_hw_desc_cnt--;
-			spin_unlock_bh(&hdd_ipa->q_lock);
+			adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 			hdd_ipa->stats.num_rx_ipa_write_done++;
 		}
 		/* add anchor node also back to free list */
@@ -3450,12 +3451,15 @@ static void hdd_ipa_send_pkt_to_tl(struct hdd_ipa_iface_context *iface_context,
 	 * During CAC period, data packets shouldn't be sent over the air so
 	 * drop all the packets here
 	 */
-	if (WLAN_HDD_GET_AP_CTX_PTR(adapter)->dfs_cac_block_tx) {
-		ipa_free_skb(ipa_tx_desc);
-		adf_os_spin_unlock_bh(&iface_context->interface_lock);
-		iface_context->stats.num_tx_cac_drop++;
-		hdd_ipa_rm_try_release(hdd_ipa);
-		return;
+	if (WLAN_HDD_SOFTAP == adapter->device_mode ||
+	    WLAN_HDD_P2P_GO == adapter->device_mode) {
+		if (WLAN_HDD_GET_AP_CTX_PTR(adapter)->dfs_cac_block_tx) {
+			ipa_free_skb(ipa_tx_desc);
+			adf_os_spin_unlock_bh(&iface_context->interface_lock);
+			iface_context->stats.num_tx_cac_drop++;
+			hdd_ipa_rm_try_release(hdd_ipa);
+			return;
+		}
 	}
 
 	interface_id = adapter->sessionId;
@@ -4748,24 +4752,24 @@ static void hdd_ipa_rx_pipe_desc_free(void)
 
 	max_desc_cnt = hdd_ipa->hw_desc_cnt * HDD_IPA_DESC_BUFFER_RATIO;
 
-	spin_lock_bh(&hdd_ipa->q_lock);
+	adf_os_spin_lock_bh(&hdd_ipa->q_lock);
 
 	list_for_each_entry_safe(desc, tmp, &hdd_ipa->pend_desc_head, link) {
 		list_del(&desc->link);
 		adf_nbuf_free(desc->priv);
-		spin_unlock_bh(&hdd_ipa->q_lock);
+		adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 		hdd_ipa_free_data_desc(hdd_ipa, desc);
-		spin_lock_bh(&hdd_ipa->q_lock);
+		adf_os_spin_lock_bh(&hdd_ipa->q_lock);
 	}
 
 	list_for_each_entry_safe(desc, tmp, &hdd_ipa->free_desc_head, link) {
 		list_del(&desc->link);
-		spin_unlock_bh(&hdd_ipa->q_lock);
+		adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 		adf_os_mem_free(desc);
-		spin_lock_bh(&hdd_ipa->q_lock);
+		adf_os_spin_lock_bh(&hdd_ipa->q_lock);
 		i++;
 	}
-	spin_unlock_bh(&hdd_ipa->q_lock);
+	adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 
 	if (i != max_desc_cnt)
 		HDD_IPA_LOG(VOS_TRACE_LEVEL_FATAL, "free desc leak: %u, %u", i,
@@ -4785,7 +4789,7 @@ static int hdd_ipa_rx_pipe_desc_alloc(void)
 				hdd_ipa->hdd_ctx->cfg_ini->IpaDescSize);
 	max_desc_cnt = hdd_ipa->hw_desc_cnt * HDD_IPA_DESC_BUFFER_RATIO;
 
-	spin_lock_init(&hdd_ipa->q_lock);
+	adf_os_spinlock_init(&hdd_ipa->q_lock);
 
 	INIT_LIST_HEAD(&hdd_ipa->free_desc_head);
 	INIT_LIST_HEAD(&hdd_ipa->pend_desc_head);
@@ -4800,9 +4804,9 @@ static int hdd_ipa_rx_pipe_desc_alloc(void)
 					"Descriptor allocation failed");
 			goto fail;
 		}
-		spin_lock_bh(&hdd_ipa->q_lock);
+		adf_os_spin_lock_bh(&hdd_ipa->q_lock);
 		list_add_tail(&tmp_desc->link, &hdd_ipa->free_desc_head);
-		spin_unlock_bh(&hdd_ipa->q_lock);
+		adf_os_spin_unlock_bh(&hdd_ipa->q_lock);
 	}
 
 

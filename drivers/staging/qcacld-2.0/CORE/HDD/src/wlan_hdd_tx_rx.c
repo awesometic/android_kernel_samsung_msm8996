@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -114,7 +114,7 @@ static VOS_STATUS hdd_flush_tx_queues( hdd_adapter_t *pAdapter )
    while (++i != NUM_TX_QUEUES)
    {
       //Free up any packets in the Tx queue
-      spin_lock_bh(&pAdapter->wmm_tx_queue[i].lock);
+      adf_os_spin_lock_bh(&pAdapter->wmm_tx_queue[i].lock);
       while (true)
       {
          status = hdd_list_remove_front( &pAdapter->wmm_tx_queue[i], &anchor );
@@ -128,7 +128,7 @@ static VOS_STATUS hdd_flush_tx_queues( hdd_adapter_t *pAdapter )
          }
          break;
       }
-      spin_unlock_bh(&pAdapter->wmm_tx_queue[i].lock);
+      adf_os_spin_unlock_bh(&pAdapter->wmm_tx_queue[i].lock);
       /* Back pressure is no longer in effect */
       pAdapter->isTxSuspended[i] = VOS_FALSE;
    }
@@ -165,11 +165,11 @@ void hdd_flush_ibss_tx_queues( hdd_adapter_t *pAdapter, v_U8_t STAId)
 
    for (i = 0; i < NUM_TX_QUEUES; i++)
    {
-      spin_lock_bh(&pAdapter->wmm_tx_queue[i].lock);
+      adf_os_spin_lock_bh(&pAdapter->wmm_tx_queue[i].lock);
 
       if ( list_empty( &pAdapter->wmm_tx_queue[i].anchor ) )
       {
-         spin_unlock_bh(&pAdapter->wmm_tx_queue[i].lock);
+         adf_os_spin_unlock_bh(&pAdapter->wmm_tx_queue[i].lock);
          continue;
       }
 
@@ -204,7 +204,7 @@ void hdd_flush_ibss_tx_queues( hdd_adapter_t *pAdapter, v_U8_t STAId)
          pAdapter->isTxSuspended[i] = VOS_FALSE;
       }
 
-      spin_unlock_bh(&pAdapter->wmm_tx_queue[i].lock);
+      adf_os_spin_unlock_bh(&pAdapter->wmm_tx_queue[i].lock);
    }
 }
 
@@ -513,20 +513,20 @@ int __hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 * The TX packets might be dropped for UDP case in the iperf testing.
 * So need to be protected by follow control.
 */
-#ifdef QCA_LL_TX_FLOW_CT
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(3,19,0))
        //remove if condition for improving SCC TCP TX KPI
       //if (pAdapter->tx_flow_low_watermark > 0) {
           skb_orphan(skb);
      // }
-#endif
 #else
+#ifdef WLAN_FEATURE_TSF_PLUS
       /*
        * For PTP feature enabled system, need to orphan the socket buffer asap
        * otherwise the latency will become unacceptable
        */
       if (hdd_cfg_is_ptp_opt_enable(hddCtxt))
           skb_orphan(skb);
+#endif
 #endif
 
        /* use self peer directly in monitor mode */
@@ -886,7 +886,6 @@ static void __hdd_tx_timeout(struct net_device *dev)
    hddLog(LOGE, FL("Transmission timeout occurred jiffies %lu trans_start %lu"),
           jiffies, dev->trans_start);
 #endif
-
    DPTRACE(adf_dp_trace(NULL, ADF_DP_TRACE_HDD_TX_TIMEOUT,
                         NULL, 0, ADF_TX));
    /*
@@ -1144,29 +1143,37 @@ bool drop_ip6_mcast(struct sk_buff *skb)
  * For HL monitor mode, radiotap is appended to tail when update radiotap
  * info in htt layer. Need to copy it ahead of skb before indicating to OS.
  */
-static void hdd_move_radiotap_header_forward(struct sk_buff *skb)
+static VOS_STATUS hdd_move_radiotap_header_forward(struct sk_buff *skb)
 {
 	adf_nbuf_t msdu = (adf_nbuf_t)skb;
 	struct ieee80211_radiotap_header *rthdr;
 	uint8_t rtap_len;
 
-	adf_nbuf_put_tail(msdu,
+	if (!adf_nbuf_put_tail(msdu,
+		sizeof(struct ieee80211_radiotap_header)))
+		return VOS_STATUS_E_NOMEM;
+	else {
+		rthdr = (struct ieee80211_radiotap_header *)
+		(adf_nbuf_data(msdu) + adf_nbuf_len(msdu) -
 		sizeof(struct ieee80211_radiotap_header));
-	rthdr = (struct ieee80211_radiotap_header *)
-	    (adf_nbuf_data(msdu) + adf_nbuf_len(msdu) -
-	     sizeof(struct ieee80211_radiotap_header));
-	rtap_len = rthdr->it_len;
-	adf_nbuf_put_tail(msdu,
+		rtap_len = rthdr->it_len;
+		if (!adf_nbuf_put_tail(msdu,
 			  rtap_len -
-			  sizeof(struct ieee80211_radiotap_header));
-	adf_nbuf_push_head(msdu, rtap_len);
-	adf_os_mem_copy(adf_nbuf_data(msdu), rthdr, rtap_len);
-	adf_nbuf_trim_tail(msdu, rtap_len);
+			  sizeof(struct ieee80211_radiotap_header)))
+			return VOS_STATUS_E_NOMEM;
+		else {
+			adf_nbuf_push_head(msdu, rtap_len);
+			adf_os_mem_copy(adf_nbuf_data(msdu), rthdr, rtap_len);
+			adf_nbuf_trim_tail(msdu, rtap_len);
+		}
+	}
+	return VOS_STATUS_SUCCESS;
 }
 #else
-static inline void hdd_move_radiotap_header_forward(struct sk_buff *skb)
+static inline VOS_STATUS hdd_move_radiotap_header_forward(struct sk_buff *skb)
 {
     /* no-op */
+	return VOS_STATUS_SUCCESS;
 }
 #endif
 
@@ -1219,10 +1226,13 @@ VOS_STATUS hdd_mon_rx_packet_cbk(v_VOID_t *vos_ctx, adf_nbuf_t rx_buf,
 	/* walk the chain until all are processed */
 	skb = (struct sk_buff *) rx_buf;
 	while (NULL != skb) {
-		hdd_move_radiotap_header_forward(skb);
-
 		skb_next = skb->next;
 		skb->dev = adapter->dev;
+
+		if(hdd_move_radiotap_header_forward(skb)) {
+			skb = skb_next;
+			continue;
+		}
 
 		++adapter->hdd_stats.hddTxRxStats.rxPackets[cpu_index];
 		++adapter->stats.rx_packets;
@@ -1250,8 +1260,68 @@ VOS_STATUS hdd_mon_rx_packet_cbk(v_VOID_t *vos_ctx, adf_nbuf_t rx_buf,
 		skb = skb_next;
 	}
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0))
 	adapter->dev->last_rx = jiffies;
+#endif
+	return VOS_STATUS_SUCCESS;
+}
 
+VOS_STATUS hdd_vir_mon_rx_cbk(v_VOID_t *vos_ctx, adf_nbuf_t rx_buf,
+			      uint8_t sta_id)
+{
+	hdd_adapter_t *adapter = NULL;
+	hdd_context_t *hdd_ctx = NULL;
+	int rxstat;
+	struct sk_buff *skb = NULL;
+	struct sk_buff *skb_next;
+
+	/* Sanity check on inputs */
+	if ((NULL == vos_ctx) || (NULL == rx_buf)) {
+		VOS_TRACE(VOS_MODULE_ID_HDD_DATA, VOS_TRACE_LEVEL_ERROR,
+			  "%s: Null params being passed", __func__);
+		return VOS_STATUS_E_FAILURE;
+	}
+
+	hdd_ctx = vos_get_context(VOS_MODULE_ID_HDD, vos_ctx);
+	if (NULL == hdd_ctx) {
+		VOS_TRACE(VOS_MODULE_ID_HDD_DATA, VOS_TRACE_LEVEL_ERROR,
+			  "%s: HDD adapter context is Null", __func__);
+		return VOS_STATUS_E_FAILURE;
+	}
+
+	adapter = hdd_get_adapter(hdd_ctx, WLAN_HDD_MONITOR);
+	if ((NULL == adapter) || (WLAN_HDD_ADAPTER_MAGIC != adapter->magic)) {
+		VOS_TRACE(VOS_MODULE_ID_HDD_DATA, VOS_TRACE_LEVEL_ERROR,
+			  "invalid adapter %p for sta Id %d", adapter, sta_id);
+		return VOS_STATUS_E_FAILURE;
+	}
+
+	/* walk the chain until all are processed */
+	skb = (struct sk_buff *)rx_buf;
+	while (NULL != skb) {
+		skb_next = skb->next;
+		skb->dev = adapter->dev;
+
+		/*
+		 * If this is not a last packet on the chain
+		 * Just put packet into backlog queue, not scheduling RX sirq
+		 */
+		if (skb->next) {
+			rxstat = netif_rx(skb);
+		} else {
+			/*
+			 * This is the last packet on the chain
+			 * Scheduling rx sirq
+			 */
+			rxstat = netif_rx_ni(skb);
+		}
+
+		skb = skb_next;
+	}
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0))
+	adapter->dev->last_rx = jiffies;
+#endif
 	return VOS_STATUS_SUCCESS;
 }
 
@@ -1472,7 +1542,13 @@ VOS_STATUS hdd_rx_packet_cbk(v_VOID_t *vosContext,
        * Just put packet into backlog queue, not scheduling RX sirq
        */
       if (skb->next) {
+#ifdef RX_LATENCY_OPTIMIZE
+	local_bh_disable();
+	rxstat = netif_receive_skb(skb);
+	local_bh_enable();
+#else
          rxstat = netif_rx(skb);
+#endif
       } else {
           if ((pHddCtx->cfg_ini->rx_wakelock_timeout) &&
               (PACKET_BROADCAST != skb->pkt_type) &&
@@ -1487,7 +1563,13 @@ VOS_STATUS hdd_rx_packet_cbk(v_VOID_t *vosContext,
            * This is the last packet on the chain
            * Scheduling rx sirq
            */
+#ifdef RX_LATENCY_OPTIMIZE
+	local_bh_disable();
+	rxstat = netif_receive_skb(skb);
+	local_bh_enable();
+#else
           rxstat = netif_rx_ni(skb);
+#endif
       }
 
       if (NET_RX_SUCCESS == rxstat)
@@ -1498,8 +1580,9 @@ VOS_STATUS hdd_rx_packet_cbk(v_VOID_t *vosContext,
       skb = skb_next;
    }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0))
    pAdapter->dev->last_rx = jiffies;
-
+#endif
    return VOS_STATUS_SUCCESS;
 }
 
@@ -1655,38 +1738,38 @@ void wlan_hdd_netif_queue_control(hdd_adapter_t *adapter,
 		break;
 
 	case WLAN_STOP_ALL_NETIF_QUEUE:
-		spin_lock_bh(&adapter->pause_map_lock);
+		adf_os_spin_lock_bh(&adapter->pause_map_lock);
 		if (!adapter->pause_map) {
 			netif_tx_stop_all_queues(adapter->dev);
 			wlan_hdd_update_txq_timestamp(adapter->dev);
 			wlan_hdd_update_unpause_time(adapter);
 		}
 		adapter->pause_map |= (1 << reason);
-		spin_unlock_bh(&adapter->pause_map_lock);
+		adf_os_spin_unlock_bh(&adapter->pause_map_lock);
 		break;
 
 	case WLAN_START_ALL_NETIF_QUEUE:
-		spin_lock_bh(&adapter->pause_map_lock);
+		adf_os_spin_lock_bh(&adapter->pause_map_lock);
 		adapter->pause_map &= ~(1 << reason);
 		if (!adapter->pause_map) {
 			netif_tx_start_all_queues(adapter->dev);
 			wlan_hdd_update_pause_time(adapter);
 		}
-		spin_unlock_bh(&adapter->pause_map_lock);
+		adf_os_spin_unlock_bh(&adapter->pause_map_lock);
 		break;
 
 	case WLAN_WAKE_ALL_NETIF_QUEUE:
-		spin_lock_bh(&adapter->pause_map_lock);
+		adf_os_spin_lock_bh(&adapter->pause_map_lock);
 		adapter->pause_map &= ~(1 << reason);
 		if (!adapter->pause_map) {
 			netif_tx_wake_all_queues(adapter->dev);
 			wlan_hdd_update_pause_time(adapter);
 		}
-		spin_unlock_bh(&adapter->pause_map_lock);
+		adf_os_spin_unlock_bh(&adapter->pause_map_lock);
 		break;
 
 	case WLAN_STOP_ALL_NETIF_QUEUE_N_CARRIER:
-		spin_lock_bh(&adapter->pause_map_lock);
+		adf_os_spin_lock_bh(&adapter->pause_map_lock);
 		if (!adapter->pause_map) {
 			netif_tx_stop_all_queues(adapter->dev);
 			wlan_hdd_update_txq_timestamp(adapter->dev);
@@ -1694,33 +1777,33 @@ void wlan_hdd_netif_queue_control(hdd_adapter_t *adapter,
 		}
 		adapter->pause_map |= (1 << reason);
 		netif_carrier_off(adapter->dev);
-		spin_unlock_bh(&adapter->pause_map_lock);
+		adf_os_spin_unlock_bh(&adapter->pause_map_lock);
 		break;
 
 	case WLAN_START_ALL_NETIF_QUEUE_N_CARRIER:
-		spin_lock_bh(&adapter->pause_map_lock);
+		adf_os_spin_lock_bh(&adapter->pause_map_lock);
 		netif_carrier_on(adapter->dev);
 		adapter->pause_map &= ~(1 << reason);
 		if (!adapter->pause_map) {
 			netif_tx_start_all_queues(adapter->dev);
 			wlan_hdd_update_pause_time(adapter);
 		}
-		spin_unlock_bh(&adapter->pause_map_lock);
+		adf_os_spin_unlock_bh(&adapter->pause_map_lock);
 		break;
 
 	case WLAN_NETIF_TX_DISABLE:
-		spin_lock_bh(&adapter->pause_map_lock);
+		adf_os_spin_lock_bh(&adapter->pause_map_lock);
 		if (!adapter->pause_map) {
 			netif_tx_disable(adapter->dev);
 			wlan_hdd_update_txq_timestamp(adapter->dev);
 			wlan_hdd_update_unpause_time(adapter);
 		}
 		adapter->pause_map |= (1 << reason);
-		spin_unlock_bh(&adapter->pause_map_lock);
+		adf_os_spin_unlock_bh(&adapter->pause_map_lock);
 		break;
 
 	case WLAN_NETIF_TX_DISABLE_N_CARRIER:
-		spin_lock_bh(&adapter->pause_map_lock);
+		adf_os_spin_lock_bh(&adapter->pause_map_lock);
 		if (!adapter->pause_map) {
 			netif_tx_disable(adapter->dev);
 			wlan_hdd_update_txq_timestamp(adapter->dev);
@@ -1728,7 +1811,7 @@ void wlan_hdd_netif_queue_control(hdd_adapter_t *adapter,
 		}
 		adapter->pause_map |= (1 << reason);
 		netif_carrier_off(adapter->dev);
-		spin_unlock_bh(&adapter->pause_map_lock);
+		adf_os_spin_unlock_bh(&adapter->pause_map_lock);
 		break;
 
 	default:

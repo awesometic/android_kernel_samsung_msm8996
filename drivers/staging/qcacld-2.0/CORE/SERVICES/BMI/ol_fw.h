@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -54,6 +54,7 @@
 #define QCA_BOARD_DATA_FILE          "fakeboar.bin"
 #define QCA_OTP_FILE                 "otp.bin"
 #define QCA_SETUP_FILE               "athsetup.bin"
+#define QCA_USB_WARM_RESET_FILE      "warm_reset.bin"
 #define AR61X4_SINGLE_FILE           "qca61x4.bin"
 #define QCA_FIRMWARE_EPPING_FILE     "epping.bin"
 
@@ -114,7 +115,10 @@
 #define IRAM1_SIZE              0x00080000
 #define IRAM2_LOCATION          0x00a00000
 #define IRAM2_SIZE              0x00040000
-#elif defined(HIF_SDIO)
+#ifdef CONFIG_NON_QC_PLATFORM_PCI
+#define REG_SIZE		0x0007F820
+#endif
+#elif defined(HIF_SDIO) || defined(HIF_USB)
 #define IRAM_LOCATION           0x00980000
 #define IRAM_SIZE               0x000C0000
 #else /* ELSE HIF_PCI */
@@ -159,7 +163,7 @@ void ol_target_failure(void *instance, A_STATUS status);
 u_int8_t ol_get_number_of_peers_supported(struct ol_softc *scn);
 
 #ifdef REMOVE_PKT_LOG
-static inline void ol_pktlog_init(void *)
+static inline void ol_pktlog_init(void *hifsc)
 {
 }
 #else
@@ -172,6 +176,19 @@ void ol_target_ready(struct ol_softc *scn, void *cfg_ctx);
 static inline void ol_target_ready(struct ol_softc *scn, void *cfg_ctx)
 {
 
+}
+#endif
+
+#ifdef FEATURE_DYNAMIC_POWER_CONTROL
+void ol_set_sleep_power_mode(uint32_t mode);
+uint32_t ol_get_sleep_power_mode(void);
+#else
+static inline void ol_set_sleep_power_mode(uint32_t mode)
+{
+}
+static inline uint32_t ol_get_sleep_power_mode(void)
+{
+	return 0;
 }
 #endif
 

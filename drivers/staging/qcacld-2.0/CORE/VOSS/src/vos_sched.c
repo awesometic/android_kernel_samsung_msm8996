@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -88,7 +88,7 @@ struct ssr_protect {
    uint32_t pid;
 };
 
-static spinlock_t ssr_protect_lock;
+static adf_os_spinlock_t ssr_protect_lock;
 static struct ssr_protect ssr_protect_log[MAX_SSR_PROTECT_LOG];
 
 /*---------------------------------------------------------------------------
@@ -348,6 +348,7 @@ int vos_sched_handle_throughput_req(bool high_tput_required)
 	return 0;
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
 /**
  * __vos_cpu_hotplug_notify - cpu core on-off notification handler
  * @block:	notifier block
@@ -463,7 +464,8 @@ static int vos_cpu_hotplug_notify(struct notifier_block *block,
 static struct notifier_block vos_cpu_hotplug_notifier = {
    .notifier_call = vos_cpu_hotplug_notify,
 };
-#endif
+#endif //LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0)
+#endif //#ifdef QCA_CONFIG_SMP
 
 /*---------------------------------------------------------------------------
  * External Function implementation
@@ -501,6 +503,9 @@ vos_sched_open
 )
 {
   VOS_STATUS  vStatus = VOS_STATUS_SUCCESS;
+#ifdef CONFIG_PERF_NON_QC_PLATFORM
+  struct sched_param param = {.sched_priority = 99};
+#endif
 /*-------------------------------------------------------------------------*/
   VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_INFO_HIGH,
              "%s: Opening the VOSS Scheduler",__func__);
@@ -530,9 +535,9 @@ vos_sched_open
   init_completion(&pSchedContext->McShutdown);
   init_completion(&pSchedContext->ResumeMcEvent);
 
-  spin_lock_init(&pSchedContext->McThreadLock);
+  adf_os_spinlock_init(&pSchedContext->McThreadLock);
 #ifdef QCA_CONFIG_SMP
-  spin_lock_init(&pSchedContext->TlshimRxThreadLock);
+  adf_os_spinlock_init(&pSchedContext->TlshimRxThreadLock);
 #endif
 
   init_waitqueue_head(&pSchedContext->mcWaitQueue);
@@ -545,19 +550,21 @@ vos_sched_open
   init_completion(&pSchedContext->ResumeTlshimRxEvent);
   init_completion(&pSchedContext->TlshimRxShutdown);
   pSchedContext->tlshimRxEvtFlg = 0;
-  spin_lock_init(&pSchedContext->TlshimRxQLock);
-  spin_lock_init(&pSchedContext->VosTlshimPktFreeQLock);
+  adf_os_spinlock_init(&pSchedContext->TlshimRxQLock);
+  adf_os_spinlock_init(&pSchedContext->VosTlshimPktFreeQLock);
   INIT_LIST_HEAD(&pSchedContext->tlshimRxQueue);
-  spin_lock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+  adf_os_spin_lock_bh(&pSchedContext->VosTlshimPktFreeQLock);
   INIT_LIST_HEAD(&pSchedContext->VosTlshimPktFreeQ);
   if (vos_alloc_tlshim_pkt_freeq(pSchedContext) !=  VOS_STATUS_SUCCESS)
   {
-       spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+       adf_os_spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
        return VOS_STATUS_E_FAILURE;
   }
-  spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+  adf_os_spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
   register_hotcpu_notifier(&vos_cpu_hotplug_notifier);
   pSchedContext->cpuHotPlugNotifier = &vos_cpu_hotplug_notifier;
+#endif
   vos_lock_init(&pSchedContext->affinity_lock);
   pSchedContext->high_throughput_required = false;
 #endif
@@ -589,6 +596,9 @@ vos_sched_open
   pSchedContext->TlshimRxThread = kthread_create(VosTlshimRxThread,
                                                  pSchedContext,
                                                  "VosTlshimRxThread");
+#ifdef CONFIG_PERF_NON_QC_PLATFORM
+  sched_setscheduler(pSchedContext->TlshimRxThread, SCHED_FIFO, &param);
+#endif
   if (IS_ERR(pSchedContext->TlshimRxThread))
   {
 
@@ -637,7 +647,9 @@ MC_THREAD_START_FAILURE:
 
 
 #ifdef QCA_CONFIG_SMP
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
   unregister_hotcpu_notifier(&vos_cpu_hotplug_notifier);
+#endif
   vos_free_tlshim_pkt_freeq(gpVosSchedContext);
 #endif
 
@@ -679,8 +691,8 @@ VOS_STATUS vos_watchdog_open
   pWdContext->wdEventFlag = 0;
 
   // Initialize the lock
-  spin_lock_init(&pWdContext->wdLock);
-  spin_lock_init(&pWdContext->thread_stuck_lock);
+  adf_os_spinlock_init(&pWdContext->wdLock);
+  adf_os_spinlock_init(&pWdContext->thread_stuck_lock);
 
   //Create the Watchdog thread
   pWdContext->WdThread = kthread_create(VosWDThread, pWdContext,"VosWDThread");
@@ -767,6 +779,19 @@ VosMCThread
     retWaitStatus = wait_event_interruptible(pSchedContext->mcWaitQueue,
        test_bit(MC_POST_EVENT, &pSchedContext->mcEventFlag) ||
        test_bit(MC_SUSPEND_EVENT, &pSchedContext->mcEventFlag));
+
+    if (vos_is_shutdown_in_progress(VOS_MODULE_ID_HDD, NULL))
+    {
+        if(test_bit(MC_POST_EVENT, &pSchedContext->mcEventFlag) &&
+           !test_bit(MC_SHUTDOWN_EVENT, &pSchedContext->mcEventFlag))
+        {
+            VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_INFO,
+                "%s: shutdown is in progress, so do not process other event!",
+                __func__);
+            clear_bit(MC_POST_EVENT, &pSchedContext->mcEventFlag);
+            continue;
+        }
+    }
 
     if(retWaitStatus == -ERESTARTSYS)
     {
@@ -943,13 +968,13 @@ VosMCThread
       if(test_bit(MC_SUSPEND_EVENT, &pSchedContext->mcEventFlag))
       {
         clear_bit(MC_SUSPEND_EVENT, &pSchedContext->mcEventFlag);
-        spin_lock(&pSchedContext->McThreadLock);
+        adf_os_spin_lock(&pSchedContext->McThreadLock);
 
         INIT_COMPLETION(pSchedContext->ResumeMcEvent);
         /* Mc Thread Suspended */
         complete(&pHddCtx->mc_sus_event_var);
 
-        spin_unlock(&pSchedContext->McThreadLock);
+        adf_os_spin_unlock(&pSchedContext->McThreadLock);
 
         /* Wait foe Resume Indication */
         wait_for_completion_interruptible(&pSchedContext->ResumeMcEvent);
@@ -986,14 +1011,11 @@ v_BOOL_t isWDresetInProgress(void)
  */
 static void vos_wd_detect_thread_stuck(void)
 {
-	unsigned long flags;
-
-	spin_lock_irqsave(&gpVosWatchdogContext->thread_stuck_lock, flags);
+	adf_os_spin_lock_irqsave(&gpVosWatchdogContext->thread_stuck_lock);
 
 	if (gpVosWatchdogContext->mc_thread_stuck_count ==
 				THREAD_STUCK_THRESHOLD) {
-		spin_unlock_irqrestore(&gpVosWatchdogContext->thread_stuck_lock,
-				flags);
+		adf_os_spin_unlock_irqrestore(&gpVosWatchdogContext->thread_stuck_lock);
 		hddLog(LOGE, FL("MC Thread Stuck!!!"));
 
 		vos_dump_stack(gpVosSchedContext->McThread);
@@ -1001,8 +1023,7 @@ static void vos_wd_detect_thread_stuck(void)
 			       WLAN_LOG_INDICATOR_HOST_ONLY,
 			       WLAN_LOG_REASON_THREAD_STUCK,
 			       DUMP_VOS_TRACE);
-		spin_lock_irqsave(&gpVosWatchdogContext->thread_stuck_lock,
-			flags);
+		adf_os_spin_lock_irqsave(&gpVosWatchdogContext->thread_stuck_lock);
 	}
 
 	/* Increment the thread stuck count for all threads */
@@ -1010,12 +1031,10 @@ static void vos_wd_detect_thread_stuck(void)
 
 	if (gpVosWatchdogContext->mc_thread_stuck_count <=
 				THREAD_STUCK_THRESHOLD) {
-		spin_unlock_irqrestore(&gpVosWatchdogContext->thread_stuck_lock,
-				flags);
+		adf_os_spin_unlock_irqrestore(&gpVosWatchdogContext->thread_stuck_lock);
 		vos_probe_threads();
 	} else
-		spin_unlock_irqrestore(&gpVosWatchdogContext->thread_stuck_lock,
-				flags);
+		adf_os_spin_unlock_irqrestore(&gpVosWatchdogContext->thread_stuck_lock);
 
 	/* Restart the timer */
 	if (VOS_STATUS_SUCCESS !=
@@ -1082,13 +1101,11 @@ void vos_thread_stuck_timer_init(pVosWatchdogContext wd_ctx)
  */
 void vos_wd_reset_thread_stuck_count(int thread_id)
 {
-	unsigned long flags;
-
-	spin_lock_irqsave(&gpVosWatchdogContext->thread_stuck_lock, flags);
+	adf_os_spin_lock_irqsave(&gpVosWatchdogContext->thread_stuck_lock);
 	if (vos_sched_is_mc_thread(thread_id))
 		gpVosWatchdogContext->mc_thread_stuck_count = 0;
 
-	spin_unlock_irqrestore(&gpVosWatchdogContext->thread_stuck_lock, flags);
+	adf_os_spin_unlock_irqrestore(&gpVosWatchdogContext->thread_stuck_lock);
 }
 
 /*---------------------------------------------------------------------------
@@ -1147,12 +1164,14 @@ VosWDThread
       if (test_and_clear_bit(WD_WLAN_DETECT_THREAD_STUCK,
                                    &pWdContext->wdEventFlag)) {
 
-       if (!test_bit(MC_SUSPEND_EVENT, &gpVosSchedContext->mcEventFlag))
+       if (gpVosSchedContext &&
+           !test_bit(MC_SUSPEND_EVENT, &gpVosSchedContext->mcEventFlag))
             vos_wd_detect_thread_stuck();
-       else
+       else {
             VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_INFO,
                "%s: controller thread %s id: %d is suspended do not attemp probing",
                __func__, current->comm, current->pid);
+       }
         /*
          * Process here and return without processing any SSR
          * related logic.
@@ -1283,16 +1302,16 @@ void vos_free_tlshim_pkt_freeq(pVosSchedContext pSchedContext)
 {
    struct VosTlshimPkt *pkt;
 
-   spin_lock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+   adf_os_spin_lock_bh(&pSchedContext->VosTlshimPktFreeQLock);
    while (!list_empty(&pSchedContext->VosTlshimPktFreeQ)) {
        pkt = list_entry((&pSchedContext->VosTlshimPktFreeQ)->next,
                      typeof(*pkt), list);
        list_del(&pkt->list);
-       spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+       adf_os_spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
        vos_mem_free(pkt);
-       spin_lock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+       adf_os_spin_lock_bh(&pSchedContext->VosTlshimPktFreeQLock);
    }
-   spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+   adf_os_spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
 
 }
 
@@ -1347,9 +1366,9 @@ void vos_free_tlshim_pkt(pVosSchedContext pSchedContext,
                          struct VosTlshimPkt *pkt)
 {
    memset(pkt, 0, sizeof(*pkt));
-   spin_lock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+   adf_os_spin_lock_bh(&pSchedContext->VosTlshimPktFreeQLock);
    list_add_tail(&pkt->list, &pSchedContext->VosTlshimPktFreeQ);
-   spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+   adf_os_spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
 }
 
 /*---------------------------------------------------------------------------
@@ -1365,15 +1384,15 @@ struct VosTlshimPkt *vos_alloc_tlshim_pkt(pVosSchedContext pSchedContext)
 {
    struct VosTlshimPkt *pkt;
 
-   spin_lock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+   adf_os_spin_lock_bh(&pSchedContext->VosTlshimPktFreeQLock);
    if (list_empty(&pSchedContext->VosTlshimPktFreeQ)) {
-       spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+       adf_os_spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
        return NULL;
    }
    pkt = list_first_entry(&pSchedContext->VosTlshimPktFreeQ,
                           struct VosTlshimPkt, list);
    list_del(&pkt->list);
-   spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
+   adf_os_spin_unlock_bh(&pSchedContext->VosTlshimPktFreeQLock);
    return pkt;
 }
 
@@ -1390,9 +1409,9 @@ struct VosTlshimPkt *vos_alloc_tlshim_pkt(pVosSchedContext pSchedContext)
 void vos_indicate_rxpkt(pVosSchedContext pSchedContext,
                         struct VosTlshimPkt *pkt)
 {
-   spin_lock_bh(&pSchedContext->TlshimRxQLock);
+   adf_os_spin_lock_bh(&pSchedContext->TlshimRxQLock);
    list_add_tail(&pkt->list, &pSchedContext->tlshimRxQueue);
-   spin_unlock_bh(&pSchedContext->TlshimRxQLock);
+   adf_os_spin_unlock_bh(&pSchedContext->TlshimRxQLock);
    set_bit(RX_POST_EVENT, &pSchedContext->tlshimRxEvtFlg);
    wake_up_interruptible(&pSchedContext->tlshimRxWaitQueue);
 }
@@ -1414,16 +1433,16 @@ void vos_drop_rxpkt_by_staid(pVosSchedContext pSchedContext, u_int16_t staId)
    adf_nbuf_t buf, next_buf;
 
    INIT_LIST_HEAD(&local_list);
-   spin_lock_bh(&pSchedContext->TlshimRxQLock);
+   adf_os_spin_lock_bh(&pSchedContext->TlshimRxQLock);
    if (list_empty(&pSchedContext->tlshimRxQueue)) {
-       spin_unlock_bh(&pSchedContext->TlshimRxQLock);
+       adf_os_spin_unlock_bh(&pSchedContext->TlshimRxQLock);
        return;
    }
    list_for_each_entry_safe(pkt, tmp, &pSchedContext->tlshimRxQueue, list) {
        if (pkt->staId == staId || staId == WLAN_MAX_STA_COUNT)
            list_move_tail(&pkt->list, &local_list);
    }
-   spin_unlock_bh(&pSchedContext->TlshimRxQLock);
+   adf_os_spin_unlock_bh(&pSchedContext->TlshimRxQLock);
 
    list_for_each_entry_safe(pkt, tmp, &local_list, list) {
        list_del(&pkt->list);
@@ -1451,18 +1470,18 @@ static void vos_rx_from_queue(pVosSchedContext pSchedContext)
    struct VosTlshimPkt *pkt;
    u_int16_t sta_id;
 
-   spin_lock_bh(&pSchedContext->TlshimRxQLock);
+   adf_os_spin_lock_bh(&pSchedContext->TlshimRxQLock);
    while (!list_empty(&pSchedContext->tlshimRxQueue)) {
            pkt = list_first_entry(&pSchedContext->tlshimRxQueue,
                                   struct VosTlshimPkt, list);
            list_del(&pkt->list);
-           spin_unlock_bh(&pSchedContext->TlshimRxQLock);
+           adf_os_spin_unlock_bh(&pSchedContext->TlshimRxQLock);
            sta_id = pkt->staId;
            pkt->callback(pkt->context, pkt->Rxpkt, sta_id);
            vos_free_tlshim_pkt(pSchedContext, pkt);
-           spin_lock_bh(&pSchedContext->TlshimRxQLock);
+           adf_os_spin_lock_bh(&pSchedContext->TlshimRxQLock);
    }
-   spin_unlock_bh(&pSchedContext->TlshimRxQLock);
+   adf_os_spin_unlock_bh(&pSchedContext->TlshimRxQLock);
 }
 
 /*---------------------------------------------------------------------------
@@ -1536,10 +1555,10 @@ static int VosTlshimRxThread(void *arg)
                         &pSchedContext->tlshimRxEvtFlg)) {
                clear_bit(RX_SUSPEND_EVENT,
                          &pSchedContext->tlshimRxEvtFlg);
-               spin_lock(&pSchedContext->TlshimRxThreadLock);
+               adf_os_spin_lock(&pSchedContext->TlshimRxThreadLock);
                INIT_COMPLETION(pSchedContext->ResumeTlshimRxEvent);
                complete(&pSchedContext->SuspndTlshimRxEvent);
-               spin_unlock(&pSchedContext->TlshimRxThreadLock);
+               adf_os_spin_unlock(&pSchedContext->TlshimRxThreadLock);
                wait_for_completion_interruptible(
                               &pSchedContext->ResumeTlshimRxEvent);
            }
@@ -1576,8 +1595,8 @@ VOS_STATUS vos_sched_close ( v_PVOID_t pVosContext )
     if (gpVosSchedContext == NULL)
     {
        VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
-           "%s: gpVosSchedContext == NULL",__func__);
-       return VOS_STATUS_E_FAILURE;
+           "%s: gpVosSchedContext == NULL, already closed", __func__);
+       return VOS_STATUS_SUCCESS;
     }
 
     // shut down MC Thread
@@ -1604,7 +1623,10 @@ VOS_STATUS vos_sched_close ( v_PVOID_t pVosContext )
     gpVosSchedContext->TlshimRxThread = NULL;
     vos_drop_rxpkt_by_staid(gpVosSchedContext, WLAN_MAX_STA_COUNT);
     vos_free_tlshim_pkt_freeq(gpVosSchedContext);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
     unregister_hotcpu_notifier(&vos_cpu_hotplug_notifier);
+#endif
+    gpVosSchedContext = NULL;
 #endif
     return VOS_STATUS_SUCCESS;
 } /* vox_sched_close() */
@@ -1914,7 +1936,7 @@ VOS_STATUS vos_watchdog_wlan_shutdown(void)
     }
 
     /* Take the lock here */
-    spin_lock(&gpVosWatchdogContext->wdLock);
+    adf_os_spin_lock(&gpVosWatchdogContext->wdLock);
 
     /* reuse the existing 'reset in progress' */
     if (gpVosWatchdogContext->resetInProgress)
@@ -1923,7 +1945,7 @@ VOS_STATUS vos_watchdog_wlan_shutdown(void)
             "%s: Shutdown already in Progress. Ignoring signaling Watchdog",
                                                            __func__);
         /* Release the lock here */
-        spin_unlock(&gpVosWatchdogContext->wdLock);
+        adf_os_spin_unlock(&gpVosWatchdogContext->wdLock);
         return VOS_STATUS_E_FAILURE;
     }
     /* reuse the existing 'logp in progress', eventhough it is not
@@ -1934,7 +1956,7 @@ VOS_STATUS vos_watchdog_wlan_shutdown(void)
             "%s: shutdown/re-init already in Progress. Ignoring signaling Watchdog",
                                                            __func__);
         /* Release the lock here */
-        spin_unlock(&gpVosWatchdogContext->wdLock);
+        adf_os_spin_unlock(&gpVosWatchdogContext->wdLock);
         return VOS_STATUS_E_FAILURE;
     }
 
@@ -1944,7 +1966,7 @@ VOS_STATUS vos_watchdog_wlan_shutdown(void)
     pHddCtx->isLogpInProgress = TRUE;
 
     /* Release the lock here */
-    spin_unlock(&gpVosWatchdogContext->wdLock);
+    adf_os_spin_unlock(&gpVosWatchdogContext->wdLock);
 
     if ((pHddCtx->isLoadInProgress) ||
         (pHddCtx->isUnloadInProgress))
@@ -2012,7 +2034,7 @@ void vos_ssr_protect_init(void)
 {
     int i = 0;
 
-    spin_lock_init(&ssr_protect_lock);
+    adf_os_spinlock_init(&ssr_protect_lock);
 
     while (i < MAX_SSR_PROTECT_LOG) {
        ssr_protect_log[i].func = NULL;
@@ -2032,9 +2054,8 @@ void vos_ssr_protect_init(void)
 static void vos_print_external_threads(void)
 {
     int i = 0;
-    unsigned long irq_flags;
 
-    spin_lock_irqsave(&ssr_protect_lock, irq_flags);
+    adf_os_spin_lock_irqsave(&ssr_protect_lock);
 
     while (i < MAX_SSR_PROTECT_LOG) {
         if (!ssr_protect_log[i].free) {
@@ -2045,7 +2066,7 @@ static void vos_print_external_threads(void)
         i++;
     }
 
-    spin_unlock_irqrestore(&ssr_protect_lock, irq_flags);
+    adf_os_spin_unlock_irqrestore(&ssr_protect_lock);
 }
 
 
@@ -2130,11 +2151,10 @@ void vos_ssr_protect(const char *caller_func)
      int count;
      int i = 0;
      bool status = false;
-     unsigned long irq_flags;
 
      count = atomic_inc_return(&ssr_protect_entry_count);
 
-     spin_lock_irqsave(&ssr_protect_lock, irq_flags);
+     adf_os_spin_lock_irqsave(&ssr_protect_lock);
 
      while (i < MAX_SSR_PROTECT_LOG) {
          if (ssr_protect_log[i].free) {
@@ -2147,7 +2167,7 @@ void vos_ssr_protect(const char *caller_func)
          i++;
      }
 
-     spin_unlock_irqrestore(&ssr_protect_lock, irq_flags);
+     adf_os_spin_unlock_irqrestore(&ssr_protect_lock);
 
      if (!status)
          VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
@@ -2169,11 +2189,10 @@ void vos_ssr_unprotect(const char *caller_func)
    int count;
    int i = 0;
    bool status = false;
-   unsigned long irq_flags;
 
    count = atomic_dec_return(&ssr_protect_entry_count);
 
-   spin_lock_irqsave(&ssr_protect_lock, irq_flags);
+   adf_os_spin_lock_irqsave(&ssr_protect_lock);
 
    while (i < MAX_SSR_PROTECT_LOG) {
       if (!ssr_protect_log[i].free) {
@@ -2189,7 +2208,7 @@ void vos_ssr_unprotect(const char *caller_func)
       i++;
    }
 
-   spin_unlock_irqrestore(&ssr_protect_lock, irq_flags);
+   adf_os_spin_unlock_irqrestore(&ssr_protect_lock);
 
    if (!status)
        VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,

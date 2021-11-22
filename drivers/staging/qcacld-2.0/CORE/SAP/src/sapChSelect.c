@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -429,6 +429,7 @@ sap_process_avoid_ie(tHalHandle hal,
 void sapUpdateUnsafeChannelList(ptSapContext pSapCtx)
 {
    v_U16_t   i, j;
+   uint16_t  unsafe_channel_count;
 
    v_PVOID_t pvosGCtx = vos_get_global_context(VOS_MODULE_ID_SAP, NULL);
    struct hdd_context_s *hdd_ctxt;
@@ -448,6 +449,9 @@ void sapUpdateUnsafeChannelList(ptSapContext pSapCtx)
                   "HDD Context is NULL");
        return ;
    }
+
+   unsafe_channel_count = VOS_MIN((uint16_t)hdd_ctxt->unsafe_channel_count,
+                              (uint16_t)NUM_20MHZ_RF_CHANNELS);
 
    /* Flush, default set all channel safe */
    for (i = 0; i < NUM_20MHZ_RF_CHANNELS; i++)
@@ -469,7 +473,7 @@ void sapUpdateUnsafeChannelList(ptSapContext pSapCtx)
     }
 #endif
 
-   for (i = 0; i < hdd_ctxt->unsafe_channel_count; i++)
+   for (i = 0; i < unsafe_channel_count; i++)
    {
       for (j = 0; j < NUM_20MHZ_RF_CHANNELS; j++)
       {
@@ -1988,6 +1992,7 @@ void sapComputeSpectWeight( tSapChSelSpectInfo* pSpectInfoParams,
     tSapSpectChInfo *pSpectChStartAddr = pSpectInfoParams->pSpectCh;
     tSapSpectChInfo *pSpectChEndAddr =
                     pSpectInfoParams->pSpectCh + pSpectInfoParams->numSpectChans;
+    tSapSpectChInfo *pExtSpectCh = NULL;
 
     pBeaconStruct = vos_mem_malloc(sizeof(tSirProbeRespBeacon));
     if ( NULL == pBeaconStruct )
@@ -2065,7 +2070,6 @@ void sapComputeSpectWeight( tSapChSelSpectInfo* pSpectInfoParams,
                         case eHT_CHANNEL_WIDTH_40MHZ: //HT40
                             switch( secondaryChannelOffset)
                             {
-                                tSapSpectChInfo *pExtSpectCh = NULL;
                                 case PHY_DOUBLE_CHANNEL_LOW_PRIMARY: // Above the Primary Channel
                                     pExtSpectCh = (pSpectCh + 1);
                                     if( pExtSpectCh != NULL &&

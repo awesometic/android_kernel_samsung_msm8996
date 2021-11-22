@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -286,6 +286,8 @@ enum eWniMsgTypes
 
     eWNI_SME_CHANGE_COUNTRY_CODE,
     eWNI_SME_GENERIC_CHANGE_COUNTRY_CODE,
+    eWNI_SME_CC_CHANGE_IND,
+    eWNI_SME_UPDATE_PWR_IND,
     eWNI_SME_PRE_SWITCH_CHL_IND,
     eWNI_SME_POST_SWITCH_CHL_IND,
 
@@ -385,7 +387,9 @@ enum eWniMsgTypes
 #endif
     eWNI_SME_FW_STATUS_IND,
     eWNI_SME_SET_THERMAL_LEVEL_IND,
-
+#ifdef FEATURE_WLAN_THERMAL_SHUTDOWN
+    eWNI_SME_THERMAL_TEMPERATURE_IND,
+#endif
     eWNI_SME_OCB_SET_CONFIG_RSP,
     eWNI_SME_OCB_GET_TSF_TIMER_RSP,
     eWNI_SME_DCC_GET_STATS_RSP,
@@ -407,6 +411,10 @@ enum eWniMsgTypes
     eWNI_SME_DEL_ALL_TDLS_PEERS,
     eWNI_SME_SEND_DISASSOC_FRAME,
 
+#ifdef WLAN_FEATURE_MOTION_DETECTION
+    eWNI_SME_MOTION_DET_HOST_EVENT,
+#endif
+
     eWNI_SME_NDP_INITIATOR_REQ,
     eWNI_SME_NDP_INITIATOR_RSP,
     eWNI_SME_NDP_NEW_PEER_IND,
@@ -424,6 +432,9 @@ enum eWniMsgTypes
 
     /* Link layer statistics */
     eWMI_SME_LL_STATS_IND,
+    eWNI_SME_TRIGGER_SAE,
+    eWNI_SME_SEND_MGMT_FRAME_TX,
+    eWNI_SME_SEND_SAE_MSG,
 
     eWNI_SME_MSG_TYPES_END
 };

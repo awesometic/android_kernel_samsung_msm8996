@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2015, 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -489,6 +489,12 @@ static void ol_rx_reorder_detect_hole(struct ol_txrx_peer_t *peer,
 {
 	uint32_t win_sz_mask, next_rel_idx, hole_size;
 
+	if (tid >= OL_TXRX_NUM_EXT_TIDS) {
+		TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
+			   "%s:  invalid tid, %u\n", __func__, tid);
+		return;
+	}
+
 	if (peer->tids_next_rel_idx[tid] == INVALID_REORDER_INDEX)
 		return;
 
@@ -556,7 +562,7 @@ ol_rx_addba_handler(
     struct ol_txrx_peer_t *peer;
     struct ol_rx_reorder_t *rx_reorder;
 
-	if (tid >= OL_TXRX_NUM_EXT_TIDS) {
+    if (tid >= OL_TXRX_NUM_EXT_TIDS) {
         TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
                 "%s:  invalid tid, %u\n", __func__, tid);
         WARN_ON(1);
@@ -603,7 +609,7 @@ ol_rx_delba_handler(
     struct ol_txrx_peer_t *peer;
     struct ol_rx_reorder_t *rx_reorder;
 
-	if (tid >= OL_TXRX_NUM_EXT_TIDS) {
+    if (tid >= OL_TXRX_NUM_EXT_TIDS) {
         TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
                 "%s:  invalid tid, %u\n", __func__, tid);
         WARN_ON(1);
@@ -719,7 +725,7 @@ ol_rx_pn_ind_handler(
     u_int16_t seq_num;
     int i=0;
 
-	if (tid >= OL_TXRX_NUM_EXT_TIDS) {
+    if (tid >= OL_TXRX_NUM_EXT_TIDS) {
         TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
                 "%s:  invalid tid, %u\n", __func__, tid);
         WARN_ON(1);

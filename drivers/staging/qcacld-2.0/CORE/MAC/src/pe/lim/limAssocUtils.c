@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -64,6 +64,7 @@
 #include "vos_types.h"
 #include "wlan_qct_wda.h"
 
+#include "if_smart_antenna.h"
 /*
  * fill up the rate info properly based on what is actually supported by the peer
  * TBD TBD TBD
@@ -407,8 +408,8 @@ limCheckMCSSet(tpAniSirGlobal pMac, tANI_U8* supportedMCSSet)
  *
  * @param  rxRSNIe - received RSN IE in (Re)Assco req
  *
- * @return status - true if ALL BSS basic rates are present in the
- *                  received rateset else false.
+ * @return status - true if ALL supported cipher suites are present in the
+ *                  received rsn IE else false.
  */
 
 tANI_U8
@@ -416,7 +417,7 @@ limCheckRxRSNIeMatch(tpAniSirGlobal pMac, tDot11fIERSN rxRSNIe,tpPESession pSess
                      tANI_U8 staIsHT, tANI_BOOLEAN *pmfConnection)
 {
     tDot11fIERSN    *pRSNIe;
-    tANI_U8         i, j, match, onlyNonHtCipher = 1;
+    tANI_U8         i, j, match = 0, onlyNonHtCipher = 1;
 #ifdef WLAN_FEATURE_11W
     tANI_BOOLEAN weArePMFCapable;
     tANI_BOOLEAN weRequirePMF;
@@ -428,6 +429,25 @@ limCheckRxRSNIeMatch(tpAniSirGlobal pMac, tDot11fIERSN rxRSNIe,tpPESession pSess
     //RSN IE should be received from PE
     pRSNIe = &pSessionEntry->gStartBssRSNIe;
 
+    /* We should have only one AKM in assoc/reassoc request */
+    if (rxRSNIe.akm_suite_cnt != 1) {
+        limLog(pMac, LOG3, FL("Invalid RX akm_suite_cnt %d"),
+               rxRSNIe.akm_suite_cnt);
+        return eSIR_MAC_INVALID_AKMP_STATUS;
+    }
+    /* Check if we support the received AKM */
+    for (i = 0; i < pRSNIe->akm_suite_cnt; i++) {
+        if (vos_mem_compare(&rxRSNIe.akm_suite[0],
+                            &pRSNIe->akm_suite[i],
+                            sizeof(pRSNIe->akm_suite[i]))) {
+            match = 1;
+            break;
+        }
+    }
+    if (!match) {
+        limLog(pMac, LOG3, FL("Invalid RX akm_suite"));
+        return eSIR_MAC_INVALID_AKMP_STATUS;
+    }
     // Check groupwise cipher suite
     for (i = 0; i < sizeof(rxRSNIe.gp_cipher_suite); i++)
     {
@@ -530,18 +550,38 @@ limCheckRxRSNIeMatch(tpAniSirGlobal pMac, tDot11fIERSN rxRSNIe,tpPESession pSess
  *
  * @param  rxWPAIe - Received WPA IE in (Re)Assco req
  *
- * @return status - true if ALL BSS basic rates are present in the
- *                  received rateset else false.
+ * @return status - true if ALL supported cipher suites are present in the
+ *                  received wpa IE else false.
  */
 
 tANI_U8
 limCheckRxWPAIeMatch(tpAniSirGlobal pMac, tDot11fIEWPA rxWPAIe,tpPESession pSessionEntry, tANI_U8 staIsHT)
 {
     tDot11fIEWPA    *pWPAIe;
-    tANI_U8         i, j, match, onlyNonHtCipher = 1;
+    tANI_U8         i, j, match = 0, onlyNonHtCipher = 1;
 
     // WPA IE should be received from PE
     pWPAIe = &pSessionEntry->gStartBssWPAIe;
+
+    /* We should have only one AKM in assoc/reassoc request */
+    if (rxWPAIe.auth_suite_count != 1) {
+        limLog(pMac, LOG1, FL("Invalid RX auth_suite_count %d"),
+               rxWPAIe.auth_suite_count);
+        return eSIR_MAC_INVALID_AKMP_STATUS;
+    }
+    /* Check if we support the received AKM */
+    for (i = 0; i < pWPAIe->auth_suite_count; i++) {
+        if (vos_mem_compare(&rxWPAIe.auth_suites[0],
+                            &pWPAIe->auth_suites[i],
+                            sizeof(pWPAIe->auth_suites[i]))) {
+            match = 1;
+            break;
+        }
+    }
+    if (!match) {
+        limLog(pMac, LOG1, FL("Invalid RX auth_suites"));
+        return eSIR_MAC_INVALID_AKMP_STATUS;
+    }
 
     // Check groupwise cipher suite
     for (i = 0; i < 4; i++)
@@ -2277,8 +2317,85 @@ limPopulateMatchingRateSet(tpAniSirGlobal pMac,
     return eSIR_FAILURE;
 } /*** limPopulateMatchingRateSet() ***/
 
+#ifdef WLAN_SMART_ANTENNA_FEATURE
+/**
+ * lim_sa_assoc_ind() - Indicate node connection to SA module
+ * @channel: current operation channel
+ * @stads: Node description
+ */
+void lim_sa_assoc_ind(uint8_t channel, tpDphHashNode stads)
+{
+	uint32_t i, rate_num;
+	tpSirSupportedRates rate_cap;
+	struct sa_node_info node_info;
 
+	node_info.channel_num = channel;
+	vos_mem_copy(node_info.mac_addr, stads->staAddr, sizeof(stads->staAddr));
+	rate_cap = &stads->supportedRates;
+	rate_num = 0;
+	for (i = 0; i < SIR_NUM_11B_RATES; i++) {
+		if (!rate_cap->llbRates[i])
+			continue;
+		node_info.rate_cap.ratecode_legacy[rate_num] =
+						rate_cap->llbRates[i];
+		rate_num++;
+	}
 
+	for (i = 0; i < SIR_NUM_11A_RATES; i++) {
+		if (!rate_cap->llaRates[i])
+			continue;
+		node_info.rate_cap.ratecode_legacy[rate_num] =
+						rate_cap->llaRates[i];
+		rate_num++;
+	}
+	node_info.rate_cap.ratecount[RATE_INDEX_CCK_OFDM] = rate_num;
+
+	rate_num = 0;
+	for (i = 0; i < SIR_MAC_MAX_SUPPORTED_MCS_SET; i++) {
+		if (rate_cap->supportedMCSSet[i / 8] & (1 << (i % 8))) {
+			node_info.rate_cap.mcs[rate_num++] = i;
+		}
+	}
+	node_info.rate_cap.ratecount[RATE_INDEX_MCS] = rate_num;
+
+	/* 20M bandwidth is the default mode */
+	node_info.node_caps = SMART_ANT_BW_20MHZ;
+
+	if (stads->htSupportedChannelWidthSet)
+		node_info.node_caps |= SMART_ANT_NODE_HT | SMART_ANT_BW_40MHZ;
+
+	if (stads->vhtSupportedChannelWidthSet ==
+			WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ)
+		node_info.node_caps |= SMART_ANT_NODE_VHT | SMART_ANT_BW_80MHZ;
+
+	if (stads->sub20_dynamic_channelwidth & SUB20_MODE_5MHZ)
+		node_info.node_caps |= SMART_ANT_BW_5MHZ;
+
+	if (stads->sub20_dynamic_channelwidth & SUB20_MODE_10MHZ)
+		node_info.node_caps |= SMART_ANT_BW_10MHZ;
+
+	node_info.nss = stads->nss;
+
+	smart_antenna_node_connected(&node_info);
+}
+
+/**
+ * lim_sa_disassoc_ind() - Indicate node disconnection to SA module
+ * @stads: Node description
+ */
+void lim_sa_disassoc_ind(tpDphHashNode stads)
+{
+	smart_antenna_node_disconnected(stads->staAddr);
+}
+#else
+static inline void lim_sa_assoc_ind(uint8_t channel, tpDphHashNode stads)
+{
+}
+
+static inline void lim_sa_disassoc_ind(tpDphHashNode stads)
+{
+}
+#endif
 /**
  * limAddSta()
  *
@@ -2358,6 +2475,9 @@ limAddSta(
     //Copy legacy rates
     vos_mem_copy ((tANI_U8*)&pAddStaParams->supportedRates,
                   (tANI_U8*)&pStaDs->supportedRates, sizeof(tSirSupportedRates));
+
+    if (pMac->mcs_tx_force2chain == true)
+        pAddStaParams->supportedRates.mcs_txforce2chain = true;
 
     pAddStaParams->assocId = pStaDs->assocId;
 
@@ -2733,6 +2853,7 @@ limAddSta(
         vos_mem_free(pAddStaParams);
     }
 
+    lim_sa_assoc_ind(psessionEntry->currentOperChannel, pStaDs);
   return retCode;
 }
 
@@ -2858,6 +2979,7 @@ limDelSta(
         vos_mem_free(pDelStaParams);
     }
 
+    lim_sa_disassoc_ind(pStaDs);
     return retCode;
 }
 
@@ -4204,6 +4326,9 @@ tSirRetStatus limStaSendAddBss( tpAniSirGlobal pMac, tpSirAssocRsp pAssocRsp,
             vos_mem_copy((tANI_U8*)&pAddBssParams->staContext.supportedRates,
                                                 (tANI_U8*)&pStaDs->supportedRates,
                                                 sizeof(tSirSupportedRates));
+            if (pMac->mcs_tx_force2chain == true)
+                pAddBssParams->staContext.supportedRates.mcs_txforce2chain
+                 = true;
         }
         else
             PELOGE(limLog(pMac, LOGE, FL("could not Update the supported rates."));)

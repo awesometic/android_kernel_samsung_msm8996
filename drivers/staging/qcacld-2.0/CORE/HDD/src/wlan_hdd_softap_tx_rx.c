@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -82,7 +82,7 @@ static VOS_STATUS hdd_softap_flush_tx_queues( hdd_adapter_t *pAdapter )
    skb_list_node_t *pktNode = NULL;
    struct sk_buff *skb = NULL;
 
-   spin_lock_bh( &pAdapter->staInfo_lock );
+   adf_os_spin_lock_bh( &pAdapter->staInfo_lock );
    for (STAId = 0; STAId < WLAN_MAX_STA_COUNT; STAId++)
    {
       if (FALSE == pAdapter->aStaInfo[STAId].isUsed)
@@ -92,7 +92,7 @@ static VOS_STATUS hdd_softap_flush_tx_queues( hdd_adapter_t *pAdapter )
 
       for (i = 0; i < NUM_TX_QUEUES; i ++)
       {
-         spin_lock_bh(&pAdapter->aStaInfo[STAId].wmm_tx_queue[i].lock);
+         adf_os_spin_lock_bh(&pAdapter->aStaInfo[STAId].wmm_tx_queue[i].lock);
          while (true)
          {
             status = hdd_list_remove_front ( &pAdapter->aStaInfo[STAId].wmm_tx_queue[i], &anchor);
@@ -111,12 +111,12 @@ static VOS_STATUS hdd_softap_flush_tx_queues( hdd_adapter_t *pAdapter )
             break;
          }
          pAdapter->aStaInfo[STAId].txSuspended[i] = VOS_FALSE;
-         spin_unlock_bh(&pAdapter->aStaInfo[STAId].wmm_tx_queue[i].lock);
+         adf_os_spin_unlock_bh(&pAdapter->aStaInfo[STAId].wmm_tx_queue[i].lock);
       }
       pAdapter->aStaInfo[STAId].vosLowResource = VOS_FALSE;
    }
 
-   spin_unlock_bh( &pAdapter->staInfo_lock );
+   adf_os_spin_unlock_bh( &pAdapter->staInfo_lock );
 
    return status;
 }
@@ -289,20 +289,20 @@ int __hdd_softap_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 * The TX packets might be dropped for UDP case in the iperf testing.
 * So need to be protected by follow control.
 */
-#ifdef QCA_LL_TX_FLOW_CT
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(3,19,0))
         //remove if condition for improving SCC TCP TX KPI
        //if (pAdapter->tx_flow_low_watermark > 0) {
            skb_orphan(skb);
        //}
-#endif
 #else
+#ifdef WLAN_FEATURE_TSF_PLUS
       /*
        * For PTP feature enabled system, need to orphan the socket buffer asap
        * otherwise the latency will become unacceptable
        */
       if (hdd_cfg_is_ptp_opt_enable(hddCtxt))
           skb_orphan(skb);
+#endif
 #endif
 
        if (vos_is_macaddr_broadcast( pDestMacAddress ) ||
@@ -628,7 +628,7 @@ VOS_STATUS hdd_softap_init_tx_rx( hdd_adapter_t *pAdapter )
    pAdapter->aTxQueueLimit[WLANTL_AC_VI] = HDD_SOFTAP_TX_VI_QUEUE_MAX_LEN;
    pAdapter->aTxQueueLimit[WLANTL_AC_VO] = HDD_SOFTAP_TX_VO_QUEUE_MAX_LEN;
 
-   spin_lock_init( &pAdapter->staInfo_lock );
+   adf_os_spinlock_init( &pAdapter->staInfo_lock );
 
    for (STAId = 0; STAId < WLAN_MAX_STA_COUNT; STAId++)
    {
@@ -680,7 +680,7 @@ static void hdd_softap_flush_tx_queues_sta( hdd_adapter_t *pAdapter, v_U8_t STAI
 
    for (i = 0; i < NUM_TX_QUEUES; i ++)
    {
-      spin_lock_bh(&pAdapter->aStaInfo[STAId].wmm_tx_queue[i].lock);
+      adf_os_spin_lock_bh(&pAdapter->aStaInfo[STAId].wmm_tx_queue[i].lock);
       while (true)
       {
          if (VOS_STATUS_E_EMPTY !=
@@ -698,7 +698,7 @@ static void hdd_softap_flush_tx_queues_sta( hdd_adapter_t *pAdapter, v_U8_t STAI
          //current list is empty
          break;
       }
-      spin_unlock_bh(&pAdapter->aStaInfo[STAId].wmm_tx_queue[i].lock);
+      adf_os_spin_unlock_bh(&pAdapter->aStaInfo[STAId].wmm_tx_queue[i].lock);
    }
 
    return;
@@ -717,12 +717,12 @@ static void hdd_softap_flush_tx_queues_sta( hdd_adapter_t *pAdapter, v_U8_t STAI
 VOS_STATUS hdd_softap_init_tx_rx_sta( hdd_adapter_t *pAdapter, v_U8_t STAId, v_MACADDR_t *pmacAddrSTA)
 {
    v_U8_t i = 0;
-   spin_lock_bh( &pAdapter->staInfo_lock );
+   adf_os_spin_lock_bh( &pAdapter->staInfo_lock );
    if (pAdapter->aStaInfo[STAId].isUsed)
    {
       VOS_TRACE( VOS_MODULE_ID_HDD_SAP_DATA, VOS_TRACE_LEVEL_ERROR,
                  "%s: Reinit station %d", __func__, STAId );
-      spin_unlock_bh( &pAdapter->staInfo_lock );
+      adf_os_spin_unlock_bh( &pAdapter->staInfo_lock );
       return VOS_STATUS_E_FAILURE;
    }
 
@@ -736,7 +736,7 @@ VOS_STATUS hdd_softap_init_tx_rx_sta( hdd_adapter_t *pAdapter, v_U8_t STAId, v_M
    pAdapter->aStaInfo[STAId].isDeauthInProgress = FALSE;
    vos_copy_macaddr( &pAdapter->aStaInfo[STAId].macAddrSTA, pmacAddrSTA);
 
-   spin_unlock_bh( &pAdapter->staInfo_lock );
+   adf_os_spin_unlock_bh( &pAdapter->staInfo_lock );
    return VOS_STATUS_SUCCESS;
 }
 
@@ -761,12 +761,12 @@ VOS_STATUS hdd_softap_deinit_tx_rx_sta ( hdd_adapter_t *pAdapter, v_U8_t STAId )
 
    pHostapdState = WLAN_HDD_GET_HOSTAP_STATE_PTR(pAdapter);
 
-   spin_lock_bh( &pAdapter->staInfo_lock );
+   adf_os_spin_lock_bh( &pAdapter->staInfo_lock );
    if (FALSE == pAdapter->aStaInfo[STAId].isUsed)
    {
       VOS_TRACE( VOS_MODULE_ID_HDD_SAP_DATA, VOS_TRACE_LEVEL_ERROR,
                  "%s: Deinit station not inited %d", __func__, STAId );
-      spin_unlock_bh( &pAdapter->staInfo_lock );
+      adf_os_spin_unlock_bh( &pAdapter->staInfo_lock );
       return VOS_STATUS_E_FAILURE;
    }
 
@@ -814,7 +814,7 @@ VOS_STATUS hdd_softap_deinit_tx_rx_sta ( hdd_adapter_t *pAdapter, v_U8_t STAId )
       }
    }
 
-   spin_unlock_bh( &pAdapter->staInfo_lock );
+   adf_os_spin_unlock_bh( &pAdapter->staInfo_lock );
    return status;
 }
 
@@ -948,7 +948,13 @@ VOS_STATUS hdd_softap_rx_packet_cbk(v_VOID_t *vosContext,
        * Just put packet into backlog queue, not scheduling RX sirq
        */
       if (skb->next) {
+#ifdef RX_LATENCY_OPTIMIZE
+	local_bh_disable();
+	rxstat = netif_receive_skb(skb);
+	local_bh_enable();
+#else
          rxstat = netif_rx(skb);
+#endif
       } else {
          if ((pHddCtx->cfg_ini->rx_wakelock_timeout) &&
              (PACKET_BROADCAST != skb->pkt_type) &&
@@ -960,7 +966,13 @@ VOS_STATUS hdd_softap_rx_packet_cbk(v_VOID_t *vosContext,
           * This is the last packet on the chain
           * Scheduling rx sirq
           */
+#ifdef RX_LATENCY_OPTIMIZE
+	local_bh_disable();
+	rxstat = netif_receive_skb(skb);
+	local_bh_enable();
+#else
          rxstat = netif_rx_ni(skb);
+#endif
       }
 
       if (NET_RX_SUCCESS == rxstat)
@@ -970,8 +982,9 @@ VOS_STATUS hdd_softap_rx_packet_cbk(v_VOID_t *vosContext,
 
       skb = skb_next;
    }
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0))
    pAdapter->dev->last_rx = jiffies;
-
+#endif
    return VOS_STATUS_SUCCESS;
 }
 
@@ -1008,7 +1021,7 @@ VOS_STATUS hdd_softap_DeregisterSTA( hdd_adapter_t *pAdapter, tANI_U8 staId )
     }
 
     if (pAdapter->aStaInfo[staId].isUsed) {
-        spin_lock_bh( &pAdapter->staInfo_lock );
+        adf_os_spin_lock_bh( &pAdapter->staInfo_lock );
         vos_mem_zero(&pAdapter->aStaInfo[staId], sizeof(hdd_station_info_t));
 
         /* re-init spin lock, since netdev can still open adapter until
@@ -1019,7 +1032,7 @@ VOS_STATUS hdd_softap_DeregisterSTA( hdd_adapter_t *pAdapter, tANI_U8 staId )
             hdd_list_init(&pAdapter->aStaInfo[staId].wmm_tx_queue[i],
                           HDD_TX_QUEUE_MAX_LEN);
         }
-        spin_unlock_bh( &pAdapter->staInfo_lock );
+        adf_os_spin_unlock_bh( &pAdapter->staInfo_lock );
    }
     pHddCtx->sta_to_adapter[staId] = NULL;
 

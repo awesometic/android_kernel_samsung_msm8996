@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -63,6 +63,10 @@
 static struct hash_fw fw_hash;
 #endif
 
+#ifdef FEATURE_DYNAMIC_POWER_CONTROL
+static uint32_t g_sleep_power_mode = 0;
+#endif
+
 #if defined(HIF_PCI) || defined(HIF_SDIO)
 static u_int32_t refclk_speed_to_hz[] = {
 	48000000, /* SOC_REFCLK_48_MHZ */
@@ -74,6 +78,12 @@ static u_int32_t refclk_speed_to_hz[] = {
 	40000000, /* SOC_REFCLK_40_MHZ */
 	52000000, /* SOC_REFCLK_52_MHZ */
 };
+#endif
+
+#ifdef HIF_PCI
+#define MAX_SECTION_COUNT 5
+#else
+#define MAX_SECTION_COUNT 4
 #endif
 
 #ifdef HIF_SDIO
@@ -191,6 +201,7 @@ int get_fw_files_for_non_qc_pci_target(struct non_qc_platform_pci_fw_files *pfw_
 			break;
 		case AR6320_REV3_VERSION:
 		case AR6320_REV3_2_VERSION:
+		case QCA9377_REV1_1_VERSION:
 		case QCA9379_REV1_VERSION:
 			memcpy(pfw_files, &FW_FILES_QCA6174_FW_3_0,
 						sizeof(*pfw_files));
@@ -250,7 +261,7 @@ static int ol_transfer_single_bin_file(struct ol_softc *scn,
 				__func__));
 	}
 
-	if (request_firmware(&fw_entry, filename, scn->sc_osdev->device) != 0)
+	if (qca_request_firmware(&fw_entry, filename, scn->sc_osdev->device) != 0)
 	{
 		AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
 				("%s: Failed to get %s\n",
@@ -739,9 +750,12 @@ defined(CONFIG_NON_QC_PLATFORM_PCI)
 			return -1;
 		}
 		break;
+	case ATH_USB_WARM_RESET_FILE:
+		filename = QCA_USB_WARM_RESET_FILE;
+		break;
 	}
 
-       status = request_firmware(&fw_entry, filename, scn->sc_osdev->device);
+       status = qca_request_firmware(&fw_entry, filename, scn->sc_osdev->device);
 	if (status)
 	{
 		pr_err("%s: Failed to get %s:%d\n", __func__, filename, status);
@@ -762,7 +776,7 @@ defined(CONFIG_NON_QC_PLATFORM_PCI)
 			pr_info("%s: Trying to load default %s\n",
 							__func__, filename);
 
-			status = request_firmware(&fw_entry, filename,
+			status = qca_request_firmware(&fw_entry, filename,
 					scn->sc_osdev->device);
 			if (status) {
 				pr_err("%s: Failed to get %s:%d\n",
@@ -986,15 +1000,36 @@ release_fw:
 	return status;
 }
 
+#ifdef FEATURE_DYNAMIC_POWER_CONTROL
+void ol_set_sleep_power_mode(uint32_t mode)
+{
+	g_sleep_power_mode = mode;
+}
+
+uint32_t ol_get_sleep_power_mode(void)
+{
+	return g_sleep_power_mode;
+}
+#endif
+
 static int ol_transfer_bin_file(struct ol_softc *scn, ATH_BIN_FILE file,
 				u_int32_t address, bool compressed)
 {
 	int ret;
+	bool default_sleep_power_mode_changed = false;
 
-	/* Wait until suspend and resume are completed before loading FW */
-	vos_lock_pm_sem();
+	if (0 != ol_get_sleep_power_mode()) {
+		default_sleep_power_mode_changed = true;
+	}
+
+	if (!default_sleep_power_mode_changed) {
+		/* Wait until suspend and resume are completed before loading FW */
+		vos_lock_pm_sem();
+	}
 	ret = __ol_transfer_bin_file(scn, file, address, compressed);
-	vos_release_pm_sem();
+	if (!default_sleep_power_mode_changed) {
+		vos_release_pm_sem();
+	}
 
 	return ret;
 }
@@ -1159,6 +1194,11 @@ static void ramdump_work_handler(struct work_struct *ramdump)
 #if !defined(HIF_SDIO)
 		ol_copy_ramdump(ramdump_scn);
 		vos_device_crashed(dev);
+#ifdef TARGET_DUMP_FOR_NON_QC_PLATFORM
+		vos_svc_fw_crashed_ind(dev);
+#endif
+		vos_set_logp_in_progress(VOS_MODULE_ID_VOSS, FALSE);
+
 		return;
 #endif
 		goto out_fail;
@@ -1179,7 +1219,8 @@ static void ramdump_work_handler(struct work_struct *ramdump)
 	if (ramdump_scn->enableFwSelfRecovery) {
 		vos_set_logp_in_progress(VOS_MODULE_ID_VOSS, FALSE);
 #if defined(HIF_SDIO) && defined(WLAN_OPEN_SOURCE)
-		kobject_uevent(&ramdump_scn->adf_dev->dev->kobj, KOBJ_OFFLINE);
+		if (dev)
+			kobject_uevent(&dev->kobj, KOBJ_OFFLINE);
 #endif
 		goto out_fail;
 	}
@@ -1214,7 +1255,7 @@ static void ramdump_work_handler(struct work_struct *ramdump)
 
 	printk("%s: RAM dump collecting completed!\n", __func__);
 
-#if defined(HIF_SDIO) && !defined(CONFIG_CNSS)
+#if (defined(HIF_SDIO) || defined(CONFIG_NON_QC_PLATFORM_PCI)) && !defined(CONFIG_CNSS)
 	panic("CNSS Ram dump collected\n");
 #else
 	/* Notify SSR framework the target has crashed. */
@@ -1237,6 +1278,9 @@ out_fail:
 #endif
 #endif
 
+#ifdef TARGET_DUMP_FOR_NON_QC_PLATFORM
+	vos_svc_fw_crashed_ind(dev);
+#endif
 	vos_set_logp_in_progress(VOS_MODULE_ID_VOSS, FALSE);
 	return;
 }
@@ -1263,6 +1307,11 @@ static void fw_indication_work_handler(struct work_struct *fw_indication)
 	}
 
 	vos_device_self_recovery(dev);
+
+#ifdef CONFIG_NON_QC_PLATFORM
+	vos_svc_fw_crashed_ind(dev);
+#endif
+	vos_set_logp_in_progress(VOS_MODULE_ID_VOSS, FALSE);
 }
 
 static DECLARE_WORK(fw_indication_work, fw_indication_work_handler);
@@ -1332,14 +1381,15 @@ void ol_ramdump_handler(struct ol_softc *scn)
 			return;
 		}
 
+		if (scn->enableFwSelfRecovery || scn->enableRamdumpCollection)
+			vos_set_logp_in_progress(VOS_MODULE_ID_VOSS, TRUE);
+
 		reg = (A_UINT32 *) (data + 4);
 		print_hex_dump(KERN_DEBUG, " ", DUMP_PREFIX_OFFSET, 16, 4, reg,
 				min_t(A_UINT32, len - 4, FW_REG_DUMP_CNT * 4),
 				false);
 		scn->fw_ram_dumping = 0;
 
-		if (scn->enableFwSelfRecovery || scn->enableRamdumpCollection)
-			vos_set_logp_in_progress(VOS_MODULE_ID_VOSS, TRUE);
 	}
 	else if (pattern == FW_REG_PATTERN) {
 		reg = (A_UINT32 *) (data + 4);
@@ -1602,8 +1652,10 @@ void ol_target_failure(void *instance, A_STATUS status)
 
 	printk("XXX TARGET ASSERTED XXX\n");
 
-	if (__ol_target_failure(scn, wma))
-		return;
+	if ((!scn->fastfwdump_host) || (!scn->fastfwdump_fw)) {
+		if (__ol_target_failure(scn, wma))
+			return;
+	}
 
 #if  defined(CONFIG_CNSS) || defined(HIF_SDIO) || \
 defined(CONFIG_NON_QC_PLATFORM_PCI)
@@ -1774,6 +1826,27 @@ ol_configure_target(struct ol_softc *scn)
 			return A_ERROR;
 		}
 	}
+
+#ifdef HIF_SDIO
+	if(scn->fastfwdump_host) {
+		if (BMIReadMemory(scn->hif_hdl,
+			  host_interest_item_address(scn->target_type,
+			     offsetof(struct host_interest_s, hi_option_flag2)),
+				  (A_UCHAR *)&param, 4, scn)!= A_OK) {
+			printk("BMIReadMemory for setting LPASS Support failed\n");
+			return A_ERROR;
+		}
+
+		param |= HI_OPTION_SDIO_CRASH_DUMP_ENHANCEMENT_HOST;
+		if (BMIWriteMemory(scn->hif_hdl,
+			   host_interest_item_address(scn->target_type,
+			      offsetof(struct host_interest_s, hi_option_flag2)),
+				   (A_UCHAR *)&param, 4, scn) != A_OK) {
+			printk("BMIWriteMemory for setting LPASS Support failed\n");
+			return A_ERROR;
+		}
+	}
+#endif
 
 	return A_OK;
 }
@@ -2181,6 +2254,41 @@ void ol_transfer_codeswap_struct(struct ol_softc *scn) {
 #endif
 #endif
 
+#ifdef FEATURE_USB_WARM_RESET
+static inline int ol_download_usb_warm_reset_firmeware(struct ol_softc *scn)
+{
+	uint32_t warm_reset_load_status = 0;
+	uint32_t address = BMI_SEGMENTED_WRITE_ADDR;
+
+	if (scn->enable_usb_warm_reset) {
+		BMIReadMemory(scn->hif_hdl,
+			      host_interest_item_address(scn->target_type,
+				offsetof(struct host_interest_s, hi_minidump)),
+			      (uint8_t *)&warm_reset_load_status,
+			      sizeof(warm_reset_load_status), scn);
+
+		if (!warm_reset_load_status) {
+			/* first load, download warm_reset.bin */
+			if (ol_transfer_bin_file(scn, ATH_USB_WARM_RESET_FILE,
+						 address, TRUE) != EOK)
+				return -1;
+			/*
+			 * FW will update the hi_minidump
+			 * after recv HIFDiagWriteWARMRESET
+			 */
+			/* fall-thru */
+		}
+	}
+
+	return EOK;
+}
+#else
+static inline int ol_download_usb_warm_reset_firmeware(struct ol_softc *scn)
+{
+	return EOK;
+}
+#endif
+
 int ol_download_firmware(struct ol_softc *scn)
 {
 	uint32_t param, address = 0;
@@ -2327,6 +2435,9 @@ int ol_download_firmware(struct ol_softc *scn)
 			BMIExecute(scn->hif_hdl, address, &param, scn);
 		}
 	}
+
+	if (ol_download_usb_warm_reset_firmeware(scn) != EOK)
+		return -1;
 
 	/* Download Target firmware - TODO point to target specific files in runtime */
 	if (ol_transfer_bin_file(scn, ATH_FIRMWARE_FILE, address, TRUE) != EOK) {
@@ -2639,11 +2750,6 @@ static void ol_dump_target_memory(HIF_DEVICE *hif_device, void *memoryBlock)
 	}
 }
 
-static uint32_t ol_get_max_section_count(struct ol_softc *scn)
-{
-	return 5;
-}
-
 static int ol_get_iram1_len_and_pos(struct ol_softc *scn, uint32_t *pos,
 				     uint32_t *len)
 {
@@ -2696,11 +2802,6 @@ static int ol_get_iram_len_and_pos(struct ol_softc *scn, uint32_t *pos, uint32_t
 	return 0;
 }
 #else /* HIF_PCI */
-static uint32_t ol_get_max_section_count(struct ol_softc *scn)
-{
-	return 4;
-}
-
 static int ol_get_iram_len_and_pos(struct ol_softc *scn, uint32_t *pos, uint32_t
 				   *len, uint32_t section)
 {
@@ -2711,6 +2812,57 @@ static int ol_get_iram_len_and_pos(struct ol_softc *scn, uint32_t *pos, uint32_t
 	return 0;
 }
 #endif
+
+/**
+ * ol_get_reg_len() - Get dump length of FW register
+ * @scn: Pointer of struct ol_softc
+ * @buffer_len: buffer length limitation of register
+ *
+ * Return: dump length of FW register.
+ */
+static int ol_get_reg_len(struct ol_softc *scn, u_int32_t buffer_len)
+{
+	int i, section_len, fill_len;
+	int dump_len, result = 0;
+	tgt_reg_table reg_table;
+	tgt_reg_section *curr_sec, *next_sec;
+
+	section_len = ol_ath_get_reg_table(scn->target_version, &reg_table);
+
+	if (!reg_table.section || !reg_table.section_size || !section_len) {
+		printk(KERN_ERR "%s: failed to get reg table\n", __func__);
+		result = -EIO;
+		goto out;
+	}
+
+	curr_sec = reg_table.section;
+	for (i = 0; i < reg_table.section_size; i++) {
+
+		dump_len = curr_sec->end_addr - curr_sec->start_addr;
+
+		result += dump_len;
+
+		if (result < section_len) {
+			next_sec = (tgt_reg_section *)((u_int8_t *)curr_sec
+							+ sizeof(*curr_sec));
+			fill_len = next_sec->start_addr - curr_sec->end_addr;
+			if ((buffer_len - result) < fill_len) {
+				printk("Not enough memory to fill registers:"
+						" %d: 0x%08x-0x%08x\n", i,
+						curr_sec->end_addr,
+						next_sec->start_addr);
+				goto out;
+			}
+
+			if (fill_len)
+				result += fill_len;
+		}
+		curr_sec++;
+	}
+
+out:
+	return result;
+}
 
 static int ol_read_reg_section(struct ol_softc *scn, char *ptr, uint32_t len)
 {
@@ -2747,16 +2899,42 @@ static int ol_dump_fail_debug_info(struct ol_softc *scn, void *ptr)
 int ol_target_coredump(void *inst, void *memoryBlock, u_int32_t blockLength)
 {
 	struct ol_softc *scn = (struct ol_softc *)inst;
-	char *bufferLoc = memoryBlock;
-	int result = 0;
+	uint8_t *bufferLoc = memoryBlock;
+	int result[MAX_SECTION_COUNT];
 	int ret = 0;
 	uint32_t amountRead = 0;
 	uint32_t sectionCount = 0;
 	uint32_t pos = 0;
 	uint32_t readLen = 0;
-	uint32_t max_count = ol_get_max_section_count(scn);
 
-	while ((sectionCount < max_count) && (amountRead < blockLength)) {
+#ifdef CONFIG_NON_QC_PLATFORM_PCI
+
+	char *fw_ram_seg_name[] = {"DRAM ", "AXI ", "REG ", "IRAM1 ", "IRAM2 "};
+#endif
+
+	vos_mem_set(result, 0, sizeof(result));
+
+	if (scn->fastfwdump_host && scn->fastfwdump_fw) {
+		if(scn->pdev_txrx_handle) {
+			ol_tx_queue_flush(scn->pdev_txrx_handle);
+			ol_txrx_pdev_pause(scn->pdev_txrx_handle,
+					   OL_TXQ_PAUSE_REASON_FW);
+			/*
+			 * For BMI ram dump, need to pause VDEV's MCAST_BCAST
+			 * and Default mgmt txq in case any tx will cause FW
+			 * abnormal except our BMI cmd
+			 */
+			ol_txrx_pdev_pause_vdev_txq(scn->pdev_txrx_handle,
+						OL_TXQ_PAUSE_REASON_CRASH_DUMP);
+		}
+#ifdef HIF_SDIO
+		HIFMaskInterrupt(scn->hif_hdl);
+#endif
+		BMIInit(scn);
+	}
+
+	while ((sectionCount < MAX_SECTION_COUNT) &&
+	       (amountRead < blockLength)) {
 		switch (sectionCount) {
 		case 0:
 			pos = DRAM_LOCATION;
@@ -2770,7 +2948,7 @@ int ol_target_coredump(void *inst, void *memoryBlock, u_int32_t blockLength)
 			break;
 		case 2:
 			pos = REGISTER_LOCATION;
-			readLen = 0;
+			readLen = ol_get_reg_len(scn, blockLength-amountRead);
 			pr_err("%s: Dumping Register section...\n", __func__);
 			break;
 		case 3:
@@ -2780,35 +2958,86 @@ int ol_target_coredump(void *inst, void *memoryBlock, u_int32_t blockLength)
 			if (ret) {
 				pr_err("%s: Fail to Dump IRAM Section ret:%d\n",
 				       __func__, ret);
-				return ret;
+				goto end;
 			}
 			break;
 		default:
 			pr_err("%s: INVALID SECTION_:%d\n", __func__,
 			       sectionCount);
-			return 0;
+			ret = 0;
+			goto end;
 		}
 
 		if (blockLength - amountRead < readLen) {
 			pr_err("%s: No memory to dump section:%d buffer!\n",
 			       __func__, sectionCount);
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto end;
 		}
 
-		if (pos == REGISTER_LOCATION)
-			result = ol_read_reg_section(scn, bufferLoc,
-						     blockLength-amountRead);
-		else
-			result = ol_diag_read(scn, bufferLoc, pos, readLen);
+		if (pos == REGISTER_LOCATION) {
+			/*
+			 * Reg dump can't use BMI related API, and it also
+			 * destroyed BMI context. Reg dump should be dumped at
+			 * last, otherwise BMIInit should be called again
+			 * before IRAM dump.
+			 */
+			if (scn->fastfwdump_host && scn->fastfwdump_fw)
+				result[sectionCount] = readLen;
+			else
+				result[sectionCount] = ol_read_reg_section(scn,
+								bufferLoc,
+								blockLength -
+								amountRead);
+		} else {
+			if (scn->fastfwdump_host && scn->fastfwdump_fw) {
+				ret = BMIReadMemory(scn->hif_hdl, pos,
+						    bufferLoc, readLen, scn);
+				if(ret) {
+					pr_err("%s:%d BMI CRASH READ FAILURE ! \n", __func__, __LINE__);
+					goto end;
+				}
+				result[sectionCount] = readLen;
+			} else {
+				result[sectionCount] = ol_diag_read(scn,
+								bufferLoc,
+								pos, readLen);
+			}
+		}
 
-		if (result == -EIO)
-			return ol_dump_fail_debug_info(scn, memoryBlock);
+		if (result[sectionCount] == -EIO) {
+			ret = ol_dump_fail_debug_info(scn, memoryBlock);
+			goto end;
+		}
 
 		pr_info("%s: Section:%d Bytes Read:%0x\n", __func__,
-			sectionCount, result);
-		amountRead += result;
-		bufferLoc += result;
+			sectionCount, result[sectionCount]);
+#ifdef CONFIG_NON_QC_PLATFORM_PCI
+		printk("\nMemory addr for %s = 0x%p (size: %x)\n",fw_ram_seg_name[sectionCount], bufferLoc, result[sectionCount]);
+#endif
+		amountRead += result[sectionCount];
+		bufferLoc += result[sectionCount];
 		sectionCount++;
+	}
+end:
+	if (scn->fastfwdump_host && scn->fastfwdump_fw) {
+		BMICleanup(scn);
+#ifdef HIF_SDIO
+		HIFUnMaskInterrupt(scn->hif_hdl);
+#endif
+		if (scn->pdev_txrx_handle) {
+			ol_txrx_pdev_unpause(scn->pdev_txrx_handle,
+				     OL_TXQ_PAUSE_REASON_FW);
+			ol_txrx_pdev_unpause_vdev_txq(scn->pdev_txrx_handle,
+				     OL_TXQ_PAUSE_REASON_CRASH_DUMP);
+		}
+	}
+
+	if ((!ret) && scn->fastfwdump_host && scn->fastfwdump_fw) {
+		pr_err("%s: Register section is delayed here\n", __func__);
+		ol_read_reg_section(scn,
+				(char *)memoryBlock + result[0] + result[1],
+				blockLength - result[0] - result[1]);
 	}
 
 	return ret;
@@ -2975,12 +3204,41 @@ ol_target_ready(struct ol_softc *scn, void *cfg_ctx)
 }
 #endif
 
+#if (defined(HIF_USB)) && (defined(USB_RESET_RESUME_PERSISTENCE))
+static A_STATUS ol_usb_reset_resume_enable(struct ol_softc *scn)
+{
+	A_STATUS status;
+	u_int32_t value, addr;
+
+	addr = host_interest_item_address(scn->target_type,
+			offsetof(struct host_interest_s, hi_option_flag2));
+
+	status = BMIReadMemory(scn->hif_hdl, addr, (A_UCHAR *)&value, 4, scn);
+	if (status != A_OK)
+		return status;
+
+	value |= HI_OPTION_USB_RESET_RESUME;
+
+	status = BMIWriteMemory(scn->hif_hdl, addr, (A_UCHAR *)&value, 4, scn);
+	return status;
+}
+#else
+static inline A_STATUS ol_usb_reset_resume_enable(struct ol_softc *scn)
+{
+	return A_OK;
+}
+#endif
+
 #ifdef HIF_USB
 static A_STATUS
 ol_usb_extra_initialization(struct ol_softc *scn)
 {
 	A_STATUS status = !EOK;
 	u_int32_t param = 0;
+
+	status = ol_usb_reset_resume_enable(scn);
+	if (status != A_OK)
+		return status;
 
 	param |= HI_ACS_FLAGS_ALT_DATA_CREDIT_SIZE;
 	status = BMIWriteMemory(scn->hif_hdl,

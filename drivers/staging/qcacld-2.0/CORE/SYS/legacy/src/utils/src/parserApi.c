@@ -1290,6 +1290,9 @@ PopulateDot11fExtCap(tpAniSirGlobal   pMac,
 #endif
     p_ext_cap->extChanSwitch = 1;
 
+    if (pMac->roam.configParam.enable_bcast_probe_rsp)
+        p_ext_cap->fils_capability = 1;
+
     if (pDot11f->present)
     {
         /* Need to compute the num_bytes based on bits set */
@@ -2378,6 +2381,11 @@ static void update_fils_data(struct sir_fils_indication *fils_ind,
 {
     uint8_t *data;
     uint8_t remaining_data = fils_indication->num_variable_data;
+    VosContextType *pVosContext = NULL;
+    tpAniSirGlobal pMac = NULL;
+
+    pVosContext = vos_get_global_context(VOS_MODULE_ID_SYS, NULL);
+    pMac = (tpAniSirGlobal)vos_get_context(VOS_MODULE_ID_PE, pVosContext);
 
     data = fils_indication->variable_data;
     fils_ind->is_present = true;
@@ -2391,7 +2399,8 @@ static void update_fils_data(struct sir_fils_indication *fils_ind,
             fils_indication->is_pk_auth_supported;
     if (fils_indication->is_cache_id_present) {
         if (remaining_data < SIR_CACHE_IDENTIFIER_LEN) {
-            pe_err("Failed to copy Cache Identifier, Invalid remaining data %d",
+            limLog(pMac, LOGE,
+                FL("Failed to copy Cache Identifier, Invalid remaining data %d"),
                 remaining_data);
             return;
         }
@@ -2403,7 +2412,8 @@ static void update_fils_data(struct sir_fils_indication *fils_ind,
     }
     if (fils_indication->is_hessid_present) {
         if (remaining_data < SIR_HESSID_LEN) {
-            pe_err("Failed to copy HESSID, Invalid remaining data %d",
+            limLog(pMac, LOGE,
+                FL("Failed to copy HESSID, Invalid remaining data %d"),
                 remaining_data);
             return;
         }
@@ -2416,7 +2426,8 @@ static void update_fils_data(struct sir_fils_indication *fils_ind,
     if (fils_indication->realm_identifiers_cnt) {
         if (remaining_data < (fils_indication->realm_identifiers_cnt *
             SIR_REALM_LEN)) {
-            pe_err("Failed to copy Realm Identifier, Invalid remaining data %d realm_cnt %d",
+            limLog(pMac, LOGE,
+                FL("Failed to copy Realm Identifier, Invalid remaining data %d realm_cnt %d"),
                 remaining_data, fils_indication->realm_identifiers_cnt);
             return;
         }
@@ -5862,16 +5873,22 @@ tSirRetStatus PopulateDot11fAssocResWscIE(tpAniSirGlobal pMac,
 {
     tDot11fIEWscAssocReq parsedWscAssocReq = { 0, };
     tANI_U8         *wscIe;
+    tANI_U32 status;
 
 
     wscIe = limGetWscIEPtr(pMac, pRcvdAssocReq->addIE.addIEdata, pRcvdAssocReq->addIE.length);
     if(wscIe != NULL)
     {
         // retreive WSC IE from given AssocReq
-        dot11fUnpackIeWscAssocReq( pMac,
+        status = dot11fUnpackIeWscAssocReq( pMac,
                                     wscIe + 2 + 4,  // EID, length, OUI
                                     wscIe[ 1 ] - 4, // length without OUI
                                     &parsedWscAssocReq );
+        if (!DOT11F_SUCCEEDED(status))
+        {
+            limLog(pMac, LOGE, FL("Unpack wsc failed status: (0x%08x)"), status);
+            return eSIR_HAL_INPUT_INVALID;
+        }
         pDot11f->present = 1;
         // version has to be 0x10
         pDot11f->Version.present = 1;
@@ -6111,15 +6128,15 @@ sap_auth_offload_construct_rsn_opaque( tDot11fIERSN *pdot11f_rsn,
             }
         }
 
-        if (pdot11f_rsn->akm_suite_count) {
-            element_len = sizeof(pdot11f_rsn->akm_suite_count);
-            vos_mem_copy(ptr, &pdot11f_rsn->akm_suite_count, element_len);
+        if (pdot11f_rsn->akm_suite_cnt) {
+            element_len = sizeof(pdot11f_rsn->akm_suite_cnt);
+            vos_mem_copy(ptr, &pdot11f_rsn->akm_suite_cnt, element_len);
             ptr += element_len;
             data_len += element_len;
-            for (count = 0; count < pdot11f_rsn->akm_suite_count; count++) {
+            for (count = 0; count < pdot11f_rsn->akm_suite_cnt; count++) {
                 element_len = DOT11F_RSN_OUI_SIZE;
                 vos_mem_copy(ptr,
-                             &pdot11f_rsn->akm_suites[count][0],
+                             &pdot11f_rsn->akm_suite[count][0],
                              element_len);
                 ptr += element_len;
                 data_len += element_len;
@@ -6158,8 +6175,8 @@ sap_auth_offload_update_rsn_ie( tpAniSirGlobal pmac,
             vos_mem_copy(&(pdot11f_rsn->pwise_cipher_suites[0][0]),
                          &sirRSNOui[DOT11F_RSN_CSE_CCMP][0],
                          DOT11F_RSN_OUI_SIZE);
-            pdot11f_rsn->akm_suite_count = 1;
-            vos_mem_copy(&(pdot11f_rsn->akm_suites[0][0]),
+            pdot11f_rsn->akm_suite_cnt = 1;
+            vos_mem_copy(&(pdot11f_rsn->akm_suite[0][0]),
                          &sirRSNOui[DOT11F_RSN_CSE_TKIP][0],
                          DOT11F_RSN_OUI_SIZE);
             pdot11f_rsn->pmkid_count = 0;

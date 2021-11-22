@@ -72,18 +72,18 @@ static inline int adf_os_mutex_acquire(adf_os_device_t osdev, adf_os_mutex_t *m)
 }
 
 /**
- * adf_semaphore_acquire_timeout() - Take the semaphore before timeout
+ * adf_os_mutex_acquire_timeout() - Take the semaphore before timeout
  * @osdev: osdev handle
  * @m: semaphore to take
  * @timeout: maximum time to try to take the semaphore, unit in ms.
  *
- * Return: int
+ * Return: 0 for success, others for timeout
  */
-static inline int adf_semaphore_acquire_timeout(adf_os_device_t osdev,
-                                               adf_os_mutex_t *m,
-                                               long timeout)
+static inline int adf_os_mutex_acquire_timeout(adf_os_device_t osdev,
+						adf_os_mutex_t *m,
+						long timeout)
 {
-       return __adf_semaphore_acquire_timeout(osdev, m, timeout);
+	return __adf_os_mutex_acquire_timeout(osdev, m, timeout);
 }
 
 /**
@@ -125,6 +125,14 @@ adf_os_spinlock_destroy(adf_os_spinlock_t *lock)
 {
     __adf_os_spinlock_destroy(lock);
 }
+
+#define adf_os_raw_spin_lock(_lock) __adf_os_raw_spin_lock(_lock)
+#define adf_os_raw_spin_unlock(_lock) __adf_os_raw_spin_unlock(_lock)
+#define adf_os_raw_spin_lock_bh(_lock) __adf_os_raw_spin_lock_bh(_lock)
+#define adf_os_raw_spin_unlock_bh(_lock) __adf_os_raw_spin_unlock_bh(_lock)
+#define adf_os_raw_spin_lock_irqsave( _lock, flag) __adf_os_raw_spin_lock_irqsave(_lock, flag)
+#define adf_os_raw_spin_unlock_irqrestore( _lock, flag) \
+	__adf_os_raw_spin_unlock_irqrestore(_lock, flag)
 
 #define adf_os_spin_lock( _lock) __adf_os_spin_lock(_lock)
 #define adf_os_spin_unlock( _lock ) __adf_os_spin_unlock(_lock)

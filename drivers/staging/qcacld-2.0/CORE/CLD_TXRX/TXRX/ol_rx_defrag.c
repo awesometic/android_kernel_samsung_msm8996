@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2014, 2016-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2014, 2016-2018 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -490,7 +490,7 @@ ol_rx_defrag_waitlist_flush(
         }
 
         tid = rx_reorder->tid;
-		if (tid >= OL_TXRX_NUM_EXT_TIDS) {
+        if (tid >= OL_TXRX_NUM_EXT_TIDS) {
             TXRX_PRINT(TXRX_PRINT_LEVEL_ERR,
                     "%s:  invalid tid, %u\n", __func__, tid);
             WARN_ON(1);

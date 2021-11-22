@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -51,19 +51,6 @@
 /* Maximum time(ms) to wait for OCB operations */
 #define WLAN_WAIT_TIME_OCB_CMD 1500
 #define HDD_OCB_MAGIC 0x489a154f
-
-/**
- * struct hdd_ocb_ctxt - Context for OCB operations
- * adapter: the ocb adapter
- * completion_evt: the completion event
- * status: status of the request
- */
-struct hdd_ocb_ctxt {
-	uint32_t magic;
-	hdd_adapter_t *adapter;
-	struct completion completion_evt;
-	int status;
-};
 
 /**
  * hdd_set_dot11p_config() - Set 802.11p config flag
@@ -127,7 +114,7 @@ static int dot11p_validate_qos_params(struct sir_qos_params qos_params[])
 
 #define DOT11P_TX_PWR_MAX	30
 #define DOT11P_TX_ANTENNA_MAX	6
-#define NUM_DOT11P_CHANNELS	10
+#define NUM_DOT11P_CHANNELS	ARRAY_SIZE(valid_dot11p_channels)
 /*
  * If FEATURE_STATICALLY_ADD_11P_CHANNELS
  * is defined, IEEE80211_CHAN_NO_10MHZ,
@@ -147,7 +134,7 @@ struct chan_info {
 	uint32_t max_bandwidth;
 };
 
-struct chan_info valid_dot11p_channels[NUM_DOT11P_CHANNELS] = {
+struct chan_info valid_dot11p_channels[] = {
 	{5860, 10},
 	{5870, 10},
 	{5880, 10},
@@ -157,7 +144,21 @@ struct chan_info valid_dot11p_channels[NUM_DOT11P_CHANNELS] = {
 	{5920, 10},
 	{5875, 20},
 	{5905, 20},
-	{5852, 5}
+	{5852, 5},
+	{5857, 5},
+	{5862, 5},
+	{5867, 5},
+	{5872, 5},
+	{5877, 5},
+	{5882, 5},
+	{5887, 5},
+	{5892, 5},
+	{5897, 5},
+	{5902, 5},
+	{5907, 5},
+	{5912, 5},
+	{5917, 5},
+	{5922, 5},
 };
 
 /**
@@ -205,28 +206,16 @@ static int dot11p_validate_channel_static_channels(struct wiphy *wiphy,
 
 	return -EINVAL;
 }
-#else
-/**
- * dot11p_validate_channel_static_channels() - validate a DSRC channel
- * @center_freq: the channel's center frequency
- * @bandwidth: the channel's bandwidth
- * @tx_power: transmit power
- * @reg_power: (output) the max tx power from the regulatory domain
- * @antenna_max: (output) the max antenna gain from the regulatory domain
- *
- * This function of the function checks the channel parameters against a
- * hardcoded list of valid channels based on the FCC rules.
- *
- * Return: 0 if the channel is valid, error code otherwise.
- */
-static int dot11p_validate_channel_static_channels(struct wiphy *wiphy,
-	uint32_t channel_freq, uint32_t bandwidth, uint32_t tx_power,
-	uint8_t *reg_power, uint8_t *antenna_max)
-{
-	return -EINVAL;
-}
-#endif /* FEATURE_STATICALLY_ADD_11P_CHANNELS */
 
+static int dot11p_validate_channel(struct wiphy *wiphy,
+				   uint32_t channel_freq, uint32_t bandwidth,
+				   uint32_t tx_power, uint8_t *reg_power,
+				   uint8_t *antenna_max)
+{
+	return dot11p_validate_channel_static_channels(wiphy, channel_freq,
+		bandwidth, tx_power, reg_power, antenna_max);
+}
+#else
 /**
  * dot11p_validate_channel() - validates a DSRC channel
  * @center_freq: the channel's center frequency
@@ -302,9 +291,9 @@ static int dot11p_validate_channel(struct wiphy *wiphy,
 		}
 	}
 
-	return dot11p_validate_channel_static_channels(wiphy, channel_freq,
-		bandwidth, tx_power, reg_power, antenna_max);
+	return -EINVAL;
 }
+#endif
 
 /**
  * hdd_ocb_validate_config() - Validates the config data
@@ -581,6 +570,7 @@ static int hdd_ocb_set_config_req(hdd_adapter_t *adapter,
 		hddLog(LOGE, FL("Operation timed out"));
 		goto end;
 	}
+
 	priv = hdd_request_priv(hdd_request);
 	rc = priv->status;
 	if (rc) {
@@ -592,14 +582,36 @@ static int hdd_ocb_set_config_req(hdd_adapter_t *adapter,
 	 * OCB set config command successful.
 	 * Open the TX data path
 	 */
-	if (!hdd_ocb_register_sta(adapter)) {
-		netif_carrier_on(adapter->dev);
-		netif_tx_start_all_queues(
-				    adapter->dev);
-		}
+	if (!hdd_ocb_register_sta(adapter))
+		wlan_hdd_netif_queue_control(adapter,
+					WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
+					WLAN_CONTROL_PATH);
+	if (enable_chan_stats)
+		wlan_hdd_dsrc_config_radio_chan_stats(adapter, true);
+
+	/*
+	* Net device mtu size is 1500 by default, But for OCB RAW mode,
+	* driver need later convert 802.3 data header to IEEE802.11
+	* data header and EPD header, which will increase total frame
+	* length. In such case, long packet length will exceed the
+	* target credit size. It resulted in that the packet is cut
+	* down, data would be missed and the traffic would be broken.
+	* So decrease the netdev mtu size to work around this issue
+	* in IEEE80211p RAW mode.
+	*/
+	if (config->flags & OCB_CONFIG_FLAG_80211_FRAME_MODE)
+		adapter->dev->mtu = ETH_DATA_LEN - 8;
+	else
+		adapter->dev->mtu = ETH_DATA_LEN;
 
 	/* fall through */
 end:
+	if (rc) {
+		/* Flush already saved configured channel frequence */
+		ctx->config_chans_num = 0;
+		vos_mem_zero(ctx->config_chans_freq, 2 * sizeof(uint32_t));
+	}
+
 	hdd_request_put(hdd_request);
 	return rc;
 }
@@ -964,7 +976,7 @@ static int __wlan_hdd_cfg80211_ocb_set_config(struct wiphy *wiphy,
 	}
 
 	/* Parse the netlink message */
-	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_OCB_SET_CONFIG_MAX,
+	if (wlan_cfg80211_nla_parse(tb, QCA_WLAN_VENDOR_ATTR_OCB_SET_CONFIG_MAX,
 			data,
 			data_len, qca_wlan_vendor_ocb_set_config_policy)) {
 		hddLog(LOGE, FL("Invalid ATTR"));
@@ -988,18 +1000,10 @@ static int __wlan_hdd_cfg80211_ocb_set_config(struct wiphy *wiphy,
 		tb[QCA_WLAN_VENDOR_ATTR_OCB_SET_CONFIG_SCHEDULE_SIZE]);
 
 	/* Get the ndl chan array and the ndl active state array. */
-	if (!tb[QCA_WLAN_VENDOR_ATTR_OCB_SET_CONFIG_NDL_CHANNEL_ARRAY]) {
-		hddLog(LOGE, FL("NDL_CHANNEL_ARRAY is not present"));
-		return -EINVAL;
-	}
 	ndl_chan_list =
 		tb[QCA_WLAN_VENDOR_ATTR_OCB_SET_CONFIG_NDL_CHANNEL_ARRAY];
 	ndl_chan_list_len = (ndl_chan_list ? nla_len(ndl_chan_list) : 0);
 
-	if (!tb[QCA_WLAN_VENDOR_ATTR_OCB_SET_CONFIG_NDL_ACTIVE_STATE_ARRAY]) {
-		hddLog(LOGE, FL("NDL_ACTIVE_STATE_ARRAY is not present"));
-		return -EINVAL;
-	}
 	ndl_active_state_list =
 		tb[QCA_WLAN_VENDOR_ATTR_OCB_SET_CONFIG_NDL_ACTIVE_STATE_ARRAY];
 	ndl_active_state_list_len = (ndl_active_state_list ?
@@ -1210,7 +1214,8 @@ static int __wlan_hdd_cfg80211_ocb_set_utc_time(struct wiphy *wiphy,
 	}
 
 	/* Parse the netlink message */
-	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_OCB_SET_UTC_TIME_MAX,
+	if (wlan_cfg80211_nla_parse(tb,
+		      QCA_WLAN_VENDOR_ATTR_OCB_SET_UTC_TIME_MAX,
 		      data,
 		      data_len, qca_wlan_vendor_ocb_set_utc_time_policy)) {
 		hddLog(LOGE, FL("Invalid ATTR"));
@@ -1334,7 +1339,8 @@ __wlan_hdd_cfg80211_ocb_start_timing_advert(struct wiphy *wiphy,
 	timing_advert->vdev_id = adapter->sessionId;
 
 	/* Parse the netlink message */
-	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_OCB_START_TIMING_ADVERT_MAX,
+	if (wlan_cfg80211_nla_parse(tb,
+		      QCA_WLAN_VENDOR_ATTR_OCB_START_TIMING_ADVERT_MAX,
 		      data,
 		      data_len,
 		      qca_wlan_vendor_ocb_start_timing_advert_policy)) {
@@ -1456,7 +1462,8 @@ __wlan_hdd_cfg80211_ocb_stop_timing_advert(struct wiphy *wiphy,
 	timing_advert->vdev_id = adapter->sessionId;
 
 	/* Parse the netlink message */
-	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_OCB_STOP_TIMING_ADVERT_MAX,
+	if (wlan_cfg80211_nla_parse(tb,
+		      QCA_WLAN_VENDOR_ATTR_OCB_STOP_TIMING_ADVERT_MAX,
 		      data,
 		      data_len,
 		      qca_wlan_vendor_ocb_stop_timing_advert_policy)) {
@@ -1819,7 +1826,7 @@ static int __wlan_hdd_cfg80211_dcc_get_stats(struct wiphy *wiphy,
 	}
 
 	/* Parse the netlink message */
-	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_DCC_GET_STATS_MAX,
+	if (wlan_cfg80211_nla_parse(tb, QCA_WLAN_VENDOR_ATTR_DCC_GET_STATS_MAX,
 		      data,
 		      data_len,
 		      qca_wlan_vendor_dcc_get_stats)) {
@@ -1991,7 +1998,8 @@ static int __wlan_hdd_cfg80211_dcc_clear_stats(struct wiphy *wiphy,
 	}
 
 	/* Parse the netlink message */
-	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_DCC_CLEAR_STATS_MAX,
+	if (wlan_cfg80211_nla_parse(tb,
+		      QCA_WLAN_VENDOR_ATTR_DCC_CLEAR_STATS_MAX,
 		      data,
 		      data_len,
 		      qca_wlan_vendor_dcc_clear_stats)) {
@@ -2041,6 +2049,10 @@ int wlan_hdd_cfg80211_dcc_clear_stats(struct wiphy *wiphy,
 	return ret;
 }
 
+struct hdd_dcc_update_ndl_priv {
+	int status;
+};
+
 /**
  * hdd_dcc_update_ndl_callback() - Callback to update NDL command
  * @context_ptr: request context
@@ -2048,23 +2060,22 @@ int wlan_hdd_cfg80211_dcc_clear_stats(struct wiphy *wiphy,
  */
 static void hdd_dcc_update_ndl_callback(void *context_ptr, void *response_ptr)
 {
-	struct hdd_ocb_ctxt *context = context_ptr;
+	struct hdd_request *hdd_request;
+	struct hdd_dcc_update_ndl_priv *priv;
 	struct sir_dcc_update_ndl_response *response = response_ptr;
 
-	if (!context)
+	hdd_request = hdd_request_get(context_ptr);
+	if (!hdd_request) {
+		hddLog(LOGE, FL("Obsolete request"));
 		return;
-
-	spin_lock(&hdd_context_lock);
-	if (context->magic == HDD_OCB_MAGIC) {
-		if (response) {
-			context->adapter->dcc_update_ndl_resp = *response;
-			context->status = 0;
-		} else {
-			context->status = -EINVAL;
-		}
-		complete(&context->completion_evt);
 	}
-	spin_unlock(&hdd_context_lock);
+	priv = hdd_request_priv(hdd_request);
+	if (response && (0 == response->status))
+		priv->status = 0;
+	else
+		priv->status = -EINVAL;
+	hdd_request_complete(hdd_request);
+	hdd_request_put(hdd_request);
 }
 
 /**
@@ -2092,7 +2103,13 @@ static int __wlan_hdd_cfg80211_dcc_update_ndl(struct wiphy *wiphy,
 	uint32_t ndl_active_state_array_len;
 	void *ndl_active_state_array;
 	int rc = -EINVAL;
-	struct hdd_ocb_ctxt context = {0};
+	void *cookie;
+	struct hdd_request *hdd_request;
+	struct hdd_dcc_update_ndl_priv *priv;
+	static const struct hdd_request_params params = {
+		.priv_size = sizeof(*priv),
+		.timeout_ms = WLAN_WAIT_TIME_OCB_CMD,
+	};
 
 	ENTER();
 
@@ -2102,11 +2119,11 @@ static int __wlan_hdd_cfg80211_dcc_update_ndl(struct wiphy *wiphy,
 	}
 
 	if (wlan_hdd_validate_context(hdd_ctx))
-		goto end;
+		return -EINVAL;
 
 	if (adapter->device_mode != WLAN_HDD_OCB) {
 		hddLog(LOGE, FL("Device not in OCB mode!"));
-		goto end;
+		return -EINVAL;
 	}
 
 	if (!wma_is_vdev_up(adapter->sessionId)) {
@@ -2115,12 +2132,12 @@ static int __wlan_hdd_cfg80211_dcc_update_ndl(struct wiphy *wiphy,
 	}
 
 	/* Parse the netlink message */
-	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_DCC_UPDATE_NDL_MAX,
+	if (wlan_cfg80211_nla_parse(tb, QCA_WLAN_VENDOR_ATTR_DCC_UPDATE_NDL_MAX,
 		      data,
 		      data_len,
 		      qca_wlan_vendor_dcc_update_ndl)) {
 		hddLog(LOGE, FL("Invalid ATTR"));
-		goto end;
+		return -EINVAL;
 	}
 
 	/* Verify that the parameter is present */
@@ -2142,10 +2159,12 @@ static int __wlan_hdd_cfg80211_dcc_update_ndl(struct wiphy *wiphy,
 	ndl_active_state_array = nla_data(
 		tb[QCA_WLAN_VENDOR_ATTR_DCC_UPDATE_NDL_ACTIVE_STATE_ARRAY]);
 
-	/* Initialize the callback context */
-	init_completion(&context.completion_evt);
-	context.adapter = adapter;
-	context.magic = HDD_OCB_MAGIC;
+	hdd_request = hdd_request_alloc(&params);
+	if (!hdd_request) {
+		hddLog(LOGE, "Request allocation failure");
+		return -ENOMEM;
+	}
+	cookie = hdd_request_cookie(hdd_request);
 
 	/* Copy the parameters to the request structure. */
 	request.vdev_id = adapter->sessionId;
@@ -2156,43 +2175,32 @@ static int __wlan_hdd_cfg80211_dcc_update_ndl(struct wiphy *wiphy,
 	request.dcc_ndl_active_state_list = ndl_active_state_array;
 
 	/* Call the SME function */
-	rc = sme_dcc_update_ndl(hdd_ctx->hHal, &context,
+	rc = sme_dcc_update_ndl(hdd_ctx->hHal, cookie,
 				hdd_dcc_update_ndl_callback,
 				&request);
 	if (rc) {
 		hddLog(LOGE, FL("Error calling SME function."));
 		/* Convert from eHalStatus to errno */
-		return -EINVAL;
-	}
-
-	/* Wait for the function to complete. */
-	rc = wait_for_completion_timeout(&context.completion_evt,
-		msecs_to_jiffies(WLAN_WAIT_TIME_OCB_CMD));
-	if (rc == 0) {
-		hddLog(LOGE, FL("Operation timed out"));
-		rc = -ETIMEDOUT;
-		goto end;
-	}
-	rc = 0;
-
-	if (context.status) {
-		hddLog(LOGE, FL("Operation failed: %d"), context.status);
-		rc = context.status;
-		goto end;
-	}
-
-	if (adapter->dcc_update_ndl_resp.status) {
-		hddLog(LOGE, FL("Operation returned: %d"),
-		       adapter->dcc_update_ndl_resp.status);
 		rc = -EINVAL;
 		goto end;
 	}
 
+	/* Wait for the function to complete. */
+	rc = hdd_request_wait_for_response(hdd_request);
+	if (rc) {
+		hddLog(LOGE, FL("Operation timed out"));
+		goto end;
+	}
+
+	priv = hdd_request_priv(hdd_request);
+	rc = priv->status;
+	if (rc)
+		hddLog(LOGE, FL("Operation failed: %d"), rc);
+
 	/* fall through */
 end:
-	spin_lock(&hdd_context_lock);
-	context.magic = 0;
-	spin_unlock(&hdd_context_lock);
+	hdd_request_put(hdd_request);
+
 	return rc;
 }
 
@@ -2309,10 +2317,10 @@ static void wlan_hdd_dsrc_update_radio_chan_stats(
 			 * entry in driver. If possible, driver can post
 			 * the recorders to application.
 			 */
-			spin_lock(&ctx->chan_stats_lock);
+			adf_os_spin_lock(&ctx->chan_stats_lock);
 			ctx->chan_stats_num = 0;
 			vos_mem_zero(dest, 2 * sizeof(*dest));
-			spin_unlock(&ctx->chan_stats_lock);
+			adf_os_spin_unlock(&ctx->chan_stats_lock);
 			hddLog(LOGE, FL("Old Chan Stats Data"));
 			return;
 		}
@@ -2321,15 +2329,15 @@ static void wlan_hdd_dsrc_update_radio_chan_stats(
 	/* Save the first channels statistics event in adapter. */
 	src = resp->chan_stats;
 	if (!ctx->chan_stats_num) {
-		spin_lock(&ctx->chan_stats_lock);
+		adf_os_spin_lock(&ctx->chan_stats_lock);
 		vos_mem_copy(dest, src, resp->num_chans * sizeof(*src));
 		ctx->chan_stats_num = resp->num_chans;
-		spin_unlock(&ctx->chan_stats_lock);
+		adf_os_spin_unlock(&ctx->chan_stats_lock);
 		return;
 	}
 
 	/* Merge new received channel statistics data to previous entry. */
-	spin_lock(&ctx->chan_stats_lock);
+	adf_os_spin_lock(&ctx->chan_stats_lock);
 	for (i = 0; i < resp->num_chans; i++, src++) {
 		struct radio_chan_stats_info *dest_entry = NULL;
 		struct radio_chan_stats_info *empty_entry = NULL;
@@ -2356,7 +2364,7 @@ static void wlan_hdd_dsrc_update_radio_chan_stats(
 			vos_mem_copy(empty_entry, src, sizeof(*src));
 			continue;
 		} else {
-			spin_unlock(&ctx->chan_stats_lock);
+			adf_os_spin_unlock(&ctx->chan_stats_lock);
 			hddLog(LOGE, FL("No entry found."));
 			return;
 		}
@@ -2388,7 +2396,7 @@ static void wlan_hdd_dsrc_update_radio_chan_stats(
 		dest->rx_succ_pkts += src->rx_succ_pkts;
 		dest->rx_fail_pkts += src->rx_fail_pkts;
 	}
-	spin_unlock(&ctx->chan_stats_lock);
+	adf_os_spin_unlock(&ctx->chan_stats_lock);
 
 	return;
 }
@@ -2430,9 +2438,9 @@ static void wlan_hdd_dsrc_radio_chan_stats_event_callback(void *context_ptr,
 	 * 2. Firmware response to the request from Host APP.
 	 * Need check whether current event is response for request.
 	 */
-	spin_lock(&hdd_context_lock);
+	adf_os_spin_lock(&hdd_context_lock);
 	if ((ctx->magic != HDD_OCB_MAGIC) || (!ctx->cur_req)) {
-		spin_unlock(&hdd_context_lock);
+		adf_os_spin_unlock(&hdd_context_lock);
 		return;
 	}
 	req = ctx->cur_req;
@@ -2441,27 +2449,27 @@ static void wlan_hdd_dsrc_radio_chan_stats_event_callback(void *context_ptr,
 		if ((resp->num_chans == 1) &&
 		    (req->chan_freq == chan_stats->chan_freq)) {
 			complete(&ctx->completion_evt);
-			spin_unlock(&hdd_context_lock);
+			adf_os_spin_unlock(&hdd_context_lock);
 			return;
 		}
 		break;
 	case WLAN_DSRC_REQUEST_ALL_RADIO_CHAN_STATS:
 		if (resp->num_chans != ctx->config_chans_num) {
-			spin_unlock(&hdd_context_lock);
+			adf_os_spin_unlock(&hdd_context_lock);
 			return;
 		}
 		/* Check response channel is configured. */
 		for (i = 0; i < resp->num_chans; i++) {
 			if (chan_stats[i].chan_freq !=
 			    ctx->config_chans_freq[i]) {
-				spin_unlock(&hdd_context_lock);
+				adf_os_spin_unlock(&hdd_context_lock);
 				return;
 			}
 		}
 		complete(&ctx->completion_evt);
 		break;
 	}
-	spin_unlock(&hdd_context_lock);
+	adf_os_spin_unlock(&hdd_context_lock);
 
 	return;
 }
@@ -2494,7 +2502,7 @@ int wlan_hdd_dsrc_config_radio_chan_stats(hdd_adapter_t *adapter,
 	vos_mem_zero(chan_stats, DSRC_MAX_CHAN_STATS_CNT * sizeof(*chan_stats));
 
 	if (enable_chan_stats) {
-		spin_lock_init(&ctx->chan_stats_lock);
+		adf_os_spinlock_init(&ctx->chan_stats_lock);
 		ret = sme_register_radio_chan_stats_cb(
 			((hdd_context_t *)adapter->pHddCtx)->hHal, (void *)ctx,
 			wlan_hdd_dsrc_radio_chan_stats_event_callback);
@@ -2529,18 +2537,18 @@ int wlan_hdd_dsrc_request_radio_chan_stats(hdd_adapter_t *adapter,
 
 	ctx = &adapter->dsrc_chan_stats;
 	init_completion(&ctx->completion_evt);
-	spin_lock(&hdd_context_lock);
+	adf_os_spin_lock(&hdd_context_lock);
 	ctx->magic = HDD_OCB_MAGIC;
-	spin_unlock(&hdd_context_lock);
+	adf_os_spin_unlock(&hdd_context_lock);
 	if (!wait_for_completion_timeout(&ctx->completion_evt,
 		msecs_to_jiffies(WLAN_WAIT_TIME_OCB_CMD))) {
 		hddLog(LOGE, FL("Wait for request completion timedout."));
 		ret = -ETIMEDOUT;
 	}
 
-	spin_lock(&hdd_context_lock);
+	adf_os_spin_lock(&hdd_context_lock);
 	ctx->magic = 0;
-	spin_unlock(&hdd_context_lock);
+	adf_os_spin_unlock(&hdd_context_lock);
 	return ret;
 }
 

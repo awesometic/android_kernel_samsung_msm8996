@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -914,6 +914,7 @@ tSirRetStatus peOpen(tpAniSirGlobal pMac, tMacOpenParameters *pMacOpenParam)
 
     pMac->lim.maxBssId = pMacOpenParam->maxBssId;
     pMac->lim.maxStation = pMacOpenParam->maxStation;
+    adf_os_spinlock_init(&pMac->sys.bbt_mgmt_lock);
 
     if ((pMac->lim.maxBssId == 0) || (pMac->lim.maxStation == 0)) {
          PELOGE(limLog(pMac, LOGE,
@@ -958,7 +959,6 @@ tSirRetStatus peOpen(tpAniSirGlobal pMac, tMacOpenParameters *pMacOpenParam)
         status = eSIR_FAILURE;
         goto pe_open_lock_fail;
     }
-    pMac->lim.deauthMsgCnt = 0;
     pMac->lim.retry_packet_cnt = 0;
     pMac->lim.gLimIbssRetryCnt = 0;
 
@@ -1019,6 +1019,7 @@ tSirRetStatus peClose(tpAniSirGlobal pMac)
     if (ANI_DRIVER_TYPE(pMac) == eDRIVER_TYPE_MFG)
         return eSIR_SUCCESS;
 
+    adf_os_spinlock_destroy(&pMac->sys.bbt_mgmt_lock);
     for(i =0; i < pMac->lim.maxBssId; i++)
     {
         if(pMac->lim.gpSession[i].valid == TRUE)
@@ -1273,6 +1274,60 @@ tSirRetStatus peProcessMessages(tpAniSirGlobal pMac, tSirMsgQ* pMsg)
     return eSIR_SUCCESS;
 }
 
+/**
+ * pe_drop_pending_rx_mgmt_frames: To drop pending RX mgmt frames
+ * @mac_ctx: Pointer to global MAC structure
+ * @hdr: Management header
+ * @vos_pkt: Packet
+ *
+ * This function is used to drop RX pending mgmt frames if pe mgmt queue
+ * reaches threshold
+ *
+ * Return: VOS_STATUS_SUCCESS on success or VOS_STATUS_E_FAILURE on failure
+ */
+static VOS_STATUS pe_drop_pending_rx_mgmt_frames(tpAniSirGlobal mac_ctx,
+                               tpSirMacMgmtHdr hdr, vos_pkt_t *vos_pkt)
+{
+       adf_os_spin_lock(&mac_ctx->sys.bbt_mgmt_lock);
+       if (mac_ctx->sys.sys_bbt_pending_mgmt_count >=
+            MGMT_RX_PACKETS_THRESHOLD) {
+               adf_os_spin_unlock(&mac_ctx->sys.bbt_mgmt_lock);
+               limLog(mac_ctx, LOG1,
+                       FL("No.of pending RX management frames reaches to threshold, dropping management frames"));
+               vos_pkt_return_packet(vos_pkt);
+               vos_pkt = NULL;
+               mac_ctx->rx_packet_drop_counter++;
+               return VOS_STATUS_E_FAILURE;
+       } else if (mac_ctx->sys.sys_bbt_pending_mgmt_count >
+                  (MGMT_RX_PACKETS_THRESHOLD / 2)) {
+               /* drop all probereq, proberesp and beacons */
+               if (hdr->fc.subType == SIR_MAC_MGMT_BEACON ||
+                   hdr->fc.subType == SIR_MAC_MGMT_PROBE_REQ ||
+                   hdr->fc.subType == SIR_MAC_MGMT_PROBE_RSP) {
+                       adf_os_spin_unlock(&mac_ctx->sys.bbt_mgmt_lock);
+                       if (!(mac_ctx->rx_packet_drop_counter % 100))
+                               limLog(mac_ctx, LOG1,
+                                       FL("No.of pending RX mgmt frames reaches 1/2 thresh, dropping frame subtype: %d rx_packet_drop_counter: %d"),
+                                       hdr->fc.subType,
+                                       mac_ctx->rx_packet_drop_counter);
+                       mac_ctx->rx_packet_drop_counter++;
+                       vos_pkt_return_packet(vos_pkt);
+                       vos_pkt = NULL;
+                       return VOS_STATUS_E_FAILURE;
+               }
+       }
+       mac_ctx->sys.sys_bbt_pending_mgmt_count++;
+       adf_os_spin_unlock(&mac_ctx->sys.bbt_mgmt_lock);
+       if (mac_ctx->sys.sys_bbt_pending_mgmt_count ==
+           (MGMT_RX_PACKETS_THRESHOLD / 4)) {
+               if (!(mac_ctx->rx_packet_drop_counter % 100))
+                      limLog(mac_ctx, LOG1,
+                              FL("No.of pending RX management frames reaches to 1/4th of threshold, rx_packet_drop_counter: %d"),
+                              mac_ctx->rx_packet_drop_counter);
+               mac_ctx->rx_packet_drop_counter++;
+       }
+       return VOS_STATUS_SUCCESS;
+}
 
 
 // ---------------------------------------------------------------------------
@@ -1355,6 +1410,9 @@ VOS_STATUS peHandleMgmtFrame( v_PVOID_t pvosGCtx, v_PVOID_t vosBuff)
                                    pVosPkt->pkt_meta.sessionId, RX_MGMT_PKT);
     }
 
+    if (VOS_STATUS_SUCCESS !=
+        pe_drop_pending_rx_mgmt_frames(pMac, mHdr, pVosPkt))
+        return VOS_STATUS_E_FAILURE;
 
     // Forward to MAC via mesg = SIR_BB_XPORT_MGMT_MSG
     msg.type = SIR_BB_XPORT_MGMT_MSG;
@@ -1368,6 +1426,11 @@ VOS_STATUS peHandleMgmtFrame( v_PVOID_t pvosGCtx, v_PVOID_t vosBuff)
     {
         vos_pkt_return_packet(pVosPkt);
         pVosPkt = NULL;
+        /*
+         * Decrement sys_bbt_pending_mgmt_count if packet
+         * is dropped before posting to LIM
+         */
+        lim_decrement_pending_mgmt_count(pMac);
         return VOS_STATUS_E_FAILURE;
     }
 
@@ -2694,4 +2757,62 @@ void pe_register_packetdump_callback(tp_pe_packetdump_cb pe_packetdump_cb)
 void pe_deregister_packetdump_callback(void)
 {
 	gpe_packetdump_cb = NULL;
+}
+
+#define LIM_RSN_OUI_SIZE 4
+#define LIM_RSN_OUI_SIZE 4
+
+struct rsn_oui_akm_type_map {
+	enum ani_akm_type akm_type;
+	uint8_t rsn_oui[LIM_RSN_OUI_SIZE];
+};
+
+static const struct rsn_oui_akm_type_map rsn_oui_akm_type_mapping_table[] = {
+	{ANI_AKM_TYPE_RSN,                  {0x00, 0x0F, 0xAC, 0x01} },
+	{ANI_AKM_TYPE_RSN_PSK,              {0x00, 0x0F, 0xAC, 0x02} },
+	{ANI_AKM_TYPE_FT_RSN,               {0x00, 0x0F, 0xAC, 0x03} },
+	{ANI_AKM_TYPE_FT_RSN_PSK,           {0x00, 0x0F, 0xAC, 0x04} },
+	{ANI_AKM_TYPE_RSN_8021X_SHA256,     {0x00, 0x0F, 0xAC, 0x05} },
+	{ANI_AKM_TYPE_RSN_PSK_SHA256,       {0x00, 0x0F, 0xAC, 0x06} },
+#ifdef WLAN_FEATURE_SAE
+	{ANI_AKM_TYPE_SAE,                  {0x00, 0x0F, 0xAC, 0x08} },
+	{ANI_AKM_TYPE_FT_SAE,               {0x00, 0x0F, 0xAC, 0x09} },
+#endif
+	{ANI_AKM_TYPE_SUITEB_EAP_SHA256,    {0x00, 0x0F, 0xAC, 0x0B} },
+	{ANI_AKM_TYPE_SUITEB_EAP_SHA384,    {0x00, 0x0F, 0xAC, 0x0C} },
+	{ANI_AKM_TYPE_FT_SUITEB_EAP_SHA384, {0x00, 0x0F, 0xAC, 0x0D} },
+	{ANI_AKM_TYPE_FILS_SHA256,          {0x00, 0x0F, 0xAC, 0x0E} },
+	{ANI_AKM_TYPE_FILS_SHA384,          {0x00, 0x0F, 0xAC, 0x0F} },
+	{ANI_AKM_TYPE_FT_FILS_SHA256,       {0x00, 0x0F, 0xAC, 0x10} },
+	{ANI_AKM_TYPE_FT_FILS_SHA384,       {0x00, 0x0F, 0xAC, 0x11} },
+	{ANI_AKM_TYPE_OWE,                  {0x00, 0x0F, 0xAC, 0x12} },
+#ifdef FEATURE_WLAN_ESE
+	{ANI_AKM_TYPE_CCKM,                 {0x00, 0x40, 0x96, 0x00} },
+#endif
+	{ANI_AKM_TYPE_OSEN,                 {0x50, 0x6F, 0x9A, 0x01} },
+	{ANI_AKM_TYPE_DPP_RSN,              {0x50, 0x6F, 0x9A, 0x02} },
+	{ANI_AKM_TYPE_WPA,                  {0x00, 0x50, 0xF2, 0x01} },
+	{ANI_AKM_TYPE_WPA_PSK,              {0x00, 0x50, 0xF2, 0x02} },
+	/* Add akm type above here */
+	{ANI_AKM_TYPE_UNKNOWN, {0} },
+};
+
+enum ani_akm_type lim_translate_rsn_oui_to_akm_type(uint8_t auth_suite[4])
+{
+	const struct rsn_oui_akm_type_map *map;
+	enum ani_akm_type akm_type;
+
+	map = rsn_oui_akm_type_mapping_table;
+	while (true) {
+		akm_type = map->akm_type;
+		if (akm_type == ANI_AKM_TYPE_UNKNOWN ||
+		    vos_mem_compare(auth_suite, map->rsn_oui, 4))
+			break;
+		map++;
+	}
+
+	VOS_TRACE(VOS_MODULE_ID_PE, VOS_TRACE_LEVEL_INFO,"akm_type: %d",
+		  akm_type);
+
+	return akm_type;
 }
