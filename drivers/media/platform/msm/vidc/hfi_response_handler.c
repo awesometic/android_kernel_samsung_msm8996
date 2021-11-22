@@ -126,10 +126,9 @@ static int hfi_process_sess_evt_seq_changed(u32 device_id,
 
 	 /* Initialize pic_struct to unknown as default */
 	event_notify.pic_struct = MSM_VIDC_PIC_STRUCT_UNKNOWN;
-
 	if (!validate_pkt_size(pkt->size,
-			      sizeof(struct hfi_msg_event_notify_packet)))
-		return -E2BIG;	
+			       sizeof(struct hfi_msg_event_notify_packet)))
+		return -E2BIG;
 
 	event_notify.device_id = device_id;
 	event_notify.session_id = (void *)(uintptr_t)pkt->session_id;
@@ -151,7 +150,7 @@ static int hfi_process_sess_evt_seq_changed(u32 device_id,
 	if (num_properties_changed) {
 		data_ptr = (u8 *) &pkt->rg_ext_event_data[0];
 		rem_size = pkt->size - sizeof(struct
-			hfi_msg_event_notify_packet) + sizeof(u32);
+				hfi_msg_event_notify_packet) + sizeof(u32);
 		do {
 			if (!validate_pkt_size(rem_size, sizeof(u32)))
 				return -E2BIG;
@@ -175,8 +174,8 @@ static int hfi_process_sess_evt_seq_changed(u32 device_id,
 				break;
 			case HFI_PROPERTY_PARAM_PROFILE_LEVEL_CURRENT:
 				if (!validate_pkt_size(rem_size, sizeof(struct
-						hfi_profile_level)))
-						return -E2BIG;
+					hfi_profile_level)))
+					return -E2BIG;
 				data_ptr = data_ptr + sizeof(u32);
 				profile_level =
 					(struct hfi_profile_level *) data_ptr;
@@ -191,7 +190,6 @@ static int hfi_process_sess_evt_seq_changed(u32 device_id,
 				if (!validate_pkt_size(rem_size, sizeof(struct
 					hfi_bit_depth)))
 					return -E2BIG;
-
 				data_ptr = data_ptr + sizeof(u32);
 				pixel_depth = (struct hfi_bit_depth *) data_ptr;
 				/*
@@ -225,7 +223,7 @@ static int hfi_process_sess_evt_seq_changed(u32 device_id,
 				rem_size -= sizeof(struct hfi_bit_depth);
 				break;
 			case HFI_PROPERTY_PARAM_VDEC_PIC_STRUCT:
-			if (!validate_pkt_size(rem_size, sizeof(struct
+				if (!validate_pkt_size(rem_size, sizeof(struct
 					hfi_pic_struct)))
 					return -E2BIG;
 				data_ptr = data_ptr + sizeof(u32);
@@ -237,12 +235,12 @@ static int hfi_process_sess_evt_seq_changed(u32 device_id,
 						pic_struct->progressive_only);
 				data_ptr +=
 					sizeof(struct hfi_pic_struct);
-					rem_size -= sizeof(struct hfi_pic_struct);
+				rem_size -= sizeof(struct hfi_pic_struct);
 				break;
 			case HFI_PROPERTY_PARAM_VDEC_COLOUR_SPACE:
 				if (!validate_pkt_size(rem_size, sizeof(struct
-						hfi_colour_space)))
-						return -E2BIG;
+					hfi_colour_space)))
+					return -E2BIG;
 				data_ptr = data_ptr + sizeof(u32);
 				colour_info =
 					(struct hfi_colour_space *) data_ptr;
@@ -253,7 +251,7 @@ static int hfi_process_sess_evt_seq_changed(u32 device_id,
 						colour_info->colour_space);
 				data_ptr +=
 					sizeof(struct hfi_colour_space);
-					rem_size -= sizeof(struct hfi_colour_space);
+				rem_size -= sizeof(struct hfi_colour_space);
 				break;
 			default:
 				dprintk(VIDC_ERR,
@@ -286,6 +284,12 @@ static int hfi_process_evt_release_buffer_ref(u32 device_id,
 		> pkt->size) {
 		dprintk(VIDC_ERR,
 				"hal_process_session_init_done: bad_pkt_size\n");
+		return -E2BIG;
+	}
+	if (pkt->size < sizeof(struct hfi_msg_event_notify_packet) - sizeof(u32)
+		+ sizeof(struct hfi_msg_release_buffer_ref_event_packet)) {
+		dprintk(VIDC_ERR, "%s: bad_pkt_size: %d\n",
+			__func__, pkt->size);
 		return -E2BIG;
 	}
 
@@ -843,7 +847,6 @@ static enum vidc_status hfi_parse_init_done_properties(
 {
 	enum vidc_status status = VIDC_ERR_NONE;
 	u32 prop_id, next_offset;
-	
 #define VALIDATE_PROPERTY_STRUCTURE_SIZE(pkt_size, property_size) ({\
 		if (pkt_size < property_size) { \
 			status = VIDC_ERR_BAD_PARAM; \
@@ -870,7 +873,6 @@ static enum vidc_status hfi_parse_init_done_properties(
 			struct hfi_codec_mask_supported *prop =
 				(struct hfi_codec_mask_supported *)
 				(data_ptr + next_offset);
-				
 			VALIDATE_PROPERTY_STRUCTURE_SIZE(rem_bytes -
 					next_offset,
 					sizeof(*prop));
@@ -938,7 +940,6 @@ static enum vidc_status hfi_parse_init_done_properties(
 					plane_info->num_planes *
 					sizeof(struct
 					hfi_uncompressed_plane_constraints);
-					
 				VALIDATE_PROPERTY_STRUCTURE_SIZE(rem_bytes -
 						next_offset,
 						bytes_to_skip);
@@ -981,6 +982,9 @@ static enum vidc_status hfi_parse_init_done_properties(
 					next_offset,
 					sizeof(*prop));
 
+			VALIDATE_PROPERTY_STRUCTURE_SIZE(rem_bytes -
+					next_offset,
+					sizeof(*prop));
 			ptr = (char *) &prop->rg_profile_level[0];
 			prof_count = prop->profile_count;
 			next_offset += sizeof(u32);
@@ -1101,7 +1105,6 @@ static enum vidc_status hfi_parse_init_done_properties(
 		} else {
 			rem_bytes = 0;
 		}
-
 	}
 
 	return status;
@@ -1120,6 +1123,11 @@ enum vidc_status hfi_process_sys_init_done_prop_read(
 	if (!pkt || !sys_init_done) {
 		dprintk(VIDC_ERR,
 			"hfi_msg_sys_init_done: Invalid input\n");
+		return VIDC_ERR_FAIL;
+	}
+	if (pkt->size < sizeof(struct hfi_msg_sys_init_done_packet)) {
+		dprintk(VIDC_ERR, "%s: bad packet size: %d\n",
+			__func__, pkt->size);
 		return VIDC_ERR_FAIL;
 	}
 
@@ -1541,15 +1549,13 @@ static int hfi_process_session_etb_done(u32 device_id,
 	struct hfi_msg_session_empty_buffer_done_packet *pkt = _pkt;
 	struct msm_vidc_cb_data_done data_done = {0};
 	struct hfi_picture_type *hfi_picture_type = NULL;
+	u32 is_sync_frame;
 
 	dprintk(VIDC_DBG, "RECEIVED: SESSION_ETB_DONE[%#x]\n", pkt->session_id);
 
 	if (!pkt || pkt->size <
-		sizeof(struct hfi_msg_session_empty_buffer_done_packet)) {
-		dprintk(VIDC_ERR,
-				"hal_process_session_etb_done: bad_pkt_size\n");
-		return -E2BIG;
-	}
+		sizeof(struct hfi_msg_session_empty_buffer_done_packet))
+		goto bad_packet_size;
 
 	data_done.device_id = device_id;
 	data_done.session_id = (void *)(uintptr_t)pkt->session_id;
@@ -1564,8 +1570,13 @@ static int hfi_process_session_etb_done(u32 device_id,
 		(ion_phys_addr_t)pkt->extra_data_buffer;
 	data_done.input_done.status =
 		hfi_map_err_status(pkt->error_type);
-	hfi_picture_type = (struct hfi_picture_type *)&pkt->rgData[0];
-	if (hfi_picture_type->is_sync_frame) {
+	is_sync_frame = pkt->rgData[0];
+	if (is_sync_frame == 1) {
+		if (pkt->size <
+			sizeof(struct hfi_msg_session_empty_buffer_done_packet)
+			+ sizeof(struct hfi_picture_type))
+			goto bad_packet_size;
+		hfi_picture_type = (struct hfi_picture_type *)&pkt->rgData[1];
 		if (hfi_picture_type->picture_type)
 			data_done.input_done.flags =
 				hfi_picture_type->picture_type;
@@ -1584,6 +1595,10 @@ static int hfi_process_session_etb_done(u32 device_id,
 	};
 
 	return 0;
+bad_packet_size:
+	dprintk(VIDC_ERR, "%s: bad_pkt_size: %d\n",
+		__func__, pkt ? pkt->size : 0);
+	return -E2BIG;
 }
 
 static int hfi_process_session_ftb_done(
@@ -1824,8 +1839,7 @@ static int hfi_process_session_rel_buf_done(u32 device_id,
 	cmd_done.session_id = (void *)(uintptr_t)pkt->session_id;
 	cmd_done.status = hfi_map_err_status(pkt->error_type);
 	if (pkt->rg_buffer_info) {
-		cmd_done.data.buffer_info =
-			*(struct hal_buffer_info *)pkt->rg_buffer_info;
+		cmd_done.data.buffer_info.buffer_addr = *pkt->rg_buffer_info;
 		cmd_done.size = sizeof(struct hal_buffer_info);
 	} else {
 		dprintk(VIDC_ERR, "invalid payload in rel_buff_done\n");

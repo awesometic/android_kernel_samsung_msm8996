@@ -1,5 +1,4 @@
 /* Copyright (c) 2013-2016, 2019 The Linux Foundation. All rights reserved.
-*
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License version 2 and
 * only version 2 as published by the Free Software Foundation.
@@ -538,6 +537,7 @@ static int msm_pcm_volume_ctl_get(struct snd_kcontrol *kcontrol,
 	ucontrol->value.integer.value[0] = prtd->volume;
 	mutex_unlock(&loopback_session_lock);
 
+	mutex_unlock(&loopback_session_lock);
 exit:
 	return rc;
 }
