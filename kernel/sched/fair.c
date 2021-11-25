@@ -10026,7 +10026,9 @@ static void run_rebalance_domains(struct softirq_action *h)
  */
 void trigger_load_balance(struct rq *rq)
 {
+#ifdef CONFIG_NO_HZ_COMMON
 	int type = NOHZ_KICK_ANY;
+#endif
 
 	/* Don't need to rebalance while attached to NULL domain */
 	if (unlikely(on_null_domain(rq)))
