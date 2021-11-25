@@ -1,7 +1,5 @@
-#
-# Automatically generated file; DO NOT EDIT.
-# Linux/arm64 3.18.115 Kernel Configuration
-#
+include msm-perf_defconfig
+
 CONFIG_ARM64=y
 CONFIG_64BIT=y
 CONFIG_ARCH_PHYS_ADDR_T_64BIT=y
