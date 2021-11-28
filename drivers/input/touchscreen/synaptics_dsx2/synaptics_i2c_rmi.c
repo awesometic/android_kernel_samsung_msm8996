@@ -95,6 +95,9 @@ static struct attribute_group attr_group = {
 	.attrs = attrs,
 };
 
+bool synaptics_epen_mode = false;
+EXPORT_SYMBOL(synaptics_epen_mode);
+
 static ssize_t synaptics_rmi4_f51_enables_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -1195,6 +1198,9 @@ static void synaptics_rmi4_report_touch(struct synaptics_rmi4_data *rmi4_data,
 		struct synaptics_rmi4_fn *fhandler)
 {
 	unsigned char touch_count_2d;
+
+	if (synaptics_epen_mode)
+		return;
 
 	if (!fhandler) {
 		input_err(true, &rmi4_data->i2c_client->dev,

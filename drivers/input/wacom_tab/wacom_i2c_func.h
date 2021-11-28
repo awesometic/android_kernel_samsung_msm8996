@@ -44,4 +44,8 @@ extern void forced_release(struct wacom_i2c *wac_i2c);
 extern void forced_hover(struct wacom_i2c *wac_i2c);
 #endif
 
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_DSX2
+extern bool synaptics_epen_mode;
+#endif
+
 #endif	/* _LINUX_WACOM_I2C_FUNC_H */
