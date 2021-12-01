@@ -440,6 +440,11 @@ static int mhi_uci_send_packet(struct mhi_dev_client **client_handle,
 			size, TRB_MAX_DATA_SIZE);
 		return -EFBIG;
 	}
+	ureq.client = *client_handle;
+	ureq.buf = data_loc;
+	ureq.len = size;
+	ureq.chan = uci_handle->out_chan;
+	ureq.mode = IPA_DMA_SYNC;
 
 	uci_handle = container_of(client_handle, struct uci_client,
 					out_handle);
@@ -896,6 +901,7 @@ static ssize_t mhi_uci_client_read(struct file *file, char __user *ubuf,
 	struct mutex *mutex;
 	ssize_t bytes_copied = 0;
 	u32 addr_offset = 0;
+	void *local_buf = NULL;
 	struct mhi_req ureq;
 
 	if (!file || !ubuf || !uspace_buf_size ||
@@ -911,19 +917,44 @@ static ssize_t mhi_uci_client_read(struct file *file, char __user *ubuf,
 	ureq.client = client_handle;
 	ureq.buf = uci_handle->in_buf_list[0].addr;
 	ureq.len = uci_handle->in_buf_list[0].buf_size;
-
+	ureq.mode = IPA_DMA_SYNC;
 
 	uci_log(UCI_DBG_VERBOSE, "Client attempted read on chan %d\n",
 			ureq.chan);
 	do {
 		if (!uci_handle->pkt_loc &&
-			!atomic_read(&uci_ctxt.mhi_disabled)) {
-			ret_val = uci_handle->read(uci_handle, &ureq,
-							&bytes_avail);
-			if (ret_val)
+				!atomic_read(&uci_ctxt.mhi_disabled)) {
+
+			bytes_avail = mhi_dev_read_channel(&ureq);
+
+			uci_log(UCI_DBG_VERBOSE,
+				"reading from mhi_core local_buf = %p",
+				local_buf);
+			uci_log(UCI_DBG_VERBOSE,
+					"buf_size = 0x%x bytes_read = 0x%x\n",
+					 ureq.len, bytes_avail);
+
+			if (bytes_avail < 0) {
+				uci_log(UCI_DBG_ERROR,
+				"Failed to read channel ret %d\n",
+					bytes_avail);
+				ret_val =  -EIO;
 				goto error;
-			if (bytes_avail > 0)
+			}
+
+			if (bytes_avail > 0) {
+				uci_handle->pkt_loc = (void *) ureq.buf;
+				uci_handle->pkt_size = ureq.actual_len;
+
 				*bytes_pending = (loff_t)uci_handle->pkt_size;
+				uci_log(UCI_DBG_VERBOSE,
+					"Got pkt of sz 0x%x at adr %p, ch %d\n",
+					uci_handle->pkt_size,
+					ureq.buf, ureq.chan);
+			} else {
+				uci_handle->pkt_loc = 0;
+				uci_handle->pkt_size = 0;
+			}
 		}
 		if (bytes_avail == 0) {
 

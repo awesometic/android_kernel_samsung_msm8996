@@ -2051,6 +2051,10 @@ int mdp3_get_img(struct msmfb_data *img, struct mdp3_img_data *data, int client)
 		}
 
 done:
+	if (client ==  MDP3_CLIENT_PPP || client == MDP3_CLIENT_DMA_P) {
+		data->addr  += data->tab_clone->sgl->length;
+		data->len   -= data->tab_clone->sgl->length;
+	}
 	if (!ret && (img->offset < data->len)) {
 		data->addr += img->offset;
 		data->len -= img->offset;

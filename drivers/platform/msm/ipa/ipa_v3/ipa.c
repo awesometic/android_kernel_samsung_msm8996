@@ -2629,6 +2629,8 @@ void ipa3_q6_pre_shutdown_cleanup(void)
 		ipa3_set_reset_client_prod_pipe_delay(true,
 		IPA_CLIENT_MHI_PROD);
 
+	ipa3_set_usb_prod_pipe_delay();
+
 	IPA_ACTIVE_CLIENTS_DEC_SIMPLE();
 	IPADBG_LOW("Exit with success\n");
 }

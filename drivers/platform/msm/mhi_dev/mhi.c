@@ -2715,8 +2715,40 @@ static int mhi_init(struct mhi_dev *mhi)
 	if (!mhi->ch)
 		return -ENOMEM;
 
-	for (i = 0; i < mhi->cfg.channels; i++)
+
+	for (i = 0; i < mhi->cfg.channels; i++) {
 		mutex_init(&mhi->ch[i].ch_lock);
+		if (i == MHI_CLIENT_IP_SW_4_OUT || i == MHI_CLIENT_IP_SW_4_IN) {
+			int nreq = 0;
+
+			INIT_LIST_HEAD(&mhi->ch[i].event_req_buffers);
+			while (nreq < MHI_MAX_EVT_REQ) {
+				struct event_req *ereq;
+				/* Pre allocate event requests */
+				ereq = kzalloc(sizeof(struct event_req),
+						GFP_KERNEL);
+				if (!ereq)
+					return -ENOMEM;
+
+				/* pre allocate buffers to queue
+				 * transfer completion events
+				 */
+				ereq->tr_events = kzalloc(RING_ELEMENT_TYPE_SZ*
+						MAX_TR_EVENTS, GFP_KERNEL);
+				if (!ereq->tr_events) {
+					kfree(ereq);
+					return -ENOMEM;
+				}
+				list_add_tail(&ereq->list,
+						&mhi->ch[i].event_req_buffers);
+				nreq++;
+			}
+			mhi->ch[i].curr_ereq =
+				container_of(mhi->ch[i].event_req_buffers.next,
+						struct event_req, list);
+			list_del_init(&mhi->ch[i].curr_ereq->list);
+		}
+	}
 
 	spin_lock_init(&mhi->lock);
 	mhi->mmio_backup = devm_kzalloc(&pdev->dev,

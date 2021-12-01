@@ -273,6 +273,8 @@ struct mhi_config {
 #define MHI_MASK_ROWS_CH_EV_DB		4
 #define TRB_MAX_DATA_SIZE		8192
 #define MHI_CTRL_STATE			100
+#define IPA_DMA_SYNC                    1
+#define IPA_DMA_ASYNC                   0
 
 /*maximum trasnfer completion events buffer*/
 #define MAX_TR_EVENTS			50
@@ -365,6 +367,16 @@ enum mhi_dev_transfer_type {
 	MHI_DEV_DMA_ASYNC,
 };
 
+enum mhi_dev_tr_compl_evt_type {
+	SEND_EVENT_BUFFER,
+	SEND_EVENT_RD_OFFSET,
+};
+
+enum mhi_dev_transfer_type {
+	MHI_DEV_DMA_SYNC,
+	MHI_DEV_DMA_ASYNC,
+};
+
 struct mhi_dev_channel;
 
 struct mhi_dev_ring {
@@ -426,6 +438,24 @@ struct event_req {
 	struct list_head	list;
 };
 
+struct ring_cache_req {
+	struct completion	*done;
+	void			*context;
+};
+
+struct event_req {
+	union mhi_dev_ring_element_type *tr_events;
+	u32			num_events;
+	dma_addr_t		dma;
+	u32			dma_len;
+	dma_addr_t		event_rd_dma;
+	void			*context;
+	enum mhi_dev_tr_compl_evt_type event_type;
+	u32			event_ring;
+	void			(*client_cb)(void *req);
+	struct list_head	list;
+};
+
 struct mhi_dev_channel {
 	struct list_head		list;
 	struct list_head		clients;
@@ -447,6 +477,9 @@ struct mhi_dev_channel {
 	struct event_req		*ereqs;
 	/* Pointer to completion event buffers */
 	union mhi_dev_ring_element_type *tr_events;
+	struct list_head		event_req_buffers;
+	struct event_req		*curr_ereq;
+
 	struct list_head		event_req_buffers;
 	struct event_req		*curr_ereq;
 
@@ -567,11 +600,25 @@ struct mhi_dev {
 
 	/*Register for interrupt*/
 	bool				mhi_int;
-	bool				mhi_int_en;
-	/* Registered client callback list */
-	struct list_head		client_cb_list;
 
 	struct kobj_uevent_env		kobj_env;
+};
+
+struct mhi_req {
+	u32                             chan;
+	u32                             mode;
+	u32				chain;
+	void                            *buf;
+	dma_addr_t                      dma;
+	u32                             snd_cmpl;
+	void                            *context;
+	size_t                          len;
+	size_t                          actual_len;
+	uint32_t                        rd_offset;
+	struct mhi_dev_client           *client;
+	struct list_head                list;
+	union mhi_dev_ring_element_type *el;
+	void (*client_cb)(void *req);
 };
 
 
@@ -608,11 +655,56 @@ struct mhi_dev_uevent_info {
 	enum mhi_ctrl_info	ctrl_info;
 };
 
+/* Use ID 0 for legacy /dev/mhi_ctrl. Channel 0 used for internal only */
+#define MHI_DEV_UEVENT_CTRL	0
+
+struct mhi_dev_uevent_info {
+	enum mhi_ctrl_info	ctrl_info;
+};
+
 struct mhi_dev_iov {
 	void		*addr;
 	uint32_t	buf_size;
 };
 
+/**
+ * mhi_dev_open_channel() - Channel open for a given client done prior
+ *		to read/write.
+ * @chan_id:	Software Channel ID for the assigned client.
+ * @handle_client: Structure device for client handle.
+ * @notifier: Client issued callback notification.
+ */
+int mhi_dev_open_channel(uint32_t chan_id,
+		struct mhi_dev_client **handle_client,
+		void (*event_trigger)(struct mhi_dev_client_cb_reason *cb));
+/**
+ * mhi_dev_close_channel() - Channel close for a given client.
+ */
+int mhi_dev_close_channel(struct mhi_dev_client *handle_client);
+
+/**
+ * mhi_dev_read_channel() - Channel read for a given client
+ * @mreq:       mreq is the client argument which includes meta info
+ *              like write data location, buffer len, read offset, mode,
+ *              chain and client call back function which will be invoked
+ *              when data read is completed.
+ */
+int mhi_dev_read_channel(struct mhi_req *mreq);
+
+/**
+ * mhi_dev_write_channel() - Channel write for a given software client.
+ * @wreq	wreq is the client argument which includes meta info like
+ *              client handle, read data location, buffer length, mode,
+ *              and client call back function which will free the packet.
+ *              when data write is completed.
+ */
+int mhi_dev_write_channel(struct mhi_req *wreq);
+
+/**
+ * mhi_dev_channel_isempty() - Checks if there is any pending TRE's to process.
+ * @handle_client:	Client Handle issued during mhi_dev_open_channel
+ */
+int mhi_dev_channel_isempty(struct mhi_dev_client *handle);
 
 struct mhi_dev_trace {
 	unsigned timestamp;
@@ -1082,6 +1174,20 @@ int mhi_uci_init(void);
 int mhi_dev_net_interface_init(void);
 
 void mhi_dev_notify_a7_event(struct mhi_dev *mhi);
+
+/**
+ * mhi_ctrl_state_info() - Provide MHI state info
+ *		@idx: Channel number idx. Look at channel_state_info and
+ *		pass the index for the corresponding channel.
+ *		@info: Return the control info.
+ *		MHI_STATE=CONFIGURED - MHI device is present but not ready
+ *					for data traffic.
+ *		MHI_STATE=CONNECTED - MHI device is ready for data transfer.
+ *		MHI_STATE=DISCONNECTED - MHI device has its pipes suspended.
+ *		exposes device nodes for the supported MHI software
+ *		channels.
+ */
+int mhi_ctrl_state_info(uint32_t idx, uint32_t *info);
 
 void uci_ctrl_update(struct mhi_dev_client_cb_reason *reason);
 
