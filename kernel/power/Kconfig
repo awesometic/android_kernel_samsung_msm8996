@@ -27,16 +27,6 @@ config WAKELOCK
 
 	  Say Y if you are running an android userspace.
 
-config CPU_FREQ_LIMIT_USERSPACE
-	bool "User space cpufreq limit interface"
-	depends on CPU_FREQ_LIMIT
-	default n
-	help
-	  Add sysfs to limit CPU frequency for a userspace program.
-	  /sys/power/cpufreq_min_limit
-	  /sys/power/cpufreq_max_limit
-	  /sys/power/cpufreq_table
-
 config FOTA_LIMIT
 	bool "Fota limit information node"
 	default n

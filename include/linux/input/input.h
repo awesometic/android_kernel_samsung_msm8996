@@ -136,15 +136,6 @@
 #define set_hmp(enable)
 #endif
 
-#ifndef CONFIG_CPU_FREQ_LIMIT_USERSPACE
-#define DVFS_TOUCH_ID	0
-int set_freq_limit(unsigned long id, unsigned int freq)
-{
-	pr_err("%s is not yet implemented\n", __func__);
-	return 0;
-}
-#endif
-
 /*#ifdef CONFIG_DEBUG_BUS_VOTER
 #define SET_BOOSTER  { \
 	pr_debug("[Input Booster2] %s      set_freq_limit : %d, msm_bus_floor_vote : %d\n", glGage, _this->param[_this->index].cpu_freq, _this->param[_this->index].bimc_freq); \
