@@ -75,22 +75,6 @@
 #include <linux/context_tracking.h>
 #include <linux/compiler.h>
 
-#include <linux/sched/sysctl.h>
-#include <linux/kernel.h>
-#include <linux/kthread.h>
-#include <linux/mutex.h>
-#include <linux/workqueue.h>
-#include <linux/cpufreq.h>
-#include <linux/platform_device.h>
-#include <linux/err.h>
-#include <linux/of.h>
-#include <linux/sysfs.h>
-#include <linux/types.h>
-#include <soc/qcom/scm.h>
-#include <linux/sec_class.h>
-#include <linux/sched/rt.h>
-#include <linux/cpumask.h>
-
 #include <asm/switch_to.h>
 #include <asm/tlb.h>
 #include <asm/irq_regs.h>
@@ -102,28 +86,12 @@
 #include <asm/app_api.h>
 #endif
 
-#ifdef CONFIG_SEC_DEBUG
-#include <linux/qcom/sec_debug.h>
-#endif
-
 #include "sched.h"
 #include "../workqueue_internal.h"
 #include "../smpboot.h"
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
-
-#define HEAVY_TASK_LOAD_THRESHOLD 1000
-
-const char *task_event_names[] = {"PUT_PREV_TASK", "PICK_NEXT_TASK",
-				  "TASK_WAKE", "TASK_MIGRATE", "TASK_UPDATE",
-				"IRQ_UPDATE"};
-
-const char *migrate_type_names[] = {"GROUP_TO_RQ", "RQ_TO_GROUP",
-					 "RQ_TO_RQ", "GROUP_TO_GROUP"};
-
-ATOMIC_NOTIFIER_HEAD(migration_notifier_head);
-ATOMIC_NOTIFIER_HEAD(load_alert_notifier_head);
 #include "walt.h"
 
 void start_bandwidth_timer(struct hrtimer *period_timer, ktime_t period)
@@ -133,6 +101,38 @@ void start_bandwidth_timer(struct hrtimer *period_timer, ktime_t period)
 
 	hrtimer_forward_now(period_timer, period);
 	hrtimer_start_expires(period_timer, HRTIMER_MODE_ABS_PINNED);
+}
+
+static atomic_t __su_instances;
+
+int su_instances(void)
+{
+	return atomic_read(&__su_instances);
+}
+
+bool su_running(void)
+{
+	return su_instances() > 0;
+}
+
+bool su_visible(void)
+{
+	kuid_t uid = current_uid();
+	if (su_running())
+		return true;
+	if (uid_eq(uid, GLOBAL_ROOT_UID) || uid_eq(uid, GLOBAL_SYSTEM_UID))
+		return true;
+	return false;
+}
+
+void su_exec(void)
+{
+	atomic_inc(&__su_instances);
+}
+
+void su_exit(void)
+{
+	atomic_dec(&__su_instances);
 }
 
 DEFINE_MUTEX(sched_domains_mutex);
@@ -2975,87 +2975,6 @@ void scheduler_tick(void)
 		check_for_migration(rq, curr);
 }
 
-#ifdef NR_CPUS
-static unsigned int heavy_cpu_count = NR_CPUS;
-#else
-static unsigned int heavy_cpu_count = 8;
-#endif
-
-static ssize_t heavy_task_cpu_show(struct device *dev,
-    struct device_attribute *attr, char *buf)
-{
-    int count = 0;
-    long unsigned int task_util;
-    long unsigned int cfs_load;
-    long unsigned int no_task;
-    long unsigned int remaining_load;
-    long unsigned int avg_load;
-    int cpu;
-
-    for_each_cpu(cpu, cpu_online_mask)
-    {
-        struct rq *rq = cpu_rq(cpu);
-        struct task_struct *p = rq->curr;
-        task_util = (long unsigned int)p->se.avg.load_avg_contrib;
-        cfs_load = (long unsigned int)rq->cfs.runnable_load_avg;
-        no_task = (long unsigned int)rq->cfs.h_nr_running;
-
-        if (task_util > HEAVY_TASK_LOAD_THRESHOLD)
-        {
-            count++;
-        }
-        else if (task_util <= HEAVY_TASK_LOAD_THRESHOLD && no_task > 1)
-        {
-            remaining_load = cfs_load - task_util;
-            avg_load = remaining_load / (no_task - 1);
-            if (avg_load > HEAVY_TASK_LOAD_THRESHOLD)
-                count++;
-        }
-    }
-
-    heavy_cpu_count = count;
-
-    return snprintf(buf, 4, "%d\n", heavy_cpu_count);
-}
-
-static ssize_t heavy_task_cpu_store(struct device *dev,
-    struct device_attribute *attr, const char *buf, size_t size)
-{
-    sscanf(buf, "%d", &heavy_cpu_count);
-
-    return size;
-}
-
-static DEVICE_ATTR(heavy_task_cpu, 0664, heavy_task_cpu_show, heavy_task_cpu_store);
-
-static struct attribute *bench_mark_attributes[] = {
-    &dev_attr_heavy_task_cpu.attr,
-    NULL
-};
-
-static const struct attribute_group bench_mark_attr_group = {
-    .attrs = bench_mark_attributes,
-};
-
-int __init sched_heavy_cpu_init(void)
-{
-    int ret = 0;
-    struct device *dev;
-
-    dev = device_create(sec_class, NULL, 0, NULL, "sec_heavy_cpu");
-    if (IS_ERR(dev)) {
-        dev_err(dev, "%s: fail to create sec_dev\n", __func__);
-        return PTR_ERR(dev);
-    }
-    ret = sysfs_create_group(&dev->kobj, &bench_mark_attr_group);
-    if (ret) {
-        dev_err(dev, "failed to create sysfs group\n");
-    }
-
-    return 0;
-}
-late_initcall(sched_heavy_cpu_init);
-
 #ifdef CONFIG_NO_HZ_FULL
 /**
  * scheduler_tick_max_deferment
@@ -3359,20 +3278,8 @@ static void __sched __schedule(void)
 		rq->curr = next;
 		++*switch_count;
 
-		set_task_last_switch_out(prev, wallclock);
-
-		context_switch(rq, prev, next); /* unlocks the rq */
-		/*
-		 * The context switch have flipped the stack from under us
-		 * and restored the local variables which were saved when
-		 * this task called schedule() in the past. prev == current
-		 * is still correct, but it can be moved to another cpu/rq.
-		 */
-		cpu = smp_processor_id();
-		rq = cpu_rq(cpu);
-#ifdef CONFIG_SEC_DEBUG
-		sec_debug_task_sched_log(cpu, rq->curr);
-#endif
+		rq = context_switch(rq, prev, next); /* unlocks the rq */
+		cpu = cpu_of(rq);
 	} else
 		raw_spin_unlock_irq(&rq->lock);
 
@@ -7630,20 +7537,6 @@ void __init sched_init(void)
 	int i, j;
 	unsigned long alloc_size = 0, ptr;
 
-#ifdef CONFIG_SEC_DEBUG
-	sec_gaf_supply_rqinfo(offsetof(struct rq, curr),
-		offsetof(struct cfs_rq, rq));
-#endif
-
-	if (sched_enable_hmp)
-		pr_info("HMP scheduling enabled.\n");
-
-	BUG_ON(num_possible_cpus() > BITS_PER_LONG);
-
-#ifdef CONFIG_SCHED_HMP
-	init_clusters();
-#endif
-
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	alloc_size += 2 * nr_cpu_ids * sizeof(void **);
 #endif
@@ -8564,10 +8457,6 @@ static int cpu_cgroup_can_attach(struct cgroup_subsys_state *css,
 #ifdef CONFIG_RT_GROUP_SCHED
 		if (!sched_rt_can_attach(css_tg(css), task))
 			return -EINVAL;
-#else
-		/* We don't support RT-tasks being in separate groups */
-		if (task->sched_class != &fair_sched_class)
-			return -EINVAL;
 #endif
 		/*
 		 * Serialize against wake_up_new_task() such that if its
@@ -8617,6 +8506,8 @@ static void cpu_cgroup_exit(struct cgroup_subsys_state *css,
 static int cpu_shares_write_u64(struct cgroup_subsys_state *css,
 				struct cftype *cftype, u64 shareval)
 {
+	if (shareval > scale_load_down(ULONG_MAX))
+		shareval = MAX_SHARES;
 	return sched_group_set_shares(css_tg(css), scale_load(shareval));
 }
 
@@ -8718,8 +8609,10 @@ int tg_set_cfs_quota(struct task_group *tg, long cfs_quota_us)
 	period = ktime_to_ns(tg->cfs_bandwidth.period);
 	if (cfs_quota_us < 0)
 		quota = RUNTIME_INF;
-	else
+	else if ((u64)cfs_quota_us <= U64_MAX / NSEC_PER_USEC)
 		quota = (u64)cfs_quota_us * NSEC_PER_USEC;
+	else
+		return -EINVAL;
 
 	return tg_set_cfs_bandwidth(tg, period, quota);
 }
@@ -8740,6 +8633,9 @@ long tg_get_cfs_quota(struct task_group *tg)
 int tg_set_cfs_period(struct task_group *tg, long cfs_period_us)
 {
 	u64 quota, period;
+
+	if ((u64)cfs_period_us > U64_MAX / NSEC_PER_USEC)
+		return -EINVAL;
 
 	period = (u64)cfs_period_us * NSEC_PER_USEC;
 	quota = tg->cfs_bandwidth.quota;
