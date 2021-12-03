@@ -429,11 +429,10 @@ static int fastrpc_mmap_find(struct fastrpc_file *fl, int fd, uintptr_t va,
 	return -ENOTTY;
 }
 
-static int dma_alloc_memory(phys_addr_t *region_start, size_t size)
+static int dma_alloc_memory(dma_addr_t *region_start, void **vaddr, size_t size,
+			struct dma_attrs *attrs)
 {
 	struct fastrpc_apps *me = &gfa;
-	void *vaddr = NULL;
-	DEFINE_DMA_ATTRS(attrs);
 
 	if (me->dev == NULL) {
 		pr_err("device adsprpc-mem is not initialized\n");
@@ -590,7 +589,8 @@ static int fastrpc_mmap_create(struct fastrpc_file *fl, int fd, uintptr_t va,
 
 		map->apps = me;
 		map->fl = NULL;
-		VERIFY(err, !dma_alloc_memory(&region_start, len));
+		VERIFY(err, !dma_alloc_memory(&region_start,
+			 &region_vaddr, len, &rh_attrs));
 		if (err)
 			goto bail;
 		map->phys = (uintptr_t)region_start;
@@ -961,6 +961,7 @@ static void context_free(struct smq_invoke_ctx *ctx)
 	for (i = 0; i < nbufs; ++i)
 		fastrpc_mmap_free(ctx->maps[i]);
 	fastrpc_buf_free(ctx->buf, 1);
+	fastrpc_buf_free(ctx->lbuf, 1);
 	ctx->magic = 0;
 	ctx->ctxid = 0;
 
@@ -1158,6 +1159,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 	args = (uintptr_t)ctx->buf->virt + metalen;
 	for (i = 0; i < bufs; ++i) {
 		size_t len = lpra[i].buf.len;
+
 		list[i].num = 0;
 		list[i].pgidx = 0;
 		if (!len)
