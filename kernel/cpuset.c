@@ -1456,24 +1456,6 @@ out_unlock:
 	return ret;
 }
 
-static int cpuset_allow_attach(struct cgroup_subsys_state *css,
-			       struct cgroup_taskset *tset)
-{
-	const struct cred *cred = current_cred(), *tcred;
-	struct task_struct *task;
-
-	cgroup_taskset_for_each(task, tset) {
-		tcred = __task_cred(task);
-
-		if ((current != task) && !capable(CAP_SYS_ADMIN) &&
-		    !uid_eq(cred->euid, tcred->uid) &&
-		    !uid_eq(cred->euid, tcred->suid))
-			return -EACCES;
-	}
-
-	return 0;
-}
-
 static void cpuset_cancel_attach(struct cgroup_subsys_state *css,
 				 struct cgroup_taskset *tset)
 {
