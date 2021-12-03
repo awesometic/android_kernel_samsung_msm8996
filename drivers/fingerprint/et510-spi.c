@@ -601,30 +601,7 @@ static long etspi_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case FP_CPU_SPEEDUP:
-		pr_info("%s FP_CPU_SPEEDUP\n", __func__);
-		if (ioc->len) {
-			u8 retry_cnt = 0;
-			pr_info("%s FP_CPU_SPEEDUP ON:%d, retry: %d\n",
-					__func__, ioc->len, retry_cnt);
-			if (etspi->min_cpufreq_limit) {
-				do {
-					retval = set_freq_limit(DVFS_FINGER_ID, etspi->min_cpufreq_limit);
-					retry_cnt++;
-					if (retval) {
-						pr_err("%s: booster start failed. (%d) retry: %d\n"
-							, __func__, retval, retry_cnt);
-						if (retry_cnt < 7)
-							usleep_range(500, 510);
-					}
-				} while (retval && retry_cnt < 7);
-			}
-		} else {
-			pr_info("%s FP_CPU_SPEEDUP OFF\n", __func__);
-			retval = set_freq_limit(DVFS_FINGER_ID, -1);
-			if (retval)
-				pr_err("%s: booster stop failed. (%d)\n"
-					, __func__, retval);
-		}
+		pr_info("%s FP_CPU_SPEEDUP IGNORED\n", __func__);
 		break;
 	case FP_SET_SENSOR_TYPE:
 		if ((int)ioc->len >= SENSOR_UNKNOWN && (int)ioc->len < (SENSOR_STATUS_SIZE - 1)) {
@@ -1009,7 +986,20 @@ static ssize_t etspi_bfs_values_show(struct device *dev,
 static ssize_t etspi_type_check_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	struct etspi_data *data = dev_get_drvdata(dev);#ifndef ENABLE_SENSORS_FPRINT_SECURE	int retry = 0;	int status = 0;	do {		status = etspi_type_check(data);		pr_info("%s type (%u), retry (%d)\n"			, __func__, data->sensortype, retry);	} while (!data->sensortype && ++retry < 3);	if (status == -ENODEV)		pr_info("%s type check fail\n", __func__);#endif
+	struct etspi_data *data = dev_get_drvdata(dev);
+#ifndef ENABLE_SENSORS_FPRINT_SECURE
+	int retry = 0;
+	int status = 0;
+
+	do {
+		status = etspi_type_check(data);
+		pr_info("%s type (%u), retry (%d)\n"
+			, __func__, data->sensortype, retry);
+	} while (!data->sensortype && ++retry < 3);
+
+	if (status == -ENODEV)
+		pr_info("%s type check fail\n", __func__);
+#endif
 	return snprintf(buf, PAGE_SIZE, "%d\n", data->sensortype);
 }
 

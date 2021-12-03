@@ -920,38 +920,7 @@ static long vfsspi_ioctl(struct file *filp, unsigned int cmd,
 		pr_info("%s VFSSPI_IOCTL_RESET_SPI_CONFIGURATION\n", __func__);
 		break;
 	case VFSSPI_IOCTL_CPU_SPEEDUP:
-		if (copy_from_user(&onoff, (void *)arg,
-			sizeof(unsigned int)) != 0) {
-			pr_err("%s Failed copy from user.(CPU_SPEEDUP)\n", __func__);
-			mutex_unlock(&vfsspi_device->buffer_mutex);
-			return -EFAULT;
-		}
-		if (onoff == 1) {
-			u8 retry_cnt = 0;
-			pr_info("%s VFSSPI_IOCTL_CPU_SPEEDUP ON:%d, retry: %d\n",
-					__func__, onoff, retry_cnt);
-			if(vfsspi_device->min_cpufreq_limit){
-				do {
-					ret_val = set_freq_limit(DVFS_FINGER_ID, vfsspi_device->min_cpufreq_limit);
-					retry_cnt++;
-					if (ret_val) {
-						pr_err("%s: clock speed up start failed. (%d) retry: %d\n",
-								__func__, ret_val, retry_cnt);
-						if (retry_cnt < 7)
-							usleep_range(500, 510);
-					}
-				} while (ret_val && retry_cnt < 7);
-			}
-
-		} else if (onoff == 0) {
-			pr_info("%s VFSSPI_IOCTL_CPU_SPEEDUP OFF\n", __func__);
-			if(vfsspi_device->min_cpufreq_limit){
-				ret_val = set_freq_limit(DVFS_FINGER_ID, -1);
-				if (ret_val)
-					pr_err("%s: clock speed up stop failed. (%d)\n",
-							__func__, ret_val);
-			}
-		}
+		pr_info("%s VFSSPI_IOCTL_CPU_SPEEDUP IGNORED\n", __func__);
 		break;
 	case VFSSPI_IOCTL_SET_SENSOR_TYPE:
 		if (copy_from_user(&type_check, (void *)arg,
