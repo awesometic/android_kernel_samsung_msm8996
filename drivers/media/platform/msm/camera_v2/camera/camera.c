@@ -415,10 +415,6 @@ static int camera_v4l2_s_fmt_vid_cap_mplane(struct file *filep, void *fh,
 			camera_pack_event(filep, MSM_CAMERA_SET_PARM,
 				MSM_CAMERA_PRIV_S_FMT, -1, &event);
 
-		if (msm_is_daemon_present() != false) {
-			camera_pack_event(filep, MSM_CAMERA_SET_PARM,
-				MSM_CAMERA_PRIV_S_FMT, -1, &event);
-
 			rc = msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
 			if (rc < 0)
 				return rc;
