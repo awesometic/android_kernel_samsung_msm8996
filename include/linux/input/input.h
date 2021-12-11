@@ -10,10 +10,6 @@
 #include <linux/msm-bus.h>
 #endif
 
-#ifdef CONFIG_SCHED_HMP
-#define USE_HMP_BOOST
-#endif
-
 #undef pr_debug
 #define pr_debug   if(debug_flag) printk
 
@@ -44,29 +40,13 @@
 		pm_qos_remove_request(req); \
 }
 
-#ifdef USE_HMP_BOOST
-#define set_hmp(enable)	 { \
-	if(enable != current_hmp_boost) { \
-		pr_debug("[Input Booster2] ******      set_hmp : %d ( %s )\n", enable, __FUNCTION__); \
-		if (set_hmp_boost(enable) < 0) {\
-			pr_debug("[Input Booster2] ******            !!! fail to HMP !!!\n"); \
-		} \
-		current_hmp_boost = enable; \
-	} \
-}
-#else
-#define set_hmp(enable)
-#endif
-
 #define SET_BOOSTER  { \
-	set_hmp(_this->param[_this->index].hmp_boost); \
 	set_qos(&_this->cpu_qos, /*PM_QOS_CPU_FREQ_MIN*/PM_QOS_CLUSTER1_FREQ_MIN, _this->param[_this->index].cpu_freq);  \
 	set_qos(&_this->kfc_qos, /*PM_QOS_KFC_FREQ_MIN*/PM_QOS_CLUSTER0_FREQ_MIN, _this->param[_this->index].kfc_freq);  \
 	set_qos(&_this->mif_qos, PM_QOS_BUS_THROUGHPUT, _this->param[_this->index].mif_freq);  \
 	set_qos(&_this->int_qos, PM_QOS_DEVICE_THROUGHPUT, _this->param[_this->index].int_freq);  \
 }
 #define REMOVE_BOOSTER  { \
-	set_hmp(0);  \
 	remove_qos(&_this->cpu_qos);  \
 	remove_qos(&_this->kfc_qos);  \
 	remove_qos(&_this->mif_qos);  \
@@ -121,47 +101,6 @@
 }
 
 #elif defined(CONFIG_ARCH_MSM) //______________________________________________________________________________
-
-#ifdef USE_HMP_BOOST
-#define set_hmp(enable)	 { \
-	if(enable != current_hmp_boost) { \
-		pr_debug("[Input Booster2] ******      set_hmp : %d ( %s )\n", enable, __FUNCTION__); \
-		if (sched_set_boost(enable) < 0) {\
-			pr_debug("[Input Booster2] ******            !!! fail to HMP !!!\n"); \
-		} \
-		current_hmp_boost = enable; \
-	} \
-}
-#else
-#define set_hmp(enable)
-#endif
-
-/*#ifdef CONFIG_DEBUG_BUS_VOTER
-#define SET_BOOSTER  { \
-	pr_debug("[Input Booster2] %s      set_freq_limit : %d, msm_bus_floor_vote : %d\n", glGage, _this->param[_this->index].cpu_freq, _this->param[_this->index].bimc_freq); \
-	set_hmp(_this->param[_this->index].hmp_boost); \
-	set_freq_limit((_this->change_on_release) ? DVFS_MULTI_TOUCH_ID : DVFS_TOUCH_ID, _this->param[_this->index].cpu_freq);  \
-	msm_bus_floor_vote("bimc", _this->param[_this->index].bimc_freq * 1000);  \
-}
-#define REMOVE_BOOSTER  { \
-	pr_debug("[Input Booster2] %s      set_freq_limit : %d, msm_bus_floor_vote : %d\n", glGage, -1, 0); \
-	set_hmp(0); \
-	set_freq_limit((_this->change_on_release) ? DVFS_MULTI_TOUCH_ID : DVFS_TOUCH_ID, -1);  \
-	msm_bus_floor_vote("bimc", 0);  \
-}
-#else
-*/
-#define SET_BOOSTER  { \
-	pr_debug("[Input Booster2] %s      set_freq_limit : %d\n", glGage, _this->param[_this->index].cpu_freq); \
-	set_hmp(_this->param[_this->index].hmp_boost); \
-	set_freq_limit((_this->change_on_release) ? DVFS_MULTI_TOUCH_ID : DVFS_TOUCH_ID, _this->param[_this->index].cpu_freq);  \
-}
-#define REMOVE_BOOSTER  { \
-	pr_debug("[Input Booster2] %s      set_freq_limit : %d\n", glGage, -1); \
-	set_hmp(0); \
-	set_freq_limit((_this->change_on_release) ? DVFS_MULTI_TOUCH_ID : DVFS_TOUCH_ID, -1);  \
-}
-//#endif
 
 #define PROPERTY_BOOSTER(_device_param_, _dt_param_, _time_)  { \
 	_device_param_.cpu_freq = _dt_param_.cpu_freq; \
@@ -282,7 +221,6 @@ static void input_booster_##_DEVICE_##_timeout_work_func(struct work_struct *wor
 		pr_debug("[Input Booster] %s           Timeout : changed  index : %d, time : %d (%s)\n", HEADGAGE, _this->index, _this->param[_this->index].time, __FUNCTION__); \
 		pr_debug("[Input Booster] %s           cpu : %d (%s)\n", TAILGAGE, _this->param[_this->index].cpu_freq, __FUNCTION__); \
 		if(_this->param[(_this->index) ? _this->index-1 : 0].time > 0) { \
-			SET_BOOSTER; \
 			if(_this->change_on_release) { \
 				schedule_delayed_work(&_this->input_booster_timeout_work[_this->index], msecs_to_jiffies(_this->param[_this->index].time)); \
 				_this->index++; \
@@ -293,7 +231,6 @@ static void input_booster_##_DEVICE_##_timeout_work_func(struct work_struct *wor
 	} else { \
 		pr_debug("[Input Booster] Timeout : completed   param_max : %d (%s)\n", param_max, __FUNCTION__); \
 		pr_debug("[Input Booster]\n"); \
-		REMOVE_BOOSTER; \
 		_this->index = 0; \
 		_this->multi_events = (_this->multi_events > 0) ? 0 : _this->multi_events; \
 		CHANGE_STATE_TO(idle); \

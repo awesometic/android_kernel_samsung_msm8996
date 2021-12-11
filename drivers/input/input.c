@@ -448,7 +448,6 @@ DECLARE_STATE_FUNC(idle)
 				cancel_delayed_work(&_this->input_booster_timeout_work[i]);
 			}
 		}
-		SET_BOOSTER;
 		schedule_delayed_work(&_this->input_booster_timeout_work[_this->index], msecs_to_jiffies(_this->param[_this->index].time));
 		_this->index++;
 		CHANGE_STATE_TO(press);
@@ -470,7 +469,6 @@ DECLARE_STATE_FUNC(press)
 				if(_this->change_on_release || (_this->param[(_this->index) ? _this->index-1 : 0].time == 0)) {
 					pr_debug("[Input Booster] %s           cancel the pending workqueue\n", glGage);
 					cancel_delayed_work(&_this->input_booster_timeout_work[(_this->index) ? _this->index-1 : 0]);
-					SET_BOOSTER;
 				}
 				schedule_delayed_work(&_this->input_booster_timeout_work[_this->index], msecs_to_jiffies(_this->param[_this->index].time));
 				pr_debug("[Input Booster] %s           schedule_delayed_work again  time : %d\n", glGage, _this->param[_this->index].time);
