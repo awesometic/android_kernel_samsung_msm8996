@@ -640,6 +640,8 @@ static void flip_cover_work(struct work_struct *work)
 
 		input_report_switch(ddata->input,
 			SW_FLIP, ddata->flip_cover);
+		input_report_switch(ddata->input,
+			SW_LID, !ddata->flip_cover);
 		input_sync(ddata->input);
 	} else {
 		printk(KERN_DEBUG "%s : Value is not same!\n", __func__);
@@ -659,6 +661,8 @@ static void flip_cover_work(struct work_struct *work)
 
 	input_report_switch(ddata->input,
 		SW_FLIP, ddata->flip_cover);
+	input_report_switch(ddata->input,
+		SW_LID, !ddata->flip_cover);
 	input_sync(ddata->input);
 }
 #endif // CONFIG_SEC_FACTORY
@@ -1072,6 +1076,7 @@ static int gpio_keys_probe(struct platform_device *pdev)
 	if(ddata->gpio_flip_cover != 0) {
 		input->evbit[0] |= BIT_MASK(EV_SW);
 		input_set_capability(input, EV_SW, SW_FLIP);
+		input_set_capability(input, EV_SW, SW_LID);
 	}
 #endif
 	global_dev = dev;
