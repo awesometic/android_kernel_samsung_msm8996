@@ -2954,8 +2954,6 @@ static void binder_transaction(struct binder_proc *proc,
 	char *secctx = NULL;
 	u32 secctx_sz = 0;
 	int t_debug_id = atomic_inc_return(&binder_last_id);
-	char *secctx = NULL;
-	u32 secctx_sz = 0;
 
 	e = binder_transaction_log_add(&binder_transaction_log);
 	e->debug_id = t_debug_id;
