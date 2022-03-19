@@ -565,9 +565,6 @@ static int gpio_keys_setup_key(struct platform_device *pdev,
 		irqflags = 0;
 	}
 
-	/*don't send dummy release event when system resumes*/
-	__set_bit(INPUT_PROP_NO_DUMMY_RELEASE, input->propbit);
-
 	input_set_capability(input, button->type ?: EV_KEY, button->code);
 
 	/*
