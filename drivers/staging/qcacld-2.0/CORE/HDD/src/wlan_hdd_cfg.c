@@ -59,6 +59,8 @@
 #include <csrApi.h>
 #include <pmcApi.h>
 #include <wlan_hdd_misc.h>
+#include <linux/fcntl.h>
+#include <linux/fs.h>
 
 #if  defined (WLAN_FEATURE_VOWIFI_11R) || defined (FEATURE_WLAN_ESE) || defined(FEATURE_WLAN_LFR)
 static void
@@ -6769,97 +6771,23 @@ static void update_mac_from_string(hdd_context_t *pHddCtx, tCfgIniEntry *macTabl
  */
 VOS_STATUS hdd_update_mac_config(hdd_context_t *pHddCtx)
 {
-   int status, i = 0;
-   const struct firmware *fw = NULL;
-   char *line, *buffer = NULL, *temp = NULL;
-   char *name, *value;
-   tCfgIniEntry macTable[VOS_MAX_CONCURRENCY_PERSONA];
-   tSirMacAddr customMacAddr;
+    VOS_STATUS vos_status = VOS_STATUS_SUCCESS;
+    struct file *fp = NULL;
+    char buf[17];
 
-   VOS_STATUS vos_status = VOS_STATUS_SUCCESS;
+    fp = filp_open("/efs/wifi/.mac.info", O_RDONLY, 0);
+    if (!IS_ERR(fp)) {
+        kernel_read(fp, 0, buf, 17);
+        filp_close(fp, NULL);
 
-   memset(macTable, 0, sizeof(macTable));
-   status = qca_request_firmware(&fw, WLAN_MAC_FILE, pHddCtx->parent_dev);
-
-   if (status)
-   {
-      hddLog(VOS_TRACE_LEVEL_WARN, "%s: request_firmware failed %d",
-             __func__, status);
-      vos_status = VOS_STATUS_E_FAILURE;
-      return vos_status;
+        sscanf(buf, "%02X:%02X:%02X:%02X:%02X:%02X",
+            (unsigned int *)&pHddCtx->cfg_ini->intfMacAddr[0].bytes[0],
+            (unsigned int *)&pHddCtx->cfg_ini->intfMacAddr[0].bytes[1],
+            (unsigned int *)&pHddCtx->cfg_ini->intfMacAddr[0].bytes[2],
+            (unsigned int *)&pHddCtx->cfg_ini->intfMacAddr[0].bytes[3],
+            (unsigned int *)&pHddCtx->cfg_ini->intfMacAddr[0].bytes[4],
+            (unsigned int *)&pHddCtx->cfg_ini->intfMacAddr[0].bytes[5]);
    }
-   if (!fw || !fw->data || !fw->size)
-   {
-      hddLog(VOS_TRACE_LEVEL_FATAL, "%s: invalid firmware", __func__);
-      vos_status = VOS_STATUS_E_INVAL;
-      goto config_exit;
-   }
-
-   temp = buffer = (char *) vos_mem_malloc(fw->size + 1);
-   if (NULL == buffer) {
-      hddLog(VOS_TRACE_LEVEL_FATAL, "%s: unable to allocate memory",__func__);
-      release_firmware(fw);
-      return VOS_STATUS_E_NOMEM;
-   }
-
-   vos_mem_copy((void*)buffer,(void *)fw->data, fw->size);
-   buffer[fw->size] = '\0';
-
-   /* data format:
-    * Intf0MacAddress=00AA00BB00CC
-    * Intf1MacAddress=00AA00BB00CD
-    * END
-    */
-   while (buffer != NULL)
-   {
-      line = get_next_line(buffer);
-      buffer = i_trim(buffer);
-
-      if (strlen((char *)buffer) == 0 || *buffer == '#') {
-         buffer = line;
-         continue;
-      }
-      if (strncmp(buffer, "END", 3) == 0)
-         break;
-
-      name = buffer;
-      buffer = strchr(buffer, '=');
-      if (buffer) {
-         *buffer++ = '\0';
-         i_trim(name);
-         if (strlen(name) != 0) {
-            buffer = i_trim(buffer);
-            if (strlen(buffer) == 12) {
-               value = buffer;
-               macTable[i].name = name;
-               macTable[i++].value = value;
-               if (i >= VOS_MAX_CONCURRENCY_PERSONA)
-                  break;
-            }
-         }
-      }
-      buffer = line;
-   }
-   if (i <= VOS_MAX_CONCURRENCY_PERSONA) {
-      hddLog(VOS_TRACE_LEVEL_INFO, "%s: %d Mac addresses provided", __func__, i);
-   }
-   else {
-      hddLog(VOS_TRACE_LEVEL_ERROR, "%s: invalid number of Mac address provided, nMac = %d",
-             __func__, i);
-      vos_status = VOS_STATUS_E_INVAL;
-      goto config_exit;
-   }
-
-   update_mac_from_string(pHddCtx, &macTable[0], i);
-
-   vos_mem_copy(&customMacAddr,
-                     &pHddCtx->cfg_ini->intfMacAddr[0].bytes[0],
-                     sizeof(tSirMacAddr));
-   sme_SetCustomMacAddr(customMacAddr);
-
-config_exit:
-   release_firmware(fw);
-   vos_mem_free(temp);
    return vos_status;
 }
 
